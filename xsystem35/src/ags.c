@@ -152,12 +152,16 @@ void ags_init(const char *render_driver) {
 void ags_remove(void) {
 	ags_autorepeat(true);
 	event_remove();
+	cursor_reset();
+	font_fini();
 	gfx_Remove();
 }
 
 void ags_reset(void) {
 	nact->ags.mouse_warp_enabled = true;
 	nact->ags.eventcb = NULL;
+	cursor_reset();
+	cursor_init();
 	initPal();
 	cg_reset();
 }

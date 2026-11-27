@@ -164,9 +164,9 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 	if (basename && (savedir || !found_xsleep)) {
 		const char *dir = savedir ? savedir : "";
 		const char *sep = savedir ? "/" : "";
-		char *buf = malloc(strlen(dir) + strlen(sep) + strlen(basename) + 9);
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
-		// Use lowercase 's[a-z].asd' in Android and Emscripten, for compatibility.
+		char *buf = malloc(strlen(dir) + strlen(sep) + strlen(basename) + 12);
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
+		// Use lowercase 's[a-z].asd' on mobile/console/web platforms for compatibility.
 		basename[strlen(basename) - 1] = 's';
 		int a = 'a';
 #else
@@ -176,9 +176,25 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 			sprintf(buf, "%s%s%s%c.asd", dir, sep, basename, a + i);
 			storeSaveName(gr, i, buf);
 		}
-#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
 		basename[strlen(basename) - 1] = '\0';
-		sprintf(buf, "%s%s%s.msgskip", dir, sep, basename);
+		if (basename[0] == '\0') {
+			sprintf(buf, "%s%smsgskip.dat", dir, sep);
+			char *legacy = malloc(strlen(dir) + strlen(sep) + sizeof(".msgskip"));
+			if (legacy) {
+				sprintf(legacy, "%s%s.msgskip", dir, sep);
+				if (access(buf, F_OK) != 0 && access(legacy, F_OK) == 0) {
+					if (rename(legacy, buf) != 0) {
+						free(buf);
+						buf = legacy;
+						legacy = NULL;
+					}
+				}
+				free(legacy);
+			}
+		} else {
+			sprintf(buf, "%s%s%s.msgskip", dir, sep, basename);
+		}
 		gr->msgskip = buf;
 #else
 		free(buf);

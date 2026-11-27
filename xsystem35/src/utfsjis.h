@@ -61,6 +61,7 @@ extern bool sjis_has_hankaku(const uint8_t *src);
 extern bool sjis_has_zenkaku(const uint8_t *src);
 extern bool cjk_has_hankaku(const uint8_t *src, CharacterEncoding enc);
 extern bool cjk_has_zenkaku(const uint8_t *src, CharacterEncoding enc);
+extern int  cjk_display_width(const char *s, CharacterEncoding enc);
 extern int     utf8_next_codepoint(const char **msg);
 
 extern char *advance_char(const char *s, CharacterEncoding e);

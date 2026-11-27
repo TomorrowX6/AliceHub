@@ -717,6 +717,8 @@ static void get_event(void) {
 		scheduler_event = SCHEDULER_EVENT_INPUT_CHECK_HIT;
 		event_handle_event(&e);
 	}
+	if (sys_is_quit_requested())
+		nact_quit(false);
 	scheduler_on_event(scheduler_event);
 	if (game_id == GAME_RANCE4_V2)
 		rance4v2_hack();

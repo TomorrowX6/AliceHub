@@ -137,11 +137,17 @@ void sys_addMsg(const char *str) {
 EMSCRIPTEN_KEEPALIVE
 void nact_main() {
 	while (!nact->is_quit) {
+		if (sys_is_quit_requested()) {
+			nact_quit(false);
+			break;
+		}
 		nact->current_page = sl_getPage();
 		nact->current_addr = sl_getIndex();
 		if (dbg_trapped()) {
 			gfx_updateScreen();
 			dbg_main(0);
+			if (nact->is_quit)
+				break;
 		}
 
 		exec_command();
@@ -156,6 +162,8 @@ void nact_main() {
 }
 
 static void nact_callback() {
+	if (sys_is_quit_requested())
+		nact_quit(false);
 	mus_update();
 	if (nact->is_va_animation) {
 		va_animation();
@@ -211,6 +219,7 @@ void nact_reset(void) {
 	sl_reinit();
 	v_reset();
 	va_reset();
+	cmdf_reset();
 	cmdz_reset();
 	cmd2F_reset();
 }

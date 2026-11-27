@@ -56,6 +56,7 @@ static int esc_live_locks = 0;
 static char pending_actions[MAX_PENDING_ACTIONS][64];
 static int pending_action_count = 0;
 
+static pthread_mutex_t esc_cache_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct {
 	char **ain_ptr;
 	int varnum;
@@ -108,7 +109,8 @@ static enum s35_mod_game detect_sco_game(const char *sco, const char *catalog_id
 	if (str_contains_icase(sco, "kichiku") || strstr(sco, "鬼畜王"))
 		return S35_GAME_KICHIKUOU;
 	if (str_contains_icase(sco, "kaeru") || str_contains_icase(sco, "panyo") ||
-	    strstr(sco, "ぱにょ") || strstr(sco, "\x82\xcf\x82\xc9\x82\xe5") ||
+	    strstr(sco, "ぱにょ") || strstr(sco, "\xe3\x81\xaf\xe3\x82\x9a\xe3\x81\xab\xe3\x82\x87") ||
+	    strstr(sco, "\x82\xcf\x82\xc9\x82\xe5") ||
 	    strstr(sco, "\xa4\xd1\xa4\xcb\xa4\xe7"))
 		return S35_GAME_KAERUNYO;
 	return S35_GAME_NONE;
@@ -149,7 +151,7 @@ static int find_var_names(const char *sjis_name, const char *utf8_name) {
 	return -1;
 }
 
-static void reset_cache_indices(void) {
+static void reset_cache_indices_locked(void) {
 	memset(&esc_cache, 0, sizeof(esc_cache));
 	esc_cache.hp = esc_cache.hp_max = esc_cache.atk = esc_cache.def = esc_cache.rsp = -1;
 	esc_cache.libido = esc_cache.libido_max = esc_cache.d2 = esc_cache.love = -1;
@@ -169,7 +171,7 @@ static void reset_cache_indices(void) {
 	esc_cache.tm1_lv = esc_cache.tm1_exp = -1;
 }
 
-static void refresh_escalayer_cache(void) {
+static void refresh_escalayer_cache_locked(void) {
 	if (!nact)
 		return;
 	const char *sco0 = (nact->files.cnt[DRIFILE_SCO] > 0) ? nact->files.game_fname[DRIFILE_SCO][0] : NULL;
@@ -177,11 +179,10 @@ static void refresh_escalayer_cache(void) {
 	    esc_cache.varnum == nact->ain.varnum && esc_cache.sco_fname == sco0)
 		return;
 
-	reset_cache_indices();
+	reset_cache_indices_locked();
 	esc_cache.ain_ptr = nact->ain.var;
 	esc_cache.varnum = nact->ain.varnum;
 	esc_cache.sco_fname = sco0;
-	esc_cache.checked = true;
 
 	if (nact->ain.varnum > 0 && nact->ain.var) {
 		/* 1. Escalayer */
@@ -222,7 +223,7 @@ static void refresh_escalayer_cache(void) {
 				if (is_recall)
 					esc_cache.recall_vars[esc_cache.recall_count++] = i;
 			}
-			return;
+			goto done;
 		}
 
 		/* 2. Daiakuji */
@@ -242,7 +243,7 @@ static void refresh_escalayer_cache(void) {
 		esc_cache.da_sit = find_var_names("SIT", "SIT");
 		if (esc_cache.da_gold >= 0 && esc_cache.da_debt >= 0 && esc_cache.da_hp >= 0) {
 			esc_cache.game = S35_GAME_DAIAKUJI;
-			return;
+			goto done;
 		}
 
 		/* 3. Rance 5D */
@@ -263,7 +264,7 @@ static void refresh_escalayer_cache(void) {
 		esc_cache.r5d_love_vars[3] = find_var_names("\x81\x99\x83\x52\x83\x70\x83\x93\x83\x68\x83\x93\x81\x5e\x88\xa4\x82\x6f", "☆コパンドン／愛Ｐ");
 		if (esc_cache.r5d_cur_hp >= 0 && esc_cache.r5d_actions >= 0 && esc_cache.r5d_goldbar >= 0) {
 			esc_cache.game = S35_GAME_RANCE5D;
-			return;
+			goto done;
 		}
 
 		/* 4. Tsumamigui 1 */
@@ -278,12 +279,15 @@ static void refresh_escalayer_cache(void) {
 		esc_cache.tm1_exp = find_var_names("EXP", "EXP");
 		if (esc_cache.tm1_stamina >= 0 && esc_cache.tm1_kanae >= 0 && esc_cache.tm1_chiho >= 0) {
 			esc_cache.game = S35_GAME_TSUMAMIGUI;
-			return;
+			goto done;
 		}
 	}
 
 	/* 5 & 6. These games can use generic scenario archives. */
 	esc_cache.game = detect_sco_game(sco0, SDL_getenv("XSYSTEM35_MODIFIER_GAME"));
+
+done:
+	esc_cache.checked = true;
 }
 
 static const char *game_id_str(enum s35_mod_game g) {
@@ -499,8 +503,8 @@ static void da_unlock_all_items(void) {
 	}
 }
 
-static void apply_single_action_sdl_thread(const char *spec) {
-	refresh_escalayer_cache();
+static void apply_single_action_locked(const char *spec) {
+	refresh_escalayer_cache_locked();
 	if (esc_cache.game == S35_GAME_NONE || !spec || !spec[0])
 		return;
 
@@ -641,10 +645,18 @@ static void apply_single_action_sdl_thread(const char *spec) {
 	}
 }
 
-static void apply_escalayer_locks_sdl_thread(int locks) {
+static void apply_single_action_sdl_thread(const char *spec) {
+	if (!spec || !spec[0])
+		return;
+	pthread_mutex_lock(&esc_cache_lock);
+	apply_single_action_locked(spec);
+	pthread_mutex_unlock(&esc_cache_lock);
+}
+
+static void apply_escalayer_locks_locked(int locks) {
 	if (!locks)
 		return;
-	refresh_escalayer_cache();
+	refresh_escalayer_cache_locked();
 	if (esc_cache.game == S35_GAME_NONE)
 		return;
 
@@ -715,14 +727,29 @@ static void apply_escalayer_locks_sdl_thread(int locks) {
 	}
 }
 
+static void apply_escalayer_locks_sdl_thread(int locks) {
+	if (!locks)
+		return;
+	pthread_mutex_lock(&esc_cache_lock);
+	apply_escalayer_locks_locked(locks);
+	pthread_mutex_unlock(&esc_cache_lock);
+}
+
 static void update_live_state_sdl_thread(int locks) {
 	uint32_t now = SDL_GetTicks();
-	if (published && (uint32_t)(now - last_publish_tick) < 250)
+	pthread_mutex_lock(&live_state_lock);
+	if (published && (uint32_t)(now - last_publish_tick) < 250) {
+		pthread_mutex_unlock(&live_state_lock);
 		return;
+	}
 	published = true;
 	last_publish_tick = now;
-	refresh_escalayer_cache();
+	pthread_mutex_unlock(&live_state_lock);
+
+	pthread_mutex_lock(&esc_cache_lock);
+	refresh_escalayer_cache_locked();
 	if (esc_cache.game == S35_GAME_NONE) {
+		pthread_mutex_unlock(&esc_cache_lock);
 		publish_live_state_json(strdup("{\"game\":\"system3\",\"ready\":true}"));
 		return;
 	}
@@ -780,6 +807,7 @@ static void update_live_state_sdl_thread(int locks) {
 		if (v_ref_indexed(399, 0, &r0) && r0.page > 0 && varPage[r0.page].value)
 			cJSON_AddNumberToObject(root, "ropes", varPage[r0.page].value[r0.index]);
 	}
+	pthread_mutex_unlock(&esc_cache_lock);
 
 	char *out = cJSON_PrintUnformatted(root);
 	cJSON_Delete(root);
@@ -815,14 +843,20 @@ void xsystem35_modifier_apply_action(const char *action)
 
 bool escalayer_modifier_available(void)
 {
-	refresh_escalayer_cache();
-	return esc_cache.game != S35_GAME_NONE;
+	pthread_mutex_lock(&esc_cache_lock);
+	refresh_escalayer_cache_locked();
+	bool avail = esc_cache.game != S35_GAME_NONE;
+	pthread_mutex_unlock(&esc_cache_lock);
+	return avail;
 }
 
 const char *xsystem35_modifier_current_game(void)
 {
-	refresh_escalayer_cache();
-	return game_id_str(esc_cache.game);
+	pthread_mutex_lock(&esc_cache_lock);
+	refresh_escalayer_cache_locked();
+	enum s35_mod_game g = esc_cache.game;
+	pthread_mutex_unlock(&esc_cache_lock);
+	return game_id_str(g);
 }
 
 void escalayer_modifier_tick(void)
@@ -843,8 +877,13 @@ void escalayer_modifier_tick(void)
 
 void escalayer_modifier_reset(bool active)
 {
-	reset_cache_indices();
+	pthread_mutex_lock(&esc_cache_lock);
+	reset_cache_indices_locked();
+	pthread_mutex_unlock(&esc_cache_lock);
+	pthread_mutex_lock(&live_state_lock);
 	published = false;
+	last_publish_tick = 0;
+	pthread_mutex_unlock(&live_state_lock);
 	pthread_mutex_lock(&action_lock);
 	pending_action_count = 0;
 	esc_live_locks = 0;

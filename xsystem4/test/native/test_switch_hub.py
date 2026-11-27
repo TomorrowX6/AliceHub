@@ -246,6 +246,8 @@ static void texthook_keywait(void) {}
 static void cancel_yield(void) {}
 static void msg_hitAnyKey(void) { ++marks; }
 static bool event_rawkey_down(int code) { assert(code == KEY_CTRL); return true; }
+static bool sys_is_quit_requested(void) { return false; }
+static void nact_quit(bool force) { (void)force; }
 static int sys_getInputInfo(void)
 {
     assert(polls < 2);

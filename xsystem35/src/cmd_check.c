@@ -193,6 +193,8 @@ void exec_command(void) {
 	if (c0 == BREAKPOINT) {
 		gfx_updateScreen();
 		c0 = dbg_handle_breakpoint(sl_getPage(), sl_getIndex() - 1);
+		if (nact->is_quit)
+			return;
 	}
 
 	if (c0 == 0x20 || c0 >= 0x80) {

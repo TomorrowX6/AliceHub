@@ -19,8 +19,10 @@
 */
 #include "config.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zlib.h>
 #include "sdl_compat.h"
 
 #include <ft2build.h>
@@ -84,6 +86,122 @@ static struct {
 } this = {
 	.encoding = SHIFT_JIS,
 };
+
+#define GZ_FONT_CACHE_MAX (FONTTYPEMAX * 2)
+static struct {
+	char *path;
+	uint8_t *data;
+	size_t size;
+} gz_font_cache[GZ_FONT_CACHE_MAX];
+
+static bool has_gz_suffix(const char *path) {
+	size_t len = path ? strlen(path) : 0;
+	return len > 3 && strcmp(path + len - 3, ".gz") == 0;
+}
+
+static FT_Face open_gzipped_face(const char *path, int index) {
+	if (!path || !*path || !ft_library)
+		return NULL;
+
+	for (int i = 0; i < GZ_FONT_CACHE_MAX; i++) {
+		if (gz_font_cache[i].path && !strcmp(gz_font_cache[i].path, path) && gz_font_cache[i].data) {
+			FT_Face face = NULL;
+			if (FT_New_Memory_Face(ft_library, gz_font_cache[i].data, (FT_Long)gz_font_cache[i].size, index, &face) == 0) {
+				FT_Select_Charmap(face, FT_ENCODING_UNICODE);
+				return face;
+			}
+			return NULL;
+		}
+	}
+
+	int slot = -1;
+	for (int i = 0; i < GZ_FONT_CACHE_MAX; i++) {
+		if (!gz_font_cache[i].data) {
+			slot = i;
+			break;
+		}
+	}
+	if (slot < 0)
+		return NULL;
+
+	FILE *fp = fopen(path, "rb");
+	if (!fp)
+		return NULL;
+
+	z_stream zs;
+	memset(&zs, 0, sizeof(zs));
+	if (inflateInit2(&zs, 16 + MAX_WBITS) != Z_OK) {
+		fclose(fp);
+		return NULL;
+	}
+
+	const size_t max_out = 64 * 1024 * 1024;
+	size_t cap = 256 * 1024;
+	size_t out_len = 0;
+	uint8_t *out = malloc(cap);
+	if (!out) {
+		inflateEnd(&zs);
+		fclose(fp);
+		return NULL;
+	}
+
+	uint8_t inbuf[32768];
+	int zret = Z_OK;
+	while (zret == Z_OK) {
+		if (zs.avail_in == 0) {
+			size_t n = fread(inbuf, 1, sizeof(inbuf), fp);
+			if (n == 0) {
+				if (ferror(fp))
+					zret = Z_ERRNO;
+				break;
+			}
+			zs.next_in = inbuf;
+			zs.avail_in = (uInt)n;
+		}
+		do {
+			if (out_len == cap) {
+				if (cap >= max_out) {
+					zret = Z_MEM_ERROR;
+					break;
+				}
+				size_t new_cap = cap * 2;
+				if (new_cap > max_out)
+					new_cap = max_out;
+				uint8_t *grown = realloc(out, new_cap);
+				if (!grown) {
+					zret = Z_MEM_ERROR;
+					break;
+				}
+				out = grown;
+				cap = new_cap;
+			}
+			zs.next_out = out + out_len;
+			zs.avail_out = (uInt)(cap - out_len);
+			zret = inflate(&zs, Z_NO_FLUSH);
+			if (zret != Z_OK && zret != Z_STREAM_END)
+				break;
+			out_len = cap - zs.avail_out;
+		} while (zret == Z_OK && zs.avail_out == 0);
+	}
+	inflateEnd(&zs);
+	fclose(fp);
+
+	if (zret != Z_STREAM_END || out_len == 0) {
+		free(out);
+		return NULL;
+	}
+
+	FT_Face face = NULL;
+	if (FT_New_Memory_Face(ft_library, out, (FT_Long)out_len, index, &face) != 0) {
+		free(out);
+		return NULL;
+	}
+	FT_Select_Charmap(face, FT_ENCODING_UNICODE);
+	gz_font_cache[slot].path = strdup(path);
+	gz_font_cache[slot].data = out;
+	gz_font_cache[slot].size = out_len;
+	return face;
+}
 
 #if defined(_WIN32) || defined(__ANDROID__)
 // Create a face from the whole content of `rw`. The memory holding the font
@@ -199,9 +317,11 @@ static FT_Face get_fallback_face(FontType type) {
 
 	const char *env_fallback = getenv("XSYSTEM35_FONT_FALLBACK");
 	if (env_fallback && env_fallback[0]) {
-		FT_Face face = open_face(env_fallback, 0);
+		FT_Face face = has_gz_suffix(env_fallback)
+			? open_gzipped_face(env_fallback, 0)
+			: open_face(env_fallback, 0);
 		if (face) {
-			if (env_fallback[0] == '/')
+			if (env_fallback[0] == '/' && !has_gz_suffix(env_fallback))
 				select_sc_ttc_face(env_fallback, &face);
 			if (FT_Get_Char_Index(face, 0x8fd9) != 0) {
 				this.fallback_face[type][slot] = face;
@@ -211,6 +331,19 @@ static FT_Face get_fallback_face(FontType type) {
 		}
 	}
 
+#ifdef __SWITCH__
+	{
+		FT_Face face = open_gzipped_face("romfs:/fonts/HanaMinA.ttf.gz", 0);
+		if (face) {
+			if (FT_Get_Char_Index(face, 0x8fd9) != 0) {
+				this.fallback_face[type][slot] = face;
+				return face;
+			}
+			FT_Done_Face(face);
+		}
+	}
+#endif
+
 	static const char *const gothic_candidates[] = {
 #ifdef __ANDROID__
 		"/system/fonts/NotoSansCJK-Regular.ttc",
@@ -219,6 +352,8 @@ static FT_Face get_fallback_face(FontType type) {
 		"/system/fonts/DroidSansFallback.ttf",
 		"fonts/HanaMinA.ttf",
 		"/system/fonts/NotoSerifCJK-Regular.ttc",
+#elif defined(__SWITCH__)
+		"romfs:/fonts/HanaMinA.ttf",
 #else
 		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 		"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
@@ -238,6 +373,8 @@ static FT_Face get_fallback_face(FontType type) {
 		"/system/fonts/NotoSansSC-Regular.otf",
 		"/system/fonts/NotoSansSC-VF.ttf",
 		"/system/fonts/DroidSansFallback.ttf",
+#elif defined(__SWITCH__)
+		"romfs:/fonts/HanaMinA.ttf",
 #else
 		"/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
 		"/usr/share/fonts/noto-cjk/NotoSerifCJK-Regular.ttc",
@@ -586,17 +723,25 @@ static void clear_primary_face(FontType type) {
 	this.face_is_fallback[type] = false;
 }
 
-#ifdef ALICEHUB_IOS
 void font_fini(void) {
-	cache_destroy(glyph_cache);
-	glyph_cache = NULL;
-	if (ft_library)
+	if (glyph_cache) {
+		cache_destroy(glyph_cache);
+		glyph_cache = NULL;
+	}
+	if (ft_library) {
 		FT_Done_FreeType(ft_library);
-	ft_library = NULL;
+		ft_library = NULL;
+	}
+	for (int i = 0; i < GZ_FONT_CACHE_MAX; i++) {
+		free(gz_font_cache[i].path);
+		free(gz_font_cache[i].data);
+		gz_font_cache[i].path = NULL;
+		gz_font_cache[i].data = NULL;
+		gz_font_cache[i].size = 0;
+	}
 	memset(&this, 0, sizeof(this));
 	this.encoding = SHIFT_JIS;
 }
-#endif
 
 void font_set_encoding(CharacterEncoding encoding) {
 	if (this.encoding != encoding) {

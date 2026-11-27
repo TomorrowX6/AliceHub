@@ -49,6 +49,7 @@
 #include "sactcrypto.h"
 #include "sactchart.h"
 #include "sactamask.h"
+#include "sactlog.h"
 
 /*
   妻みぐい２キー説明
@@ -2152,6 +2153,8 @@ static void SACT_reset(void) {
 	ssel_reset();
 	sstr_reset();
 	sp_reset();
+	smask_reset();
+	sblog_reset();
 
 	scg_freeall();
 	SDL_DestroySurface(sact.dmap);

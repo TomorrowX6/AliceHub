@@ -28,6 +28,7 @@
 #include "ald_manager.h"
 
 void muscd_set_playlist(const char *);
+void muscd_reset_playlist(void);
 bool muscd_init(void);
 bool muscd_init_bgm(DRIFILETYPE type, int base_no);
 void muscd_exit(void);

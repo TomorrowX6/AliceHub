@@ -99,6 +99,8 @@ bool musbgm_init(DRIFILETYPE type, int base) {
 
 void musbgm_exit(void) {
 	free_music();
+	bgi_clear();
+	current_vol = 100;
 }
 
 void musbgm_reset(void) {

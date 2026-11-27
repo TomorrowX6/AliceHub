@@ -180,12 +180,17 @@ static bool initialize(int subdev) {
 	}
 	tsf_set_max_voices(synth, 256);
 	volume = 100;
+	fade_left = fade_total = 0;
+	fade_stop = false;
+	paused = backgrounded = playing = releasing = false;
 	balance = prv.volval[BGM_VOLVAL_CH] / 100.0f;
 	midi_tsf_audio_ready();
 	return true;
 }
 
 static void stop(void) {
+	if (!mutex)
+		return;
 	SDL_LockMutex(mutex);
 	stop_locked();
 	SDL_UnlockMutex(mutex);
@@ -194,11 +199,18 @@ static void stop(void) {
 static void shutdown(void) {
 	Mix_SetPostMix(NULL, NULL);
 	stop();
-	tsf_close(synth);
-	synth = NULL;
-	SDL_DestroyMutex(mutex);
-	mutex = NULL;
+	if (synth) {
+		tsf_close(synth);
+		synth = NULL;
+	}
+	if (mutex) {
+		SDL_DestroyMutex(mutex);
+		mutex = NULL;
+	}
 	rate = 0;
+	volume = 100;
+	fade_left = fade_total = 0;
+	fade_stop = false;
 }
 
 static bool start(int no, int loop, const uint8_t *data, int length) {
@@ -219,6 +231,8 @@ static bool start(int no, int loop, const uint8_t *data, int length) {
 	song = messages;
 	repeats = loop;
 	track = no;
+	volume = 100;
+	fade_left = fade_total = 0;
 	paused = fade_stop = false;
 	playing = true;
 	rewind_song();

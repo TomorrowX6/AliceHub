@@ -101,6 +101,7 @@ static int load_rc_file(const char *profile_path)
 				break;
 			else {
 				WARNING("%s: %s", profile_path, strerror(errno));
+				fclose(fp);
 				return 1;
 			}
 		}
@@ -128,6 +129,7 @@ static int load_rc_file(const char *profile_path)
 
 		if (!(p = strchr(rc_line, ':'))) {
 			WARNING("Syntax Error in '%s' line %d.", profile_path, line);
+			fclose(fp);
 			return 1;
 		}
 
@@ -137,9 +139,12 @@ static int load_rc_file(const char *profile_path)
 			if (!isspace(*p) && !iscntrl(*p))
 				break;
 
-		if (!insert_profile(rc_line, p))
+		if (!insert_profile(rc_line, p)) {
+			fclose(fp);
 			return 1;
+		}
 	}
+	fclose(fp);
 	return 0;
 }
 

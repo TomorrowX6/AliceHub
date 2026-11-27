@@ -25,20 +25,1288 @@ find_package(Freetype REQUIRED)
 
 set(src "${system3_source_SOURCE_DIR}/src")
 file(GLOB vm_sources "${src}/sys/*.cpp")
-list(REMOVE_ITEM vm_sources "${src}/sys/mako_midi.cpp" "${src}/sys/nact_sys3.cpp")
+list(REMOVE_ITEM vm_sources
+  "${src}/sys/mako_midi.cpp"
+  "${src}/sys/scenario.cpp"
+  "${src}/sys/msgskip.cpp"
+  "${src}/sys/nact_sys1.cpp"
+  "${src}/sys/nact_gakuenking.cpp"
+  "${src}/sys/nact.cpp"
+  "${src}/sys/nact_sys2.cpp"
+  "${src}/sys/nact_sys3.cpp"
+  "${src}/sys/ags.cpp"
+  "${src}/sys/ags_text.cpp"
+  "${src}/sys/nact_input.cpp")
 
+function(alicehub_patch_replace var orig repl desc)
+  set(_before "${${var}}")
+  string(REPLACE "${orig}" "${repl}" _after "${_before}")
+  if(_after STREQUAL _before)
+    message(FATAL_ERROR "Could not apply System 3 patch: ${desc}")
+  endif()
+  set(${var} "${_after}" PARENT_SCOPE)
+endfunction()
+
+# --- Patch fm/makofm.h, fm/makofm.cpp, and copy fm/mako_ymfm.{h,cpp} so #include "makofm.h" picks patched header ---
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fm")
+set(orig_makofm_h "${src}/fm/makofm.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_makofm_h}")
+file(READ "${orig_makofm_h}" patched_makofm_h)
+alicehub_patch_replace(patched_makofm_h
+  [=[	uint16_t GetWord(int offset) const {
+		return data[offset] | data[offset + 1] << 8;
+	}]=]
+  [=[	uint16_t GetWord(size_t offset) const {
+		if (offset >= data.size() || data.size() - offset < 2)
+			return 0;
+		return data[offset] | data[offset + 1] << 8;
+	}]=]
+  "MakoFM::GetWord bounds check")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/fm/makofm.h" CONTENT "${patched_makofm_h}" @ONLY)
+
+foreach(_ymfm_file mako_ymfm.h mako_ymfm.cpp)
+  set(_ymfm_src "${src}/fm/${_ymfm_file}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ymfm_src}")
+  file(READ "${_ymfm_src}" _ymfm_content)
+  file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/fm/${_ymfm_file}" CONTENT "${_ymfm_content}" @ONLY)
+endforeach()
+
+set(orig_makofm_cpp "${src}/fm/makofm.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_makofm_cpp}")
+file(READ "${orig_makofm_cpp}" patched_makofm_cpp)
+alicehub_patch_replace(patched_makofm_cpp
+  [=[MakoFM::MakoFM(std::vector<uint8_t> data) :
+	data(std::move(data)),
+	tone_offset(GetWord(0)),
+	ver(GetWord(2)) {
+	memset(work, 0, sizeof(work));
+	for (int ch = 0; ch < MAKO_MAXCH; ch++) {
+		work[ch].Q = 7;
+		work[ch].default_length = 64;
+		work[ch].octave = 4;
+		work[ch].octave_temp = 4;
+		work[ch].vol = 120;
+		work[ch].panpot = 0x40;
+	}
+}]=]
+  [=[MakoFM::MakoFM(std::vector<uint8_t> data) :
+	data(std::move(data)),
+	tone_offset(GetWord(0)),
+	ver(GetWord(2)) {
+	memset(work, 0, sizeof(work));
+	bool valid_header = this->data.size() >= static_cast<size_t>(4 + MAKO_MAXCH * 4) && !(tone_offset == 0 && ver == 0);
+	for (int ch = 0; ch < MAKO_MAXCH; ch++) {
+		work[ch].Q = 7;
+		work[ch].default_length = 64;
+		work[ch].octave = 4;
+		work[ch].octave_temp = 4;
+		work[ch].vol = 120;
+		work[ch].panpot = 0x40;
+		if (!valid_header) {
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+		}
+	}
+}]=]
+  "MakoFM header validation in ctor")
+
+alicehub_patch_replace(patched_makofm_cpp
+  [=[void MakoFM::InitChannel(int ch) {
+	work[ch].part_offset = GetWord(4 + ch * 4);
+	if (!work[ch].part_offset) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return;
+	}
+	uint16_t block0_offset = GetWord(work[ch].part_offset);
+	if (block0_offset >= 0xff00) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return;
+	}
+	work[ch].jump_ptr = work[ch].part_offset + 2;
+	work[ch].seq_ptr = block0_offset;
+}]=]
+  [=[void MakoFM::InitChannel(int ch) {
+	if (work[ch].part_enable == PART_DISABLED ||
+	    data.size() < static_cast<size_t>(4 + MAKO_MAXCH * 4) ||
+	    (tone_offset == 0 && ver == 0)) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return;
+	}
+	work[ch].part_offset = GetWord(4 + ch * 4);
+	if (!work[ch].part_offset || static_cast<size_t>(work[ch].part_offset) + 2 > data.size()) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return;
+	}
+	uint16_t block0_offset = GetWord(work[ch].part_offset);
+	if (block0_offset >= 0xff00 || block0_offset >= data.size()) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return;
+	}
+	work[ch].jump_ptr = work[ch].part_offset + 2;
+	work[ch].seq_ptr = block0_offset;
+}]=]
+  "MakoFM::InitChannel bounds check")
+
+alicehub_patch_replace(patched_makofm_cpp
+  [=[void MakoFM::ExecSequence(int ch, bool execcmd) {
+	if (execcmd)
+		goto execcmd;
+
+	if (work[ch].part_enable != 1)
+		return;
+	if (work[ch].length_counter > 1) {
+		work[ch].length_counter--;
+		return;
+	}
+	if (!work[ch].rest)
+		goto note1;
+
+ execcmd:
+	cmdFF = 0;
+	work[ch].seq_ptr = ExecCmd(ch, &data[work[ch].seq_ptr]) - data.data();
+	if (cmdFF) {
+		uint16_t block_addr = GetWord(work[ch].jump_ptr);
+		work[ch].jump_ptr += 2;
+		if (block_addr >> 8 == 0xff) {
+			part_looped |= 1 << ch;
+			if (work[ch].part_enable == PART_DISABLED)
+				return;
+			if (work[ch].part_enable == 0) {
+				work[ch].part_enable = 0xff;
+				cmdFF = 0;
+				return;
+			}
+			work[ch].jump_ptr = work[ch].part_offset + (block_addr & 0xff) * 2;
+			block_addr = GetWord(work[ch].jump_ptr);
+			work[ch].jump_ptr += 2;
+		}
+		work[ch].seq_ptr = block_addr;
+		cmdFF = 0;
+		goto execcmd;
+	}]=]
+  [=[void MakoFM::ExecSequence(int ch, bool execcmd) {
+	if (work[ch].part_enable == PART_DISABLED || work[ch].seq_ptr >= data.size()) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return;
+	}
+	int steps = 0;
+	if (execcmd)
+		goto execcmd;
+
+	if (work[ch].part_enable != 1)
+		return;
+	if (work[ch].length_counter > 1) {
+		work[ch].length_counter--;
+		return;
+	}
+	if (!work[ch].rest)
+		goto note1;
+
+ execcmd:
+	if (work[ch].part_enable == PART_DISABLED || work[ch].seq_ptr >= data.size() || ++steps > 1024) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return;
+	}
+	cmdFF = 0;
+	{
+		const uint8_t* next_code = ExecCmd(ch, &data[work[ch].seq_ptr]);
+		if (work[ch].part_enable == PART_DISABLED)
+			return;
+		if (next_code < data.data() || next_code > data.data() + data.size()) {
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			return;
+		}
+		work[ch].seq_ptr = static_cast<uint16_t>(next_code - data.data());
+	}
+	if (cmdFF) {
+		if (static_cast<size_t>(work[ch].jump_ptr) + 2 > data.size()) {
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			return;
+		}
+		uint16_t block_addr = GetWord(work[ch].jump_ptr);
+		work[ch].jump_ptr += 2;
+		if (block_addr >> 8 == 0xff) {
+			part_looped |= 1 << ch;
+			if (work[ch].part_enable == PART_DISABLED)
+				return;
+			if (work[ch].part_enable == 0) {
+				work[ch].part_enable = 0xff;
+				cmdFF = 0;
+				return;
+			}
+			size_t next_jump = static_cast<size_t>(work[ch].part_offset) + (block_addr & 0xff) * 2;
+			if (next_jump + 2 > data.size()) {
+				work[ch].part_enable = PART_DISABLED;
+				part_looped |= 1 << ch;
+				return;
+			}
+			work[ch].jump_ptr = static_cast<uint16_t>(next_jump);
+			block_addr = GetWord(work[ch].jump_ptr);
+			work[ch].jump_ptr += 2;
+		}
+		if (block_addr >= data.size()) {
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			return;
+		}
+		work[ch].seq_ptr = block_addr;
+		cmdFF = 0;
+		goto execcmd;
+	}]=]
+  "MakoFM::ExecSequence bounds & disable guards")
+
+alicehub_patch_replace(patched_makofm_cpp
+  [=[const uint8_t* MakoFM::ExecCmd(int ch, const uint8_t* code) {
+	bool cont = true;
+	while (cont) {
+		if (*code < 0xe0)
+			return ExecNote(ch, code);
+		cont = false;
+		uint8_t a = *code++;
+		switch (a) {
+		case 0xec:	// Part end
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			break;
+
+		case 0xff:	// Jump
+			cmdFF = 0xff;
+			break;
+
+		case 0xeb:	// Pan
+			work[ch].panpot = *code++;
+			ExecPan(ch);
+			cont = true;
+			break;
+
+		case 0xee:  // Octave++
+			work[ch].octave++;
+			cont = true;
+			break;
+
+		case 0xef:  // Octave--
+			work[ch].octave--;
+			cont = true;
+			break;
+
+		case 0xf0:  // Octave
+			work[ch].octave = *code++;
+			cont = true;
+			break;
+
+		case 0xf1:  // Temporary octave
+			work[ch].octave_temp = *code++;
+			cont = true;
+			break;
+
+		case 0xf2:  // Q (1-8)
+			work[ch].flags &= ~ALT_Q_FORMAT;
+			work[ch].Q = *code++ + 1;
+			cont = true;
+			break;
+
+		case 0xea:  // Q (alt)
+			work[ch].flags |= ALT_Q_FORMAT;
+			work[ch].Q = *code++;
+			cont = true;
+			break;
+
+		case 0xe9:  // Tie
+			work[ch].flags |= SKIP_KEYOFF;
+			cont = true;
+			break;
+
+		case 0xe7:  // Frq LFO
+			work[ch].flfo_params.delay   = code[0] | code[1] << 8;
+			work[ch].flfo_params.counter = code[2] | code[3] << 8;
+			work[ch].flfo_params.value   = code[4] | code[5] << 8;
+			work[ch].flfo_params.max     = code[6] | code[7] << 8;
+			code += 8;
+			work[ch].flags |= SW_FRQLFO_ENABLED;
+			work[ch].flags &= ~FRQLFO_DIRECTION;
+			SetFLFO(ch, false);
+			cont = true;
+			break;
+
+		case 0xe6:  // Vol LFO (PSG)
+			work[ch].vlfo_params.delay   = code[0] | code[1] << 8;
+			work[ch].vlfo_params.counter = code[2] | code[3] << 8;
+			work[ch].vlfo_params.value   = code[4] | code[5] << 8;
+			work[ch].vlfo_params.max     = code[6] | code[7] << 8;
+			code += 8;
+			work[ch].fm_delay = work[ch].vlfo_params.delay;
+			work[ch].sw_lfo_val = 0;
+			work[ch].flags |= SW_VOLLFO_ENABLED;
+			work[ch].flags &= ~VOLLFO_DIRECTION;
+			SetVLFO(ch, false);
+			cont = true;
+			break;
+
+		case 0xf3:  // Default length
+			{
+				uint8_t a = *code++;
+				if (a < 0x80)
+					work[ch].default_length = a;
+				else
+					work[ch].default_length = (a - 0x80) << 8 | *code++;
+			}
+			cont = true;
+			break;
+
+		case 0xe5:  // LFO flags
+			work[ch].flags &= ~0x70;
+			work[ch].flags |= (*code++ & 7) << 4;
+			cont = true;
+			break;
+
+		case 0xe8:  // Vol LFO (FM)
+			work[ch].vlfo_params.delay   = code[0] | code[1] << 8;
+			work[ch].vlfo_params.counter = code[2] | code[3] << 8;
+			work[ch].vlfo_params.value   = code[4] | code[5] << 8;
+			work[ch].vlfo_params.max     = code[6] | code[7] << 8;
+			work[ch].fm_delay            = code[8] | code[9] << 8;
+			code += 10;
+			work[ch].flags |= SW_VOLLFO_ENABLED;
+			cont = true;
+			break;
+
+		case 0xf4:  // Tempo
+			tempo = *code++;
+			cont = true;
+			break;
+
+		case 0xf5:  // FM tone set
+			work[ch].tone_num = *code++;
+			SetFMTone(ch, &data[tone_offset + TONE_DATA_SIZE * work[ch].tone_num]);
+			ExecHWLFO(ch);
+			cont = true;
+			break;
+
+		case 0xf7:  // Temp octave--
+			work[ch].octave_temp = work[ch].octave - 1;
+			work[ch].use_temp_octave = 1;
+			cont = true;
+			break;
+
+		case 0xf8:  // Temp octave++
+			work[ch].octave_temp = work[ch].octave + 1;
+			work[ch].use_temp_octave = 1;
+			cont = true;
+			break;
+
+		case 0xf9:  // Absolute vol
+			work[ch].vol = work[ch].tl4_vol = std::min(*code++, static_cast<uint8_t>(127));
+			SetVol(ch);
+			cont = true;
+			break;
+
+		case 0xe1:  // Relative vol
+			work[ch].vol = work[ch].tl4_vol =
+				std::min(static_cast<uint8_t>(work[ch].vol + *code++),
+						 static_cast<uint8_t>(127));
+			SetVol(ch);
+			cont = true;
+			break;
+
+		case 0xe4:  // HW_LFO
+			hwlfo = *code++ | 8;
+			work[ch].pms_param = *code++;
+			work[ch].ams_param = *code++;
+			work[ch].flags |= USE_HW_LFO;
+			ExecHWLFO(ch);
+			cont = true;
+			break;
+
+		case 0xfc:  // Detune
+			work[ch].detune = *(const int8_t*)code++;
+			cont = true;
+			break;
+
+		case 0xfe:
+			code += 3;
+			cont = true;
+			break;
+
+		case 0xf6:
+			code += 2;
+			cont = true;
+			break;
+
+		case 0xfa:
+		case 0xfd:
+			code++;
+			cont = true;
+			break;
+
+		case 0xe0:
+			current_mark = *code++;
+			cont = true;
+			break;
+
+		default:
+			WARNING("MakoFM: unknown command 0x%02x", a);
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			break;
+		}
+	}
+	return code;
+}
+
+const uint8_t* MakoFM::ExecNote(int ch, const uint8_t* code) {
+	uint8_t note = *code++;
+	if (note < 13) {
+		work[ch].note = note;
+		work[ch].length = *code++;
+	} else if (note < 26) {
+		work[ch].note = note - 13;
+		work[ch].length = code[0] | code[1] << 8;
+		code += 2;
+	} else if (0x80 <= note && note < 0x80 + 13) {
+		work[ch].note = note - 0x80;
+		work[ch].length = work[ch].default_length;
+	} else {
+		WARNING("MakoFM: unknown command: 0x%02x", note);
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return code;
+	}
+
+	if (!work[ch].use_temp_octave)
+		work[ch].octave_temp = work[ch].octave;
+	work[ch].use_temp_octave = 0;
+
+	uint16_t freq = 0;
+	if (work[ch].note) {
+		if (IsFMchannel(ch))
+			freq = FMFreqTable[work[ch].note - 1] | work[ch].octave_temp << 11;
+		else
+			freq = PSGFreqTable[work[ch].note - 1] >> work[ch].octave_temp;
+	}]=]
+  [=[const uint8_t* MakoFM::ExecCmd(int ch, const uint8_t* code) {
+	const uint8_t* const end = data.data() + data.size();
+	auto need = [&](size_t n) -> bool {
+		if (code < data.data() || code > end || static_cast<size_t>(end - code) < n) {
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			return false;
+		}
+		return true;
+	};
+
+	bool cont = true;
+	while (cont) {
+		if (!need(1))
+			break;
+		if (*code < 0xe0)
+			return ExecNote(ch, code);
+		cont = false;
+		uint8_t a = *code++;
+		switch (a) {
+		case 0xec:	// Part end
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			break;
+
+		case 0xff:	// Jump
+			cmdFF = 0xff;
+			break;
+
+		case 0xeb:	// Pan
+			if (!need(1)) break;
+			work[ch].panpot = *code++;
+			ExecPan(ch);
+			cont = true;
+			break;
+
+		case 0xee:  // Octave++
+			work[ch].octave++;
+			cont = true;
+			break;
+
+		case 0xef:  // Octave--
+			work[ch].octave--;
+			cont = true;
+			break;
+
+		case 0xf0:  // Octave
+			if (!need(1)) break;
+			work[ch].octave = *code++;
+			cont = true;
+			break;
+
+		case 0xf1:  // Temporary octave
+			if (!need(1)) break;
+			work[ch].octave_temp = *code++;
+			cont = true;
+			break;
+
+		case 0xf2:  // Q (1-8)
+			if (!need(1)) break;
+			work[ch].flags &= ~ALT_Q_FORMAT;
+			work[ch].Q = (*code++ & 7) + 1;
+			cont = true;
+			break;
+
+		case 0xea:  // Q (alt)
+			if (!need(1)) break;
+			work[ch].flags |= ALT_Q_FORMAT;
+			work[ch].Q = *code++;
+			cont = true;
+			break;
+
+		case 0xe9:  // Tie
+			work[ch].flags |= SKIP_KEYOFF;
+			cont = true;
+			break;
+
+		case 0xe7:  // Frq LFO
+			if (!need(8)) break;
+			work[ch].flfo_params.delay   = code[0] | code[1] << 8;
+			work[ch].flfo_params.counter = code[2] | code[3] << 8;
+			work[ch].flfo_params.value   = code[4] | code[5] << 8;
+			work[ch].flfo_params.max     = code[6] | code[7] << 8;
+			code += 8;
+			work[ch].flags |= SW_FRQLFO_ENABLED;
+			work[ch].flags &= ~FRQLFO_DIRECTION;
+			SetFLFO(ch, false);
+			cont = true;
+			break;
+
+		case 0xe6:  // Vol LFO (PSG)
+			if (!need(8)) break;
+			work[ch].vlfo_params.delay   = code[0] | code[1] << 8;
+			work[ch].vlfo_params.counter = code[2] | code[3] << 8;
+			work[ch].vlfo_params.value   = code[4] | code[5] << 8;
+			work[ch].vlfo_params.max     = code[6] | code[7] << 8;
+			code += 8;
+			work[ch].fm_delay = work[ch].vlfo_params.delay;
+			work[ch].sw_lfo_val = 0;
+			work[ch].flags |= SW_VOLLFO_ENABLED;
+			work[ch].flags &= ~VOLLFO_DIRECTION;
+			SetVLFO(ch, false);
+			cont = true;
+			break;
+
+		case 0xf3:  // Default length
+			{
+				if (!need(1)) break;
+				uint8_t len_b = *code++;
+				if (len_b < 0x80)
+					work[ch].default_length = len_b;
+				else {
+					if (!need(1)) break;
+					work[ch].default_length = (len_b - 0x80) << 8 | *code++;
+				}
+			}
+			cont = true;
+			break;
+
+		case 0xe5:  // LFO flags
+			if (!need(1)) break;
+			work[ch].flags &= ~0x70;
+			work[ch].flags |= (*code++ & 7) << 4;
+			cont = true;
+			break;
+
+		case 0xe8:  // Vol LFO (FM)
+			if (!need(10)) break;
+			work[ch].vlfo_params.delay   = code[0] | code[1] << 8;
+			work[ch].vlfo_params.counter = code[2] | code[3] << 8;
+			work[ch].vlfo_params.value   = code[4] | code[5] << 8;
+			work[ch].vlfo_params.max     = code[6] | code[7] << 8;
+			work[ch].fm_delay            = code[8] | code[9] << 8;
+			code += 10;
+			work[ch].flags |= SW_VOLLFO_ENABLED;
+			cont = true;
+			break;
+
+		case 0xf4:  // Tempo
+			if (!need(1)) break;
+			{
+				uint8_t t = *code++;
+				tempo = t ? t : 120;
+			}
+			cont = true;
+			break;
+
+		case 0xf5:  // FM tone set
+			if (!need(1)) break;
+			work[ch].tone_num = *code++;
+			{
+				size_t tone_pos = static_cast<size_t>(tone_offset) + static_cast<size_t>(TONE_DATA_SIZE) * work[ch].tone_num;
+				if (tone_pos + TONE_DATA_SIZE > data.size()) {
+					work[ch].part_enable = PART_DISABLED;
+					part_looped |= 1 << ch;
+					break;
+				}
+				SetFMTone(ch, &data[tone_pos]);
+			}
+			ExecHWLFO(ch);
+			cont = true;
+			break;
+
+		case 0xf7:  // Temp octave--
+			work[ch].octave_temp = work[ch].octave - 1;
+			work[ch].use_temp_octave = 1;
+			cont = true;
+			break;
+
+		case 0xf8:  // Temp octave++
+			work[ch].octave_temp = work[ch].octave + 1;
+			work[ch].use_temp_octave = 1;
+			cont = true;
+			break;
+
+		case 0xf9:  // Absolute vol
+			if (!need(1)) break;
+			work[ch].vol = work[ch].tl4_vol = std::min(*code++, static_cast<uint8_t>(127));
+			SetVol(ch);
+			cont = true;
+			break;
+
+		case 0xe1:  // Relative vol
+			if (!need(1)) break;
+			work[ch].vol = work[ch].tl4_vol =
+				std::min(static_cast<uint8_t>(work[ch].vol + *code++),
+						 static_cast<uint8_t>(127));
+			SetVol(ch);
+			cont = true;
+			break;
+
+		case 0xe4:  // HW_LFO
+			if (!need(3)) break;
+			hwlfo = *code++ | 8;
+			work[ch].pms_param = *code++;
+			work[ch].ams_param = *code++;
+			work[ch].flags |= USE_HW_LFO;
+			ExecHWLFO(ch);
+			cont = true;
+			break;
+
+		case 0xfc:  // Detune
+			if (!need(1)) break;
+			work[ch].detune = *(const int8_t*)code++;
+			cont = true;
+			break;
+
+		case 0xfe:
+			if (!need(3)) break;
+			code += 3;
+			cont = true;
+			break;
+
+		case 0xf6:
+			if (!need(2)) break;
+			code += 2;
+			cont = true;
+			break;
+
+		case 0xfa:
+		case 0xfd:
+			if (!need(1)) break;
+			code++;
+			cont = true;
+			break;
+
+		case 0xe0:
+			if (!need(1)) break;
+			current_mark = *code++;
+			cont = true;
+			break;
+
+		default:
+			WARNING("MakoFM: unknown command 0x%02x", a);
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			break;
+		}
+	}
+	return code;
+}
+
+const uint8_t* MakoFM::ExecNote(int ch, const uint8_t* code) {
+	const uint8_t* const end = data.data() + data.size();
+	if (code < data.data() || code >= end) {
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return code;
+	}
+	uint8_t note = *code++;
+	if (note < 13) {
+		if (code >= end) {
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			return code;
+		}
+		work[ch].note = note;
+		work[ch].length = *code++;
+	} else if (note < 26) {
+		if (static_cast<size_t>(end - code) < 2) {
+			work[ch].part_enable = PART_DISABLED;
+			part_looped |= 1 << ch;
+			return code;
+		}
+		work[ch].note = note - 13;
+		work[ch].length = code[0] | code[1] << 8;
+		code += 2;
+	} else if (0x80 <= note && note < 0x80 + 13) {
+		work[ch].note = note - 0x80;
+		work[ch].length = work[ch].default_length;
+	} else {
+		WARNING("MakoFM: unknown command: 0x%02x", note);
+		work[ch].part_enable = PART_DISABLED;
+		part_looped |= 1 << ch;
+		return code;
+	}
+
+	if (!work[ch].use_temp_octave)
+		work[ch].octave_temp = work[ch].octave;
+	work[ch].use_temp_octave = 0;
+
+	uint16_t freq = 0;
+	if (work[ch].note) {
+		if (IsFMchannel(ch))
+			freq = FMFreqTable[work[ch].note - 1] | ((work[ch].octave_temp & 7) << 11);
+		else
+			freq = PSGFreqTable[work[ch].note - 1] >> (work[ch].octave_temp & 7);
+	}]=]
+  "MakoFM::ExecCmd and ExecNote bounds checks")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/fm/makofm.cpp" CONTENT "${patched_makofm_cpp}" @ONLY)
+
+# --- Patch generic/mako.cpp ---
+set(orig_mako_cpp "${src}/generic/mako.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_mako_cpp}")
+file(READ "${orig_mako_cpp}" patched_mako_cpp)
+alicehub_patch_replace(patched_mako_cpp
+  [=[	midi = std::make_unique<MAKOMidi>(config.midi_device);
+	if (!midi->is_available())
+		use_fm = true;]=]
+  [=[	midi = std::make_unique<MAKOMidi>(config.midi_device);
+	if (g_device && !midi->is_available())
+		use_fm = true;]=]
+  "MAKO::MAKO !g_device guard")
+alicehub_patch_replace(patched_mako_cpp
+  [=[	if (g_device)
+		SDL_CloseAudioDevice(g_device);
+	SDL_QuitSubSystem(SDL_INIT_AUDIO);]=]
+  [=[	if (g_device) {
+		SDL_CloseAudioDevice(g_device);
+		g_device = 0;
+	}
+	SDL_QuitSubSystem(SDL_INIT_AUDIO);]=]
+  "MAKO::~MAKO reset g_device")
+alicehub_patch_replace(patched_mako_cpp
+  [=[	} else if (use_fm) {
+		std::vector<uint8_t> data = amus.load(page);
+		if (data.empty())
+			return;
+		auto f = std::make_unique<MakoYmfm>(SAMPLE_RATE, std::move(data));]=]
+  [=[	} else if (use_fm) {
+		if (!g_device)
+			return;
+		std::vector<uint8_t> data = amus.load(page);
+		if (data.size() < 4 + 9 * 4 ||
+		    (data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 0))
+			return;
+		auto f = std::make_unique<MakoYmfm>(SAMPLE_RATE, std::move(data));]=]
+  "MAKO::play_music non-MAKO data validation")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mako.cpp" CONTENT "${patched_mako_cpp}" @ONLY)
+
+# --- Patch encoding.cpp ---
+set(orig_encoding_cpp "${src}/encoding.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_encoding_cpp}")
+file(READ "${orig_encoding_cpp}" patched_encoding_cpp)
+alicehub_patch_replace(patched_encoding_cpp
+  [=[	int next_codepoint(std::string_view& s) override
+	{
+		int code = (unsigned char)s[0];
+		if (is_2byte(code)) {
+			code = (code << 8) | (unsigned char)s[1];
+			s.remove_prefix(2);
+		} else {
+			s.remove_prefix(1);
+		}
+		return sjis_to_unicode(code);
+	}]=]
+  [=[	int next_codepoint(std::string_view& s) override
+	{
+		if (s.empty())
+			return 0;
+		int code = (unsigned char)s[0];
+		if (is_2byte(code) && s.size() >= 2) {
+			code = (code << 8) | (unsigned char)s[1];
+			s.remove_prefix(2);
+		} else {
+			s.remove_prefix(1);
+		}
+		return sjis_to_unicode(code);
+	}]=]
+  "SjisEncoding::next_codepoint bounds check")
+alicehub_patch_replace(patched_encoding_cpp
+  [=[			int u;
+			if (*src <= 0xdf) {
+				u = (src[0] & 0x1f) << 6 | (src[1] & 0x3f);
+				src += 2;
+			} else if (*src <= 0xef) {
+				u = (src[0] & 0xf) << 12 | (src[1] & 0x3f) << 6 | (src[2] & 0x3f);
+				src += 3;
+			} else {]=]
+  [=[			int u;
+			if (*src <= 0xdf) {
+				if (src + 2 > end || (src[1] & 0xc0) != 0x80) {
+					result += '?';
+					src++;
+					continue;
+				}
+				u = (src[0] & 0x1f) << 6 | (src[1] & 0x3f);
+				src += 2;
+			} else if (*src <= 0xef) {
+				if (src + 3 > end || (src[1] & 0xc0) != 0x80 || (src[2] & 0xc0) != 0x80) {
+					result += '?';
+					src++;
+					continue;
+				}
+				u = (src[0] & 0xf) << 12 | (src[1] & 0x3f) << 6 | (src[2] & 0x3f);
+				src += 3;
+			} else {]=]
+  "SjisEncoding::fromUtf8 truncated UTF-8 guard")
+alicehub_patch_replace(patched_encoding_cpp
+  [=[			if (*src >= 0xa0 && *src <= 0xdf) {
+				c = 0xff60 + *src - 0xa0;
+				src++;
+			} else {
+				c = s2u[*src - 0x80][*(src+1) - 0x40];
+				src += 2;
+			}]=]
+  [=[			if (*src >= 0xa0 && *src <= 0xdf) {
+				c = 0xff60 + *src - 0xa0;
+				src++;
+			} else if (src + 1 < end && src[1] >= 0x40) {
+				c = s2u[*src - 0x80][*(src+1) - 0x40];
+				src += 2;
+			} else {
+				c = '?';
+				src += (src + 1 < end) ? 2 : 1;
+			}]=]
+  "SjisEncoding::toUtf8 trail byte guard")
+alicehub_patch_replace(patched_encoding_cpp
+  [=[		return s2u[(code >> 8) - 0x80][(code & 0xff) - 0x40];]=]
+  [=[		uint8_t hi = static_cast<uint8_t>(code >> 8);
+		uint8_t lo = static_cast<uint8_t>(code & 0xff);
+		if (hi < 0x80 || lo < 0x40)
+			return '?';
+		return s2u[hi - 0x80][lo - 0x40];]=]
+  "SjisEncoding::sjis_to_unicode bounds check")
+alicehub_patch_replace(patched_encoding_cpp
+  [=[	int next_codepoint(std::string_view& s) override
+	{
+		int code;
+		unsigned char c = s[0];
+
+		if (c <= 0x7f) {
+			code = c;
+			s.remove_prefix(1);
+		} else if (c <= 0xbf) {
+			// Invalid UTF-8 sequence
+			code = '?';
+			s.remove_prefix(1);
+		} else if (c <= 0xdf) {
+			code = (s[0] & 0x1f) << 6 | (s[1] & 0x3f);
+			s.remove_prefix(2);
+		} else if (c <= 0xef) {
+			code = (s[0] & 0xf) << 12 | (s[1] & 0x3f) << 6 | (s[2] & 0x3f);
+			s.remove_prefix(3);
+		} else if (c <= 0xf7) {
+			code = (s[0] & 0x7) << 18 | (s[1] & 0x3f) << 12 | (s[2] & 0x3f) << 6 | (s[3] & 0x3f);
+			s.remove_prefix(4);
+		} else {]=]
+  [=[	int next_codepoint(std::string_view& s) override
+	{
+		if (s.empty())
+			return 0;
+		int code;
+		unsigned char c = s[0];
+
+		if (c <= 0x7f) {
+			code = c;
+			s.remove_prefix(1);
+		} else if (c <= 0xbf) {
+			// Invalid UTF-8 sequence
+			code = '?';
+			s.remove_prefix(1);
+		} else if (c <= 0xdf) {
+			if (s.size() < 2 || (static_cast<unsigned char>(s[1]) & 0xc0) != 0x80) {
+				code = 0xfffd;
+				s.remove_prefix(1);
+			} else {
+				code = (s[0] & 0x1f) << 6 | (s[1] & 0x3f);
+				s.remove_prefix(2);
+			}
+		} else if (c <= 0xef) {
+			if (s.size() < 3 ||
+			    (static_cast<unsigned char>(s[1]) & 0xc0) != 0x80 ||
+			    (static_cast<unsigned char>(s[2]) & 0xc0) != 0x80) {
+				code = 0xfffd;
+				s.remove_prefix(1);
+			} else {
+				code = (s[0] & 0xf) << 12 | (s[1] & 0x3f) << 6 | (s[2] & 0x3f);
+				s.remove_prefix(3);
+			}
+		} else if (c <= 0xf7) {
+			if (s.size() < 4 ||
+			    (static_cast<unsigned char>(s[1]) & 0xc0) != 0x80 ||
+			    (static_cast<unsigned char>(s[2]) & 0xc0) != 0x80 ||
+			    (static_cast<unsigned char>(s[3]) & 0xc0) != 0x80) {
+				code = 0xfffd;
+				s.remove_prefix(1);
+			} else {
+				code = (s[0] & 0x7) << 18 | (s[1] & 0x3f) << 12 | (s[2] & 0x3f) << 6 | (s[3] & 0x3f);
+				s.remove_prefix(4);
+			}
+		} else {]=]
+  "Utf8Encoding::next_codepoint bounds check")
+alicehub_patch_replace(patched_encoding_cpp
+  [=[int Encoding::mbslen(std::string_view s)
+{
+	int len = 0;
+	while (!s.empty()) {
+		int n = mblen((unsigned char)s[0]);
+		s.remove_prefix(n);
+		len++;
+	}
+	return len;
+}]=]
+  [=[int Encoding::mbslen(std::string_view s)
+{
+	int len = 0;
+	while (!s.empty()) {
+		size_t n = static_cast<size_t>(mblen((unsigned char)s[0]));
+		s.remove_prefix(n < s.size() ? n : s.size());
+		len++;
+	}
+	return len;
+}]=]
+  "Encoding::mbslen bounds check")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/encoding.cpp" CONTENT "${patched_encoding_cpp}" @ONLY)
+
+# --- Patch sys/scenario.h and sys/scenario.cpp (bounds-checked dynamic string reads) ---
+set(orig_scenario_h "${src}/sys/scenario.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_scenario_h}")
+file(READ "${orig_scenario_h}" patched_scenario_h)
+alicehub_patch_replace(patched_scenario_h
+  [=[#include <utility>
+#include <vector>
+#include <stdint.h>
+#include "dri.h"]=]
+  [=[#include <string>
+#include <utility>
+#include <vector>
+#include <stdint.h>
+#include "dri.h"]=]
+  "Scenario::scenario.h include <string>")
+alicehub_patch_replace(patched_scenario_h
+  [=[	uint8_t getd() { return data_[addr_++]; }
+	uint16_t getw() {
+		uint16_t w = data_[addr_++];
+		w |= data_[addr_++] << 8;
+		return w;
+	}
+	void ungetd() { addr_--; }
+	void skip_syseng_string(Encoding *enc, uint8_t terminator);
+	void get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator);]=]
+  [=[	bool eof() const { return !data_ || addr_ < 0 || static_cast<size_t>(addr_) >= data_size_; }
+	uint8_t getd() { return data_[addr_++]; }
+	uint8_t getd_checked();
+	uint16_t getw() {
+		uint16_t w = data_[addr_++];
+		w |= data_[addr_++] << 8;
+		return w;
+	}
+	void ungetd() { addr_--; }
+	void skip_syseng_string(Encoding *enc, uint8_t terminator);
+	void get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator);
+	std::string get_syseng_string_dynamic(Encoding *enc, uint8_t terminator);]=]
+  "Scenario bounded string API decls")
+alicehub_patch_replace(patched_scenario_h
+  [=[	const uint8_t* data_;
+	size_t data_size_;
+	int page_;
+	int addr_;
+	int cmd_addr_;]=]
+  [=[	const uint8_t* data_ = nullptr;
+	size_t data_size_ = 0;
+	int page_ = 0;
+	int addr_ = 0;
+	int cmd_addr_ = 0;]=]
+  "Scenario member default initializers")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/scenario.h" CONTENT "${patched_scenario_h}" @ONLY)
+
+set(orig_scenario_cpp "${src}/sys/scenario.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_scenario_cpp}")
+file(READ "${orig_scenario_cpp}" patched_scenario_cpp)
+alicehub_patch_replace(patched_scenario_cpp
+  [=[void Scenario::skip_syseng_string(Encoding *enc, uint8_t terminator)
+{
+	for (uint8_t c = getd(); c != terminator; c = getd()) {
+		if (c == '\\')
+			c = getd();
+		skip(enc->mblen(c) - 1);
+	}
+}
+
+void Scenario::get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator)
+{
+	int i = 0;
+	for (uint8_t c = getd(); c != terminator; c = getd()) {
+		if (c == '\\')
+			c = getd();
+		int len = enc->mblen(c);
+		if (i + len >= size)
+			sys_error("String buffer overrun at %d:%04x", page_, cmd_addr_);
+		buf[i++] = c;
+		for (int j = 1; j < len; ++j)
+			buf[i++] = getd();
+	}
+	buf[i] = '\0';
+}]=]
+  [=[uint8_t Scenario::getd_checked()
+{
+	if (!data_ || addr_ < 0 || static_cast<size_t>(addr_) >= data_size_)
+		sys_error("Scenario error: unexpected end of page at %d:%04x", page_, cmd_addr_);
+	return data_[addr_++];
+}
+
+void Scenario::skip_syseng_string(Encoding *enc, uint8_t terminator)
+{
+	for (;;) {
+		uint8_t c = getd_checked();
+		if (c == terminator)
+			break;
+		if (c == '\\')
+			c = getd_checked();
+		int len = enc->mblen(c);
+		for (int j = 1; j < len; ++j)
+			(void)getd_checked();
+	}
+}
+
+void Scenario::get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator)
+{
+	int i = 0;
+	for (;;) {
+		uint8_t c = getd_checked();
+		if (c == terminator)
+			break;
+		if (c == '\\')
+			c = getd_checked();
+		int len = enc->mblen(c);
+		if (i + len >= size)
+			sys_error("String buffer overrun at %d:%04x", page_, cmd_addr_);
+		buf[i++] = c;
+		for (int j = 1; j < len; ++j)
+			buf[i++] = getd_checked();
+	}
+	buf[i] = '\0';
+}
+
+std::string Scenario::get_syseng_string_dynamic(Encoding *enc, uint8_t terminator)
+{
+	std::string out;
+	for (;;) {
+		uint8_t c = getd_checked();
+		if (c == terminator)
+			break;
+		if (c == '\\')
+			c = getd_checked();
+		int len = enc->mblen(c);
+		out.push_back(static_cast<char>(c));
+		for (int j = 1; j < len; ++j)
+			out.push_back(static_cast<char>(getd_checked()));
+	}
+	return out;
+}]=]
+  "Scenario::getd_checked and bounded syseng string helpers")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/scenario.cpp" CONTENT "${patched_scenario_cpp}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/scenario.cpp")
+
+# Copy nact.h and remaining sys/*.cpp that include nact.h so every translation unit sees patched scenario.h
+foreach(_sys_copy nact.h msgskip.cpp nact_sys1.cpp nact_gakuenking.cpp)
+  set(_sys_copy_src "${src}/sys/${_sys_copy}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_sys_copy_src}")
+  configure_file("${_sys_copy_src}" "${CMAKE_CURRENT_BINARY_DIR}/${_sys_copy}" COPYONLY)
+endforeach()
+list(APPEND vm_sources
+  "${CMAKE_CURRENT_BINARY_DIR}/msgskip.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/nact_sys1.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/nact_gakuenking.cpp")
+
+# --- Patch sys/nact.cpp ---
+set(orig_nact_cpp "${src}/sys/nact.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_cpp}")
+file(READ "${orig_nact_cpp}" patched_nact_cpp)
+alicehub_patch_replace(patched_nact_cpp
+  [=[extern SDL_Window* g_window;]=]
+  [=[extern SDL_Window* g_window;
+void system3_reset_input_state();]=]
+  "NACT input state reset decl")
+alicehub_patch_replace(patched_nact_cpp
+  [=[	platform_initialize();]=]
+  [=[	system3_reset_input_state();
+	platform_initialize();]=]
+  "NACT::NACT reset input state")
+alicehub_patch_replace(patched_nact_cpp
+  [=[NACT::~NACT()
+{
+	delete ags;
+	delete mako;
+	delete msgskip;
+
+	platform_finalize();
+}]=]
+  [=[NACT::~NACT()
+{
+	if (sdl_gamecontroller) {
+		SDL_GameControllerClose(sdl_gamecontroller);
+		sdl_gamecontroller = NULL;
+	}
+	delete ags;
+	delete mako;
+	delete msgskip;
+
+	platform_finalize();
+}]=]
+  "NACT::~NACT close gamecontroller")
+alicehub_patch_replace(patched_nact_cpp
+  [=[	char buf[200];
+	if (first_byte == '\'' || first_byte == '"') {  // SysEng
+		sco.get_syseng_string(buf, sizeof(buf), encoding.get(), first_byte);
+	} else {
+		int i = 0;
+		uint8_t c = first_byte;
+		while (is_message(c)) {
+			int len = encoding->mblen(c);
+			buf[i++] = c;
+			for (int j = 1; j < len; ++j)
+				buf[i++] = sco.getd();
+			c = sco.getd();
+		}
+		sco.ungetd();
+		buf[i] = '\0';
+	}]=]
+  [=[	std::string buf;
+	if (first_byte == '\'' || first_byte == '"') {  // SysEng
+		buf = sco.get_syseng_string_dynamic(encoding.get(), first_byte);
+	} else {
+		uint8_t c = first_byte;
+		while (is_message(c)) {
+			int len = encoding->mblen(c);
+			buf.push_back(static_cast<char>(c));
+			for (int j = 1; j < len; ++j)
+				buf.push_back(static_cast<char>(sco.getd_checked()));
+			if (sco.eof())
+				break;
+			c = sco.getd_checked();
+			if (!is_message(c)) {
+				sco.ungetd();
+				break;
+			}
+		}
+	}]=]
+  "NACT::message std::string dynamic buffer")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/nact.cpp" CONTENT "${patched_nact_cpp}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact.cpp")
+
+# --- Patch sys/nact_sys2.cpp ---
+set(orig_nact_sys2 "${src}/sys/nact_sys2.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_sys2}")
+file(READ "${orig_nact_sys2}" patched_nact_sys2)
+alicehub_patch_replace(patched_nact_sys2
+  [=[void NACT_Sys2::cmd_m()
+{
+	char string[33];
+
+	int d = sco.getd();
+	if (d == '\'' || d == '"') {  // SysEng
+		sco.get_syseng_string(string, sizeof(string), encoding.get(), d);
+	} else {
+		int p = 0;
+		while(d != ':') {
+			string[p++] = d;
+			d = sco.getd();
+		}
+		string[p] = '\0';
+	}]=]
+  [=[void NACT_Sys2::cmd_m()
+{
+	std::string string;
+
+	int d = sco.getd_checked();
+	if (d == '\'' || d == '"') {  // SysEng
+		string = sco.get_syseng_string_dynamic(encoding.get(), static_cast<uint8_t>(d));
+	} else {
+		while (d != ':') {
+			string.push_back(static_cast<char>(d));
+			d = sco.getd_checked();
+		}
+	}]=]
+  "NACT_Sys2::cmd_m std::string dynamic buffer")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/nact_sys2.cpp" CONTENT "${patched_nact_sys2}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_sys2.cpp")
+
+# --- Patch sys/nact_sys3.cpp ---
 set(orig_nact_sys3 "${src}/sys/nact_sys3.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_sys3}")
-file(READ "${orig_nact_sys3}" nact_sys3_source)
-set(sys3_cmd_m_orig [=[	} else if(tvar_index == 31) {
+file(READ "${orig_nact_sys3}" patched_nact_sys3)
+alicehub_patch_replace(patched_nact_sys3
+  [=[void NACT_Sys3::cmd_m()
+{
+	char string[22];
+
+	int d = sco.getd();
+	if (d == '\'' || d == '"') {  // SysEng
+		sco.get_syseng_string(string, sizeof(string), encoding.get(), d);
+	} else {
+		int p = 0;
+		while(d != ':') {
+			string[p++] = d;
+			d = sco.getd();
+		}
+		string[p] = '\0';
+	}]=]
+  [=[void NACT_Sys3::cmd_m()
+{
+	std::string string;
+
+	int d = sco.getd_checked();
+	if (d == '\'' || d == '"') {  // SysEng
+		string = sco.get_syseng_string_dynamic(encoding.get(), static_cast<uint8_t>(d));
+	} else {
+		while (d != ':') {
+			string.push_back(static_cast<char>(d));
+			d = sco.getd_checked();
+		}
+	}]=]
+  "NACT_Sys3::cmd_m std::string dynamic buffer")
+alicehub_patch_replace(patched_nact_sys3
+  [=[	} else if(tvar_index == 31) {
 		sco.open(string);
 	} else if(tvar_index == 32) {
 		ags->set_cg_file(string);
 	} else if(tvar_index == 33) {
 		mako->amus.open(string);
 		strcpy(string + strlen(string) - 3, "MDA");
-		mako->mda.open(string);]=])
-set(sys3_cmd_m_repl [=[	} else if(tvar_index == 31) {
+		mako->mda.open(string);]=]
+  [=[	} else if(tvar_index == 31) {
 		sco.open(encoding->toUtf8(string).c_str());
 	} else if(tvar_index == 32) {
 		ags->set_cg_file(encoding->toUtf8(string).c_str());
@@ -48,23 +1316,214 @@ set(sys3_cmd_m_repl [=[	} else if(tvar_index == 31) {
 		if (utf8_name.size() >= 3) {
 			utf8_name.replace(utf8_name.size() - 3, 3, "MDA");
 		}
-		mako->mda.open(utf8_name.c_str());]=])
-string(REPLACE "${sys3_cmd_m_orig}" "${sys3_cmd_m_repl}" patched_nact_sys3 "${nact_sys3_source}")
-if(patched_nact_sys3 STREQUAL nact_sys3_source)
-  message(FATAL_ERROR "Could not apply System 3 UTF-8 cmd_m filename patch")
-endif()
-set(sys3_y254_orig [=[		case 254:
+		mako->mda.open(utf8_name.c_str());]=]
+  "System 3 UTF-8 cmd_m filename patch")
+alicehub_patch_replace(patched_nact_sys3
+  [=[		case 232:
+			if(ags->screen_height != (param ? 480 : 400)) {
+				// TODO: fix
+				// SendMessage(g_hwnd, WM_USER + 2, param ? 480 : 400, 0);
+				ags->screen_height = param ? 480 : 400;
+			}
+			break;]=]
+  [=[		case 232:
+			if(ags->screen_height != (param ? 480 : 400)) {
+				ags->screen_height = param ? 480 : 400;
+				ags->window_height = ags->screen_height;
+				ags->invalidate_screen(0, 0, ags->screen_width, ags->screen_height);
+			}
+			break;]=]
+  "System 3 Y 232 480p screen height resize")
+alicehub_patch_replace(patched_nact_sys3
+  [=[		case 254:
 			RND = (game_id.is(GameId::YAKATA3_CD) || game_id.is(GameId::YAKATA3_FD) || game_id.is(GameId::NINGYO)) ? 1 : 0;
-			break;]=])
-set(sys3_y254_repl [=[		case 254:
+			break;]=]
+  [=[		case 254:
 			RND = (game_id.is(GameId::YAKATA3_CD) || game_id.is(GameId::YAKATA3_FD) || game_id.is(GameId::NINGYO) || ((game_id.is(GameId::PROG_CD) || game_id.is(GameId::MUGEN)) && mako->is_cd_available())) ? 1 : 0;
-			break;]=])
-string(REPLACE "${sys3_y254_orig}" "${sys3_y254_repl}" patched_nact_sys3_2 "${patched_nact_sys3}")
-if(patched_nact_sys3_2 STREQUAL patched_nact_sys3)
-  message(FATAL_ERROR "Could not apply System 3 Prostudent G CD-DA Y254 patch")
-endif()
-file(CONFIGURE OUTPUT nact_sys3.cpp CONTENT "${patched_nact_sys3_2}" @ONLY)
+			break;]=]
+  "System 3 Prostudent G CD-DA Y254 patch")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/nact_sys3.cpp" CONTENT "${patched_nact_sys3}" @ONLY)
 list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_sys3.cpp")
+
+# --- Patch sys/ags_text.cpp ---
+set(orig_ags_text "${src}/sys/ags_text.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_ags_text}")
+file(READ "${orig_ags_text}" patched_ags_text)
+alicehub_patch_replace(patched_ags_text
+  [=[	TTF_Font* font = NULL;
+	switch (ctx.font_size) {
+	case 16: font = hFont16; break;
+	case 24: font = hFont24; break;
+	case 32: font = hFont32; break;
+	case 48: font = hFont48; break;
+	case 64: font = hFont64; break;
+	}]=]
+  [=[	TTF_Font* font = hFont16;
+	switch (ctx.font_size) {
+	case 16: font = hFont16; break;
+	case 24: font = hFont24; break;
+	case 32: font = hFont32; break;
+	case 48: font = hFont48; break;
+	case 64: font = hFont64; break;
+	default: font = hFont16; break;
+	}]=]
+  "AGS::draw_text default font fallback")
+alicehub_patch_replace(patched_ags_text
+  [=[	SDL_Surface* fs = TTF_RenderGlyph_Solid(font, code, white);
+
+	// パターン出力
+	for (int y = std::max(0, -dest_y); y < fs->h && dest_y + y < 480; y++) {
+		uint8_t* pattern = (uint8_t*)fs->pixels + fs->pitch * y;
+		for(int x = 0; x < fs->w && dest_x + x < 640; x++) {]=]
+  [=[	SDL_Surface* fs = TTF_RenderGlyph_Solid(font, code, white);
+	if (!fs)
+		return;
+
+	// パターン出力
+	for (int y = std::max(0, -dest_y); y < fs->h && dest_y + y < 480; y++) {
+		uint8_t* pattern = (uint8_t*)fs->pixels + fs->pitch * y;
+		for(int x = std::max(0, -dest_x); x < fs->w && dest_x + x < 640; x++) {]=]
+  "AGS::draw_char NULL glyph surface guard")
+alicehub_patch_replace(patched_ags_text
+  [=[	SDL_Surface* fs = TTF_RenderGlyph_Shaded(font, code, white, black);
+
+	// パターン出力
+	for (int y = std::max(0, -dest_y); y < fs->h && dest_y + y < 480; y++) {
+		uint8_t* pattern = (uint8_t*)fs->pixels + fs->pitch * y;
+		uint8_t* dp = &vram[dest][dest_y + y][dest_x];
+		for(int x = 0; x < fs->w && dest_x + x < 640; x++, dp++) {]=]
+  [=[	SDL_Surface* fs = TTF_RenderGlyph_Shaded(font, code, white, black);
+	if (!fs)
+		return;
+
+	// パターン出力
+	for (int y = std::max(0, -dest_y); y < fs->h && dest_y + y < 480; y++) {
+		uint8_t* pattern = (uint8_t*)fs->pixels + fs->pitch * y;
+		int x0 = std::max(0, -dest_x);
+		uint8_t* dp = &vram[dest][dest_y + y][dest_x + x0];
+		for(int x = x0; x < fs->w && dest_x + x < 640; x++, dp++) {]=]
+  "AGS::draw_char_antialias NULL glyph surface guard")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ags_text.cpp" CONTENT "${patched_ags_text}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/ags_text.cpp")
+
+# --- Patch sys/ags.cpp (common fixes; Switch overlay patch layers on top below) ---
+set(orig_ags_cpp "${src}/sys/ags.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_ags_cpp}")
+file(READ "${orig_ags_cpp}" patched_ags_cpp)
+alicehub_patch_replace(patched_ags_cpp
+  [=[	if (config.no_antialias)
+		ags_setAntialiasedStringMode(0);]=]
+  [=[	ags_setAntialiasedStringMode(!config.no_antialias);]=]
+  "AGS::AGS always reset antialias static")
+alicehub_patch_replace(patched_ags_cpp
+  [=[	// フォント開放
+	if (rw_font) {
+		TTF_CloseFont(hFont16);
+		TTF_CloseFont(hFont24);
+		TTF_CloseFont(hFont32);
+		TTF_CloseFont(hFont48);
+		TTF_CloseFont(hFont64);
+		SDL_RWclose(rw_font);
+	}
+
+	SDL_FreePalette(program_palette);
+
+	for(int i = 0; i < 3; i++) {
+		SDL_FreeSurface(hBmpScreen[i]);
+	}
+
+	SDL_DestroyTexture(sdlTexture);]=]
+  [=[	// フォント開放
+	if (rw_font) {
+		TTF_CloseFont(hFont16);
+		TTF_CloseFont(hFont24);
+		TTF_CloseFont(hFont32);
+		TTF_CloseFont(hFont48);
+		TTF_CloseFont(hFont64);
+		SDL_RWclose(rw_font);
+	}
+	TTF_Quit();
+
+	SDL_FreePalette(program_palette);
+
+	for(int i = 0; i < 3; i++) {
+		SDL_FreeSurface(hBmpScreen[i]);
+	}
+
+	if (scanline_texture) {
+		SDL_DestroyTexture(scanline_texture);
+		scanline_texture = NULL;
+	}
+	if (sdlTexture) {
+		SDL_DestroyTexture(sdlTexture);
+		sdlTexture = NULL;
+	}]=]
+  "AGS::~AGS destroy scanline_texture and TTF_Quit")
+alicehub_patch_replace(patched_ags_cpp
+  [=[void AGS::update_screen()
+{
+	if (!SDL_RectEmpty(&dirty_rect)) {
+		SDL_Surface *sf;
+		SDL_LockTextureToSurface(sdlTexture, &dirty_rect, &sf);
+		SDL_BlitSurface(hBmpScreen[0], &dirty_rect, sf, NULL);
+		SDL_UnlockTexture(sdlTexture);
+		dirty_rect = {};
+	}]=]
+  [=[void AGS::update_screen()
+{
+	int tex_w = 0, tex_h = 0;
+	if (!sdlTexture || SDL_QueryTexture(sdlTexture, NULL, NULL, &tex_w, &tex_h) != 0 ||
+	    tex_w != screen_width || tex_h != screen_height) {
+		if (sdlTexture)
+			SDL_DestroyTexture(sdlTexture);
+		SDL_SetWindowSize(g_window, window_width, window_height);
+		SDL_RenderSetLogicalSize(g_renderer, window_width, window_height);
+		sdlTexture = SDL_CreateTexture(g_renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, screen_width, screen_height);
+		if (scanline_texture) {
+			SDL_DestroyTexture(scanline_texture);
+			scanline_texture = create_scanline_texture(g_renderer, screen_width, screen_height);
+		}
+		dirty_rect = {0, 0, screen_width, screen_height};
+	}
+
+	if (!SDL_RectEmpty(&dirty_rect)) {
+		if (!sdlTexture)
+			return;
+		SDL_Surface *sf = NULL;
+		if (SDL_LockTextureToSurface(sdlTexture, &dirty_rect, &sf) != 0 || !sf)
+			return;
+		SDL_BlitSurface(hBmpScreen[0], &dirty_rect, sf, NULL);
+		SDL_UnlockTexture(sdlTexture);
+		dirty_rect = {};
+	}]=]
+  "AGS::update_screen texture resize and lock check")
+
+# --- Patch sys/nact_input.cpp (common state reset; Switch patches layer on top below) ---
+set(orig_nact_input "${src}/sys/nact_input.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_input}")
+file(READ "${orig_nact_input}" patched_nact_input)
+alicehub_patch_replace(patched_nact_input
+  [=[static int mousex, mousey, wheel;
+static TouchState touch_state = TOUCH_NONE;]=]
+  [=[static int mousex, mousey, wheel;
+static TouchState touch_state = TOUCH_NONE;
+
+void system3_reset_input_state()
+{
+	mousex = 0;
+	mousey = 0;
+	wheel = 0;
+	touch_state = TOUCH_NONE;
+}]=]
+  "nact_input system3_reset_input_state")
+
+if(NOT NINTENDO_SWITCH)
+  file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ags.cpp" CONTENT "${patched_ags_cpp}" @ONLY)
+  list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/ags.cpp")
+  file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/nact_input.cpp" CONTENT "${patched_nact_input}" @ONLY)
+  list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_input.cpp")
+endif()
+
 if(ANDROID)
   add_library(system3 SHARED)
   target_link_options(system3 PRIVATE "LINKER:-z,max-page-size=16384" "LINKER:--exclude-libs,ALL")
@@ -97,22 +1556,77 @@ elseif(ALICEHUB_IOS)
   enable_language(OBJC OBJCXX)
   add_library(system3 STATIC)
   target_compile_definitions(system3 PRIVATE SDL_MAIN_HANDLED ALICEHUB_IOS)
-  set_source_files_properties("${src}/sdlmain.cpp" PROPERTIES
+  set(orig_sdlmain "${src}/sdlmain.cpp")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_sdlmain}")
+  file(READ "${orig_sdlmain}" ios_main)
+  alicehub_patch_replace(ios_main
+    [=[int main(int argc, char *argv[])
+{]=]
+    [=[int main(int argc, char *argv[])
+{
+	system3_reset_input_state();
+	try {]=]
+    "System 3 iOS try wrapper begin")
+  alicehub_patch_replace(ios_main
+    [=[	SDL_DestroyRenderer(g_renderer);
+	SDL_DestroyWindow(g_window);
+	SDL_Quit();
+
+#ifdef __SWITCH__
+	romfsExit();
+#endif
+
+    return exit_code;
+}]=]
+    [=[	if (g_renderer) {
+		SDL_DestroyRenderer(g_renderer);
+		g_renderer = nullptr;
+	}
+	if (g_window) {
+		SDL_DestroyWindow(g_window);
+		g_window = nullptr;
+	}
+	SDL_Quit();
+	system3_reset_input_state();
+	return exit_code;
+	} catch (const System3IosError&) {
+		g_nact.reset();
+		if (g_renderer) {
+			SDL_DestroyRenderer(g_renderer);
+			g_renderer = nullptr;
+		}
+		if (g_window) {
+			SDL_DestroyWindow(g_window);
+			g_window = nullptr;
+		}
+		SDL_Quit();
+		system3_reset_input_state();
+		return 1;
+	}
+}]=]
+    "System 3 iOS catch wrapper & teardown")
+  alicehub_patch_replace(ios_main
+    [=[	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "system3", buf, g_window);
+	exit(1);]=]
+    [=[	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "system3", buf, g_window);
+	throw System3IosError{};]=]
+    "System 3 iOS sys_error exception throw")
+  set(sdlmain_source "${CMAKE_CURRENT_BINARY_DIR}/sdlmain.cpp")
+  file(CONFIGURE OUTPUT "${sdlmain_source}" CONTENT "namespace { struct System3IosError {}; }\nvoid system3_reset_input_state();\n${ios_main}" @ONLY)
+  set_source_files_properties("${sdlmain_source}" PROPERTIES
     COMPILE_DEFINITIONS "main=system3_entry;SDL_CreateWindow=alicehub_system3_create_window;SDL_CreateRenderer=alicehub_system3_create_renderer")
   target_sources(system3 PRIVATE nact.ios.mm window.ios.m)
   set_target_properties(system3 PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED ON)
   set_source_files_properties(nact.ios.mm window.ios.m PROPERTIES COMPILE_OPTIONS -fobjc-arc)
 elseif(NINTENDO_SWITCH)
   add_executable(system3 "${src}/generic/nact_generic.cpp")
-  set(nact_input "${src}/sys/nact_input.cpp")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${nact_input}")
-  file(READ "${nact_input}" nact_input_source)
+  set(switch_input "${patched_nact_input}")
   set(quit_dialog "case SDL_QUIT:\n\t\tshow_quit_dialog();")
-  string(FIND "${nact_input_source}" "${quit_dialog}" quit_offset)
+  string(FIND "${switch_input}" "${quit_dialog}" quit_offset)
   if(quit_offset EQUAL -1)
     message(FATAL_ERROR "Could not apply System 3 Switch quit patch")
   endif()
-  string(REPLACE "${quit_dialog}" "case SDL_QUIT:\n\t\tquit(0);" switch_input "${nact_input_source}")
+  string(REPLACE "${quit_dialog}" "case SDL_QUIT:\n\t\tquit(0);" switch_input "${switch_input}")
   foreach(button A B)
     set(call "SDL_GameControllerGetButton(sdl_gamecontroller, SDL_CONTROLLER_BUTTON_${button})")
     string(FIND "${switch_input}" "${call}" button_offset)
@@ -149,11 +1663,8 @@ elseif(NINTENDO_SWITCH)
     "${input_pump}\tif (switch_menu_system3_poll(ags, msgskip)) {\n\t\ttouch_state = TOUCH_NONE;\n\t\twheel = 0;\n\t}\n"
     switch_input "${switch_input}")
   file(CONFIGURE OUTPUT nact_input.cpp CONTENT "#include \"controller.h\"\n#include \"hub/controller_runtime.h\"\nclass AGS;\nclass MsgSkip;\nbool switch_menu_system3_poll(AGS *, MsgSkip *);\n${switch_input}" @ONLY)
-  list(REMOVE_ITEM vm_sources "${nact_input}")
   list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_input.cpp")
-  set(ags "${src}/sys/ags.cpp")
-  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ags}")
-  file(READ "${ags}" switch_ags)
+  set(switch_ags "${patched_ags_cpp}")
   set(present "\tSDL_RenderPresent(g_renderer);")
   string(FIND "${switch_ags}" "${present}" offset)
   if(offset EQUAL -1)
@@ -161,7 +1672,6 @@ elseif(NINTENDO_SWITCH)
   endif()
   string(REPLACE "${present}" "\tswitch_controls_draw_sdl(g_renderer);\n${present}" switch_ags "${switch_ags}")
   file(CONFIGURE OUTPUT ags.cpp CONTENT "#include \"hub/controller_runtime.h\"\n${switch_ags}" @ONLY)
-  list(REMOVE_ITEM vm_sources "${ags}")
   list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/ags.cpp")
   set(sdlmain "${src}/sdlmain.cpp")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${sdlmain}")
@@ -200,17 +1710,17 @@ target_sources(system3 PRIVATE
   "${sdlmain_source}"
   "${src}/config.cpp"
   "${src}/fileio.cpp"
-  "${src}/encoding.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/encoding.cpp"
   "${src}/texthook.cpp"
-  "${src}/fm/makofm.cpp"
-  "${src}/fm/mako_ymfm.cpp"
-  "${src}/generic/mako.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/fm/makofm.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/fm/mako_ymfm.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/mako.cpp"
   "${ymfm_SOURCE_DIR}/src/ymfm_opn.cpp"
   "${ymfm_SOURCE_DIR}/src/ymfm_adpcm.cpp"
   "${ymfm_SOURCE_DIR}/src/ymfm_ssg.cpp"
   "${sdl2_ttf_SOURCE_DIR}/SDL_ttf.c"
   ${vm_sources})
-target_include_directories(system3 PRIVATE "${src}" "${src}/sys"
+target_include_directories(system3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${src}" "${src}/sys"
   "${ymfm_SOURCE_DIR}/src" "${sdl2_ttf_SOURCE_DIR}"
   "${system3_source_SOURCE_DIR}/deps/dr_libs" "${system3_source_SOURCE_DIR}/deps/stb")
 target_compile_features(system3 PRIVATE cxx_std_17)

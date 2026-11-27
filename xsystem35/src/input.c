@@ -115,7 +115,7 @@ int sys_keywait(int msec, unsigned flags) {
 
 	int key=0, n;
 	int end = msec == INT_MAX ? INT_MAX : sys_get_ticks() + msec;
-	while (!nact->is_quit &&
+	while (!nact->is_quit && !sys_is_quit_requested() &&
 		   !((flags & KEYWAIT_SKIPPABLE) && msgskip_isSkipping()) &&
 		   (n = end - sys_get_ticks()) > 0) {
 		if (n <= 16)
@@ -129,6 +129,8 @@ int sys_keywait(int msec, unsigned flags) {
 		if ((flags & KEYWAIT_CTRL_CANCELABLE) && event_rawkey_down(KEY_CTRL)) break;
 		if ((flags & KEYWAIT_MENU_SKIP) && menu_skip()) break;
 	}
+	if (sys_is_quit_requested())
+		nact_quit(false);
 
 	return key;
 }

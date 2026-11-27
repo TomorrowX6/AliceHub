@@ -26,10 +26,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef __ANDROID__
+#ifndef _WIN32
 #include <dirent.h>
 #include <limits.h>
 #include <strings.h>
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+#ifndef NAME_MAX
+#define NAME_MAX 255
+#endif
 #endif
 #include "sdl_compat.h"
 
@@ -54,18 +60,32 @@ static void apply_volume(void) {
 	mixer_music_set_gain(music, (fade_volume * prv.volval[BGM_VOLVAL_CH]) / 10000.0f);
 }
 
-#ifdef __ANDROID__
+#ifndef _WIN32
 static bool resolve_case_insensitive_path(const char *src, char *out, size_t out_cap);
 #endif
 
+static void clear_playlist(void) {
+	for (int i = 0; i < PLAYLIST_MAX; i++) {
+		free(playlist[i]);
+		playlist[i] = NULL;
+	}
+	prv.cd_maxtrk = 0;
+}
+
 static bool cdrom_init(char *playlist_path) {
 	char buf[256];
+
+	clear_playlist();
+	enabled = false;
+	trackno = 0;
+	start_time = 0;
+	fade_volume = 100;
 
 	if (!playlist_path || !playlist_path[0])
 		return false;
 
 	FILE *fp = fopen(playlist_path, "r");
-#ifdef __ANDROID__
+#ifndef _WIN32
 	if (!fp) {
 		char pl_resolved[PATH_MAX];
 		if (resolve_case_insensitive_path(playlist_path, pl_resolved, sizeof(pl_resolved)))
@@ -77,7 +97,7 @@ static bool cdrom_init(char *playlist_path) {
 		fgets(buf, sizeof(buf), fp);
 	} else {
 		fp = fopen("_inmm.ini", "r");
-#ifdef __ANDROID__
+#ifndef _WIN32
 		if (!fp) {
 			char inmm_resolved[PATH_MAX];
 			if (resolve_case_insensitive_path("_inmm.ini", inmm_resolved, sizeof(inmm_resolved)))
@@ -120,15 +140,21 @@ static void cdrom_exit(void) {
 	if (enabled) {
 		cdrom_stop();
 	}
+	clear_playlist();
+	enabled = false;
+	trackno = 0;
+	start_time = 0;
+	fade_volume = 100;
 }
 
 static void cdrom_reset(void) {
 	if (enabled) {
 		cdrom_stop();
 	}
+	fade_volume = 100;
 }
 
-#ifdef __ANDROID__
+#ifndef _WIN32
 static bool resolve_case_insensitive_path(const char *src, char *out, size_t out_cap) {
 	if (!src || !src[0] || out_cap < 4)
 		return false;
@@ -210,6 +236,13 @@ static bool cdrom_start(int trk, int loop) {
 			return false;
 	}
 	music = mixer_music_load_file(path);
+#elif !defined(_WIN32)
+	music = mixer_music_load_file(playlist[trk]);
+	if (!music) {
+		char resolved[PATH_MAX];
+		if (resolve_case_insensitive_path(playlist[trk], resolved, sizeof(resolved)))
+			music = mixer_music_load_file(resolved);
+	}
 #else
 	music = mixer_music_load_file(playlist[trk]);
 #endif

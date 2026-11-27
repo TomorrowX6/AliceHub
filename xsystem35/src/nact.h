@@ -56,6 +56,8 @@ extern void nact_quit(bool restart);
 // cmd_check.c
 extern void exec_command(void);
 
+// cmdf.c
+void cmdf_reset(void);
 // cmdv.c
 void va_animation(void);
 void va_reset(void);
