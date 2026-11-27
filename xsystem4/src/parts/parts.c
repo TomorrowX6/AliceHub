@@ -2254,8 +2254,13 @@ static struct cg *load_loop_cg_by_index(int no, void *_)
 bool parts_animation_set_cg_by_index(struct parts *parts, struct parts_animation *anim,
 		int cg_no, int nr_frames, int frame_time)
 {
-	return _parts_animation_set_cg(parts, anim, cg_no, nr_frames, frame_time,
+	bool r = _parts_animation_set_cg(parts, anim, cg_no, nr_frames, frame_time,
 			load_loop_cg_by_index, NULL);
+	if (r && anim->cg_name) {
+		free_string(anim->cg_name);
+		anim->cg_name = NULL;
+	}
+	return r;
 }
 
 bool PE_SetLoopCG_by_index(int parts_no, int cg_no, int nr_frames, int frame_time, int state)
@@ -2359,6 +2364,10 @@ bool parts_gauge_set_cg_by_index(struct parts *parts, struct parts_gauge *g, int
 	_parts_set_gauge_cg(parts, g, cg);
 	cg_free(cg);
 	g->cg_no = cg_no;
+	if (g->cg_name) {
+		free_string(g->cg_name);
+		g->cg_name = NULL;
+	}
 	return true;
 }
 

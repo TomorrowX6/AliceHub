@@ -2620,7 +2620,15 @@ int main(void) {{
 #include "system4/hashtable.h"
 #include "system4/string.h"
 #include "asset_manager.h"
+#include "vm.h"
 #include "parts/parts_internal.h"
+
+struct string *string_format(struct string *fmt, union vm_value arg, enum string_format_type type) {{
+    (void)type;
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), fmt->text, arg.i);
+    return make_string(buf, n > 0 ? n : 0);
+}}
 
 static struct parts_context ctx = {{
     .list = TAILQ_HEAD_INITIALIZER(ctx.list),
@@ -2860,6 +2868,195 @@ int main(void) {{
     free_string(p_anim.states[0].anim.cg_name);
     free_string(p_gauge.states[0].gauge.cg_name);
     free(parts_numeral_fonts);
+    ht_free_int(parts_table);
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
+        self.assertEqual(out.strip(), "OK")
+
+    def test_indexed_anim_and_gauge_setters_clear_stale_name_for_gl_recovery(self):
+        fns = "\n".join(
+            _extract_c_fn("src/parts/parts.c", sig)
+            for sig in (
+                "static bool _parts_animation_set_cg",
+                "static struct cg *load_loop_cg_by_index",
+                "bool parts_animation_set_cg_by_index",
+                "static struct cg *load_loop_cg_by_name",
+                "bool parts_animation_set_cg",
+                "static void _parts_set_gauge_cg",
+                "bool parts_gauge_set_cg",
+                "bool parts_gauge_set_cg_by_index",
+                "static void remap_flash_bitmap",
+                "static void recover_cg_state",
+                "static void recover_widget_skin",
+                "static bool recover_text_state",
+                "static void recover_widget_states",
+                "static void recover_parts_state",
+                "static void recover_parts_in_current_context",
+            )
+        )
+        harness = f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4.h"
+#include "system4/cg.h"
+#include "system4/hashtable.h"
+#include "system4/string.h"
+#include "asset_manager.h"
+#include "vm.h"
+#include "parts/parts_internal.h"
+
+struct string *string_format(struct string *fmt, union vm_value arg, enum string_format_type type) {{
+    (void)type;
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), fmt->text, arg.i);
+    return make_string(buf, n > 0 ? n : 0);
+}}
+
+static struct parts_context ctx = {{
+    .list = TAILQ_HEAD_INITIALIZER(ctx.list),
+    .dirty = TAILQ_HEAD_INITIALIZER(ctx.dirty),
+}};
+struct parts_context *parts_current = &ctx;
+#define parts_table (parts_current->table)
+
+static GLuint next_handle = 100;
+static int load_by_no_42 = 0;
+static int load_by_name_calls = 0;
+
+static struct cg *make_dummy_cg(uint8_t tag) {{
+    struct cg *cg = calloc(1, sizeof(*cg));
+    cg->metrics.w = 8;
+    cg->metrics.h = 8;
+    cg->pixels = calloc(8 * 8, 4);
+    ((uint8_t *)cg->pixels)[0] = tag;
+    return cg;
+}}
+
+void cg_free(struct cg *cg) {{
+    if (!cg) return;
+    free(cg->pixels);
+    free(cg);
+}}
+
+struct cg *asset_cg_load(int no) {{
+    if (no == 42) {{
+        load_by_no_42++;
+        return make_dummy_cg(42);
+    }}
+    return NULL;
+}}
+
+struct cg *asset_cg_load_by_name(const char *name, int *no) {{
+    load_by_name_calls++;
+    if (no) *no = 10;
+    if (name && (!strcmp(name, "hp_normal") || !strcmp(name, "anim_1")))
+        return make_dummy_cg(10);
+    return NULL;
+}}
+
+void gfx_delete_texture(Texture *t) {{
+    if (t) *t = (Texture){{0}};
+}}
+
+void gfx_init_texture_with_cg(Texture *t, struct cg *cg) {{
+    t->handle = next_handle++;
+    t->w = cg->metrics.w;
+    t->h = cg->metrics.h;
+    t->ctx_gen = ((uint8_t *)cg->pixels)[0];
+}}
+
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color c) {{
+    (void)c;
+    t->handle = next_handle++;
+    t->w = w;
+    t->h = h;
+}}
+
+void gfx_copy_with_alpha_map(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h) {{
+    (void)dx; (void)dy; (void)sx; (void)sy; (void)w; (void)h;
+    dst->ctx_gen = src->ctx_gen;
+}}
+
+bool gfx_remap_texture(Texture *t) {{
+    if (!t || !t->handle) return false;
+    t->handle = 0;
+    t->ctx_gen = 0;
+    return false;
+}}
+
+void parts_set_dims(struct parts *p, struct parts_common *c, int w, int h) {{
+    (void)p; c->w = w; c->h = h;
+}}
+void parts_dirty(struct parts *p) {{ (void)p; }}
+void parts_component_dirty(struct parts *p) {{ (void)p; }}
+void parts_engine_dirty(void) {{}}
+bool _parts_cg_set(struct parts *p, struct parts_cg *cg, struct cg *c, int no, struct string *name) {{
+    (void)p; (void)cg; (void)no; if (name) free_string(name); cg_free(c); return false;
+}}
+void parts_numeral_font_init(struct parts_numeral_font *f) {{ (void)f; }}
+static bool parts_numeral_update(struct parts *p, struct parts_numeral *n) {{ (void)p; (void)n; return false; }}
+void parts_flat_recover_widget_skin(struct parts_flat *f, bool s) {{ (void)f; (void)s; }}
+void parts_hgauge_set_rate(struct parts *p, struct parts_gauge *g, float r) {{ (void)p; g->rate = r; }}
+void parts_vgauge_set_rate(struct parts *p, struct parts_gauge *g, float r) {{ (void)p; g->rate = r; }}
+void parts_widget_restore_plain_skin(struct parts *p, struct parts_state *s, int i, bool c) {{ (void)p; (void)s; (void)i; (void)c; }}
+void parts_widget_rebuild_label(struct parts *p) {{ (void)p; }}
+void parts_panel_rebuild(struct parts *p) {{ (void)p; }}
+void parts_scrollbar_rebuild(struct parts *p) {{ (void)p; }}
+void parts_message_window_rebuild_text(struct parts *p) {{ (void)p; }}
+void parts_text_rerender_all(struct parts *p, struct parts_text *t) {{ (void)p; (void)t; }}
+
+{fns}
+
+int main(void) {{
+    parts_table = ht_create(16);
+
+    struct parts p_gauge = {{0}};
+    p_gauge.states[0].type = PARTS_HGAUGE;
+    p_gauge.states[0].gauge.rate = 0.75f;
+    struct string *hp_name = make_string("hp_normal", 9);
+    assert(parts_gauge_set_cg(&p_gauge, &p_gauge.states[0].gauge, hp_name));
+    assert(p_gauge.states[0].gauge.cg_name && !strcmp(p_gauge.states[0].gauge.cg_name->text, "hp_normal"));
+    // Failed numeric load preserves previous name.
+    assert(!parts_gauge_set_cg_by_index(&p_gauge, &p_gauge.states[0].gauge, 999));
+    assert(p_gauge.states[0].gauge.cg_name && !strcmp(p_gauge.states[0].gauge.cg_name->text, "hp_normal"));
+    // Successful numeric load clears stale name.
+    assert(parts_gauge_set_cg_by_index(&p_gauge, &p_gauge.states[0].gauge, 42));
+    assert(p_gauge.states[0].gauge.cg_name == NULL && p_gauge.states[0].gauge.cg_no == 42);
+    TAILQ_INSERT_TAIL(&parts_list, &p_gauge, parts_list_entry);
+
+    struct parts p_anim = {{0}};
+    p_anim.states[0].type = PARTS_ANIMATION;
+    struct string *anim_fmt = make_string("anim_%d", 7);
+    assert(parts_animation_set_cg(&p_anim, &p_anim.states[0].anim, anim_fmt, 1, 1, 100));
+    assert(p_anim.states[0].anim.cg_name && !strcmp(p_anim.states[0].anim.cg_name->text, "anim_%d"));
+    // Failed numeric load preserves previous name.
+    assert(!parts_animation_set_cg_by_index(&p_anim, &p_anim.states[0].anim, 999, 1, 100));
+    assert(p_anim.states[0].anim.cg_name && !strcmp(p_anim.states[0].anim.cg_name->text, "anim_%d"));
+    // Successful numeric load clears stale name.
+    assert(parts_animation_set_cg_by_index(&p_anim, &p_anim.states[0].anim, 42, 1, 100));
+    assert(p_anim.states[0].anim.cg_name == NULL && p_anim.states[0].anim.start_no == 42);
+    TAILQ_INSERT_TAIL(&parts_list, &p_anim, parts_list_entry);
+
+    int names_before = load_by_name_calls;
+    int no42_before = load_by_no_42;
+    recover_parts_in_current_context();
+
+    assert(load_by_name_calls == names_before);
+    assert(load_by_no_42 == no42_before + 2);
+    assert(p_gauge.states[0].gauge.cg.ctx_gen == 42 && p_gauge.states[0].gauge.common.texture.ctx_gen == 42);
+    assert(p_anim.states[0].anim.frames[0].ctx_gen == 42 && p_anim.states[0].common.texture.ctx_gen == 42);
+
+    free(p_anim.states[0].anim.frames);
+    free_string(hp_name);
+    free_string(anim_fmt);
     ht_free_int(parts_table);
     puts("OK");
     return 0;
