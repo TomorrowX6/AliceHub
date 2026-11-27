@@ -146,6 +146,8 @@ void nact_main() {
 		if (dbg_trapped()) {
 			gfx_updateScreen();
 			dbg_main(0);
+			if (nact->is_quit)
+				break;
 		}
 
 		exec_command();
