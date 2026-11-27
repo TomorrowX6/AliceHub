@@ -407,6 +407,7 @@ void sprite_init_copy(struct sact_sprite *dst, struct sact_sprite *src)
 		return;
 	struct texture *src_tex = sprite_get_texture(src);
 	SDL_Color c = { 0, 0, 0, src->sp.has_alpha ? 0 : 255 };
+	sprite_bind_plugin(dst, NULL);
 	gfx_delete_texture(&dst->texture);
 	if (src->rect.w > 0 && src->rect.h > 0) {
 		if (src->sp.has_alpha)
