@@ -116,8 +116,22 @@ void dungeon_map_on_gl_reset(struct dungeon_context *ctx)
 		if (!gfx_remap_texture(&ctx->map->textures[i]))
 			need_reinit = true;
 	}
-	if (need_reinit && ctx->dgn)
+	if (need_reinit && ctx->dgn) {
 		dungeon_map_init(ctx);
+		if (ctx->dgn->cells && ctx->map->textures) {
+			for (uint32_t y = 0; y < ctx->dgn->size_y; y++) {
+				if (y >= (uint32_t)ctx->map->nr_textures || !ctx->map->textures[y].handle)
+					continue;
+				for (uint32_t z = 0; z < ctx->dgn->size_z; z++) {
+					for (uint32_t x = 0; x < ctx->dgn->size_x; x++) {
+						struct dgn_cell *c = dgn_cell_at(ctx->dgn, x, y, z);
+						if (c && c->walked)
+							dungeon_map_reveal(ctx, (int)x, (int)y, (int)z, false);
+					}
+				}
+			}
+		}
+	}
 }
 
 void dungeon_map_init(struct dungeon_context *ctx)

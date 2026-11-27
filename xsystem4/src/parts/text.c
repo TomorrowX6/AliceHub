@@ -190,6 +190,31 @@ static void glyph_cache_init(void)
 	gfx_register_reset_callback(parts_text_on_gl_reset, NULL);
 }
 
+void parts_text_end_session(void)
+{
+	if (glyph_cache_initialized)
+		gfx_unregister_reset_callback(parts_text_on_gl_reset, NULL);
+	for (int i = 0; i < glyph_cache_used; i++) {
+		if (glyph_cache[i].t.handle)
+			gfx_delete_texture(&glyph_cache[i].t);
+		if (glyph_cache[i].t_edge.handle)
+			gfx_delete_texture(&glyph_cache[i].t_edge);
+	}
+	memset(glyph_cache, 0, sizeof(glyph_cache));
+	for (int i = 0; i < PARTS_GLYPH_HASH_BUCKETS; i++)
+		glyph_hash_buckets[i] = -1;
+	for (int i = 0; i < PARTS_GLYPH_CACHE_SIZE; i++) {
+		glyph_cache[i].prev_lru = -1;
+		glyph_cache[i].next_lru = -1;
+		glyph_cache[i].next_hash = -1;
+	}
+	glyph_lru_head = -1;
+	glyph_lru_tail = -1;
+	glyph_cache_used = 0;
+	glyph_cache_initialized = false;
+	s_modifier_font_scale_pct = 100;
+}
+
 static void glyph_lru_remove(int idx)
 {
 	int prev = glyph_cache[idx].prev_lru;

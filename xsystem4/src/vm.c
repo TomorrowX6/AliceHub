@@ -118,7 +118,10 @@ static bool vm_zero_vector_div_guard(void)
 		|| !strcmp(name, "CASVector2D@Normalize")
 		|| !strcmp(name, "CASVector3D@SetLength")
 		|| !strcmp(name, "CASVector2D@SetLength")
-		|| !strcmp(name, "fxyz_t@Normalize");
+		|| !strcmp(name, "fxyz_t@Normalize")
+		|| !strcmp(name, "CParticleObject@SetDirection")
+		|| !strcmp(name, "CPolygonUnitObject@GetDirectionAngle")
+		|| !strcmp(name, "CBillBoardUnitObject@GetDirectionAngle");
 }
 
 static const char *current_instruction_name(void)

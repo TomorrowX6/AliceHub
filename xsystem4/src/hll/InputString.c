@@ -46,7 +46,7 @@ static void InputString_ClearResultString(void)
 
 static struct string *InputString_GetResultString(void)
 {
-	struct string *s = string_ref(result);
+	struct string *s = result ? string_ref(result) : string_ref(&EMPTY_STRING);
 	if (get_result_string_clears)
 		InputString_ClearResultString();
 	return s;
@@ -56,7 +56,7 @@ static void InputString_SetResultString(struct string *s)
 {
 	if (result)
 		free_string(result);
-	result = string_ref(s);
+	result = s ? string_ref(s) : string_ref(&EMPTY_STRING);
 }
 
 static void InputString_SetFont(int nSize, possibly_unused struct string *pIName, int nWeight)
@@ -83,6 +83,8 @@ static void InputString_End(void)
 
 static void handle_input(const char *text)
 {
+	if (!result)
+		result = string_ref(&EMPTY_STRING);
 	char *u = mai_utf2sjis(text, 0);
 	string_append_cstr(&result, u, strlen(u));
 	free(u);
@@ -141,8 +143,22 @@ static void InputString_PreLink(void)
 	}
 }
 
+static void InputString_ModuleFini(void)
+{
+	InputString_CloseIME();
+	if (result) {
+		free_string(result);
+		result = NULL;
+	}
+	font_size = 0;
+	font_weight = 0;
+	pos = (Point){ 0, 0 };
+	get_result_string_clears = false;
+}
+
 HLL_LIBRARY(InputString,
 	    HLL_EXPORT(_PreLink, InputString_PreLink),
+	    HLL_EXPORT(_ModuleFini, InputString_ModuleFini),
 	    HLL_EXPORT(SetFont, InputString_SetFont),
 	    HLL_EXPORT(SetPos, InputString_SetPos),
 	    HLL_EXPORT(Begin, InputString_Begin),

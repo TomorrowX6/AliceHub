@@ -77,7 +77,9 @@ void dtx_free(struct dtx *dtx)
 
 struct cg *dtx_create_cg(struct dtx *dtx, enum dtx_texture_type type, int index)
 {
-	int row;
+	if (!dtx)
+		return NULL;
+	int row = 0;
 	switch (dtx->version) {
 	case 0:
 		switch (type) {
@@ -112,8 +114,10 @@ struct cg *dtx_create_cg(struct dtx *dtx, enum dtx_texture_type type, int index)
 		default: return NULL;
 		}
 		break;
+	default:
+		return NULL;
 	}
-	if (row >= dtx->nr_rows || index < 0 || index >= dtx->nr_columns)
+	if (row < 0 || row >= dtx->nr_rows || index < 0 || index >= dtx->nr_columns)
 		return NULL;
 	struct dtx_entry *entry = &dtx->entries[row * dtx->nr_columns + index];
 	if (!entry->data)

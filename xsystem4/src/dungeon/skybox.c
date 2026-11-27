@@ -37,7 +37,7 @@ struct skybox {
 
 static void skybox_load_textures(struct skybox *s, struct dtx *dtx)
 {
-	glBindTexture(GL_TEXTURE_CUBE_MAP, s->texture);
+	static const uint8_t fallback_pixel[4] = { 0, 0, 0, 255 };
 	const GLenum targets[6] = {
 		GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  // north
 		GL_TEXTURE_CUBE_MAP_NEGATIVE_X,  // west
@@ -46,16 +46,46 @@ static void skybox_load_textures(struct skybox *s, struct dtx *dtx)
 		GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,  // bottom
 		GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  // top
 	};
+	struct cg *cgs[6] = {0};
+	int fallback_w = 1, fallback_h = 1;
 	int base = s->texture_set >= 0 ? s->texture_set * 6 : 0;
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, s->texture);
 	for (int i = 0; i < 6; i++) {
 		struct cg *cg = dtx ? dtx_create_cg(dtx, DTX_SKYBOX, base + i) : NULL;
-		if (!cg) {
+		if (!cg || cg->metrics.w <= 0 || cg->metrics.h <= 0 || !cg->pixels) {
 			WARNING("Cannot load skybox texture %d", base + i);
+			if (cg)
+				cg_free(cg);
 			continue;
 		}
-		glTexImage2D(targets[i], 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
-		cg_free(cg);
+		cgs[i] = cg;
+		if (fallback_w == 1 && fallback_h == 1 && cg->metrics.w == cg->metrics.h) {
+			fallback_w = cg->metrics.w;
+			fallback_h = cg->metrics.h;
+		}
 	}
+
+	uint8_t *fallback_buf = NULL;
+	const uint8_t *fallback_pixels = fallback_pixel;
+	for (int i = 0; i < 6; i++) {
+		if (cgs[i]) {
+			glTexImage2D(targets[i], 0, GL_RGBA, cgs[i]->metrics.w, cgs[i]->metrics.h, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, cgs[i]->pixels);
+			cg_free(cgs[i]);
+		} else {
+			if (!fallback_buf && (fallback_w > 1 || fallback_h > 1)) {
+				size_t nr_pixels = (size_t)fallback_w * (size_t)fallback_h;
+				fallback_buf = xcalloc(nr_pixels, 4);
+				for (size_t p = 0; p < nr_pixels; p++)
+					fallback_buf[p * 4 + 3] = 255;
+				fallback_pixels = fallback_buf;
+			}
+			glTexImage2D(targets[i], 0, GL_RGBA, fallback_w, fallback_h, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, fallback_pixels);
+		}
+	}
+	free(fallback_buf);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -101,6 +131,7 @@ static void skybox_init_gl(struct skybox *s, struct dtx *dtx)
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, s->index_buffer);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	s->nr_indices = sizeof(indices) / sizeof(GLushort);
 
 	// Set up a cubemap texture.

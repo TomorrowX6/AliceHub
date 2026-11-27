@@ -57,7 +57,7 @@ static int KiwiSoundEngine_GetGimicSEGroup(void)
 
 static int KiwiSoundEngine_GetBackVoiceGroup(void)
 {
-	return game_escalayer_reboot ? 5 : 0;
+	return (game_escalayer_reboot || game_tsumamigui3) ? 5 : 0;
 }
 
 static bool rance9_bgm_exists(int num)

@@ -309,6 +309,7 @@ struct material {
 static void init_material(struct material *m, struct cg *cg)
 {
 	glGenTextures(1, &m->texture);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, m->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1000,6 +1001,8 @@ static void draw_characters(struct dungeon_renderer *r, struct drawfield_charact
 
 void dungeon_renderer_render(struct dungeon_renderer *r, struct dgn_cell **cells, int nr_cells, struct drawfield_character *characters, mat4 view_transform, mat4 proj_transform)
 {
+	GLboolean blend_enabled = glIsEnabled(GL_BLEND);
+
 	glUseProgram(r->shader.program);
 	glUniformMatrix4fv(r->shader.view_transform, 1, GL_FALSE, view_transform[0]);
 	glUniformMatrix4fv(r->proj_transform, 1, GL_FALSE, proj_transform[0]);
@@ -1016,7 +1019,7 @@ void dungeon_renderer_render(struct dungeon_renderer *r, struct dgn_cell **cells
 	glUseProgram(r->shader.program);
 
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
 
 	// DrawField: draw characters.
 	draw_characters(r, characters, view_transform);
@@ -1025,6 +1028,9 @@ void dungeon_renderer_render(struct dungeon_renderer *r, struct dgn_cell **cells
 	for (int i = nr_cells - 1; i >= 0; i--)
 		draw_cell(r, cells[i], false, view_transform);
 
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+	if (!blend_enabled)
+		glDisable(GL_BLEND);
 	glActiveTexture(GL_TEXTURE0);
 	glUseProgram(0);
 }
@@ -1069,6 +1075,9 @@ void dungeon_renderer_run_post_processing(struct dungeon_renderer *r, struct tex
 	// (rendered by dungeon_renderer_render) is bottom-up (the first pixel is at
 	// the bottom-left), but sprite textures are top-down (the first pixel is at
 	// the top-left).
+	if (!r || !src || !dst || !src->handle || !dst->handle ||
+	    src->w <= 0 || src->h <= 0 || dst->w <= 0 || dst->h <= 0)
+		return;
 
 	if (r->raster_scroll) {
 		mat4 mw_transform = MAT4(
@@ -1086,9 +1095,13 @@ void dungeon_renderer_run_post_processing(struct dungeon_renderer *r, struct tex
 			.view_transform = wv_transform[0],
 			.data = r
 		};
+		GLboolean blend_enabled = glIsEnabled(GL_BLEND);
+		glDisable(GL_BLEND);
 		GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, 0, 0, dst->w, dst->h);
 		gfx_render(&job);
 		gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+		if (blend_enabled)
+			glEnable(GL_BLEND);
 	} else {
 		gfx_copy_reverse_UD(dst, 0, 0, src, 0, 0, src->w, src->h);
 	}

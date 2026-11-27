@@ -146,10 +146,8 @@ static void charsprite_manager_free(struct charsprite_manager *csm)
 void CharSpriteManager_Clear(void)
 {
 	charsprite_manager_free(&chars);
-	if (loaded) {
-		charsprite_manager_free(&load_chars);
-		loaded = false;
-	}
+	charsprite_manager_free(&load_chars);
+	loaded = false;
 }
 
 static int extract_sjis_char(char *src, char *dst)

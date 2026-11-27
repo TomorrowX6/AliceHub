@@ -444,6 +444,24 @@ void gfx_register_reset_callback(gfx_reset_callback cb, void *user) {
     (void)user;
 }
 
+void gfx_unregister_reset_callback(gfx_reset_callback cb, void *user) {
+    (void)cb;
+    (void)user;
+}
+
+SDL_GLContext SDL_GL_GetCurrentContext(void) {
+    return NULL;
+}
+
+GLboolean glIsProgram(GLuint program) {
+    (void)program;
+    return GL_FALSE;
+}
+
+void glDeleteProgram(GLuint program) {
+    (void)program;
+}
+
 GLuint gfx_set_framebuffer(GLenum target, Texture *t, int x, int y, int w, int h) {
     (void)target; (void)t; (void)x; (void)y; (void)w; (void)h;
     return 99;

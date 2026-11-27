@@ -1528,6 +1528,10 @@ void RE_render(struct sact_sprite *sp)
 
 	sprite_dirty(sp);
 	struct texture *texture = sprite_get_texture(sp);
+	if (!texture || texture->w <= 0 || texture->h <= 0 || !texture->handle || !r->depth_buffer) {
+		WARNING("Skipping 3D render with incomplete target texture/depth buffer");
+		return;
+	}
 
 	mat4 shadow_transform;
 	if (plugin->shadow_mode)
@@ -1537,8 +1541,13 @@ void RE_render(struct sact_sprite *sp)
 
 	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, texture, 0, 0, texture->w, texture->h);
 	glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, r->depth_buffer);
-	if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-		ERROR("Incomplete framebuffer");
+	GLenum fbo_status = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+	if (fbo_status != GL_FRAMEBUFFER_COMPLETE) {
+		WARNING("Incomplete 3D framebuffer: 0x%x", fbo_status);
+		glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+		gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+		return;
+	}
 
 	glClearColor(0.f, 0.f, 0.f, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

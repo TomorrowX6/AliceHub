@@ -232,6 +232,8 @@ int main(void) {{
     // 5. Haharanman FNL fallback ratios (4 faces).
     struct ain *haha = ain_new(14, 0);
     ain_add_string(haha, "83h2mjr");
+    ain_add_global(haha, "g_cGameParam");
+    ain_add_global(haha, "g_cHeroParam");
     memset(&config, 0, sizeof(config));
     config.view_width = 800;
     config.view_height = 600;

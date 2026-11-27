@@ -14,6 +14,7 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  */
 
+#include <string.h>
 #include <cglm/cglm.h>
 
 #include "gfx/gfx.h"
@@ -113,6 +114,18 @@ static bool FillAngle_FillAngleAMAP(int sprite, int center_x, int center_y, int 
 	return true;
 }
 
+static void FillAngle_ModuleFini(void)
+{
+	if (fill_angle_reset_registered) {
+		gfx_unregister_reset_callback(fill_angle_on_gl_reset, NULL);
+		fill_angle_reset_registered = false;
+	}
+	if (shader.s.program && SDL_GL_GetCurrentContext() && glIsProgram(shader.s.program))
+		glDeleteProgram(shader.s.program);
+	memset(&shader, 0, sizeof(shader));
+}
+
 HLL_LIBRARY(FillAngle,
-	    HLL_EXPORT(FillAngleAMAP, FillAngle_FillAngleAMAP)
+	    HLL_EXPORT(FillAngleAMAP, FillAngle_FillAngleAMAP),
+	    HLL_EXPORT(_ModuleFini, FillAngle_ModuleFini)
 	    );

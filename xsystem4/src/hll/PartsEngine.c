@@ -81,6 +81,36 @@ static void *PartsEngine_ResolveSetNumeralFont(const struct ain_hll_function *f)
 	return NULL;
 }
 
+static void *PartsEngine_ResolveReleaseAll(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 0)
+		return PE_ReleaseAllParts;
+	if (f->nr_arguments == 1 && (f->arguments[0].type.data == AIN_REF_ARRAY_INT
+			|| f->arguments[0].type.data == AIN_REF_ARRAY))
+		return PE_ReleaseAll_list;
+	return NULL;
+}
+
+static void PartsEngine_Parts_ChangeFlatSound_int(int parts_no, struct string *old_name,
+		int sound_no, int state)
+{
+	(void)parts_no;
+	(void)old_name;
+	(void)sound_no;
+	(void)state;
+}
+
+static void *PartsEngine_ResolveChangeFlatSound(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments != 4)
+		return NULL;
+	if (f->arguments[2].type.data == AIN_INT)
+		return PartsEngine_Parts_ChangeFlatSound_int;
+	if (f->arguments[2].type.data == AIN_STRING)
+		return PE_ChangeFlatSound;
+	return NULL;
+}
+
 static void PartsEngine_ModuleInit(void)
 {
 	PE_Init();
@@ -112,15 +142,16 @@ static void PartsEngine_Update(int passed_time, bool is_skip, bool message_windo
 }
 
 static void PartsEngine_Update_v8(int passed_time, possibly_unused bool is_skip,
-		bool message_window_show, possibly_unused float multiply_rate,
-		possibly_unused float alpha_rate)
+		bool message_window_show, float multiply_rate, float alpha_rate)
 {
+	PE_SetMessageWindowEffectRates(multiply_rate, alpha_rate);
 	PE_Update(passed_time, message_window_show);
 }
 
 static void PartsEngine_Update_v12(int passed_time, int scaled_time, bool message_window_show,
 		float multiply_rate, float alpha_rate)
 {
+	PE_SetMessageWindowEffectRates(multiply_rate, alpha_rate);
 	PE_UpdateWithTimeScale(passed_time, scaled_time, message_window_show);
 }
 
@@ -193,9 +224,19 @@ static int PartsEngine_GetComponentType_v12(int parts_no, int state)
 	return type >= 11 ? type + 6 : type;
 }
 
-static void PartsEngine_UpdateMatrix_v12(bool show, float multiply_rate, float alpha_rate)
+static void PartsEngine_UpdateMatrix(bool show)
 {
+	PE_SetMessageWindowShow(show);
 	PE_UpdateComponent(0);
+	parts_render_update();
+}
+
+static void PartsEngine_UpdateMatrix_v8(bool show, float multiply_rate, float alpha_rate)
+{
+	PE_SetMessageWindowShow(show);
+	PE_SetMessageWindowEffectRates(multiply_rate, alpha_rate);
+	PE_UpdateComponent(0);
+	parts_render_update();
 }
 
 static struct string *PartsEngine_GetPartsCGName_v12(int parts_no, int state)
@@ -424,7 +465,11 @@ static bool PartsEngine_WriteActivityFile(struct string *name, struct string *fi
 
 static void PartsEngine_SetComponentMessageWindowEffectLink(int parts_no, bool link)
 {
-	parts_get(parts_no)->message_window_effect_link = link;
+	struct parts *p = parts_get(parts_no);
+	if (p->message_window_effect_link != link) {
+		p->message_window_effect_link = link;
+		parts_dirty(p);
+	}
 }
 
 static bool PartsEngine_IsComponentMessageWindowEffectLink(int parts_no)
@@ -884,6 +929,24 @@ static bool PartsEngine_Parts_GetResetTimerByChangeInputStatus(int parts_no, int
 {
 	(void)parts_no; (void)state;
 	return false;
+}
+
+static void *PartsEngine_ResolveSetResetTimerByChangeInputStatus(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 3)
+		return PartsEngine_Parts_SetResetTimerByChangeInputStatus;
+	if (f->nr_arguments == 2)
+		return PartsEngine_SetResetTimerByChangeInputStatus;
+	return NULL;
+}
+
+static void *PartsEngine_ResolveGetResetTimerByChangeInputStatus(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 2)
+		return PartsEngine_Parts_GetResetTimerByChangeInputStatus;
+	if (f->nr_arguments == 1)
+		return PartsEngine_GetResetTimerByChangeInputStatus;
+	return NULL;
 }
 
 static void PartsEngine_WidgetSetFontProperty(int parts_no, int type, int size,
@@ -3077,7 +3140,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetLoopCGSurfaceArea, PE_SetLoopCGSurfaceArea),
 	    HLL_EXPORT(SetText, PE_SetText),
 	    HLL_EXPORT(AddPartsText, PE_AddPartsText),
-	    HLL_TODO_EXPORT(DeletePartsTopTextLine, PartsEngine_DeletePartsTopTextLine),
+	    HLL_EXPORT(DeletePartsTopTextLine, PE_DeletePartsTopTextLine),
 	    HLL_EXPORT(SetPartsTextSurfaceArea, PE_SetPartsTextSurfaceArea),
 	    HLL_TODO_EXPORT(SetPartsTextHighlight, PartsEngine_SetPartsTextHighlight),
 	    HLL_TODO_EXPORT(AddPartsTextHighlight, PartsEngine_AddPartsTextHighlight),
@@ -3141,6 +3204,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(AddFillWithAlphaToPartsConstructionProcess, PE_AddFillWithAlphaToPartsConstructionProcess),
 	    HLL_EXPORT(AddFillGradationHorizonToPartsConstructionProcess, PE_AddFillGradationHorizonToPartsConstructionProcess),
 	    HLL_EXPORT(AddDrawRectToPartsConstructionProcess, PE_AddDrawRectToPartsConstructionProcess),
+	    HLL_EXPORT(AddDrawLineToPartsConstructionProcess, PE_AddDrawLineToPartsConstructionProcess),
 	    HLL_EXPORT(AddDrawCutCGToPartsConstructionProcess, PartsEngine_AddDrawCutCGToPartsConstructionProcess_old),
 	    HLL_EXPORT(AddCopyCutCGToPartsConstructionProcess, PartsEngine_AddCopyCutCGToPartsConstructionProcess_old),
 	    HLL_EXPORT(AddGrayFilterToPartsConstructionProcess, PE_AddGrayFilterToPartsConstructionProcess),
@@ -3165,7 +3229,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SetPassCursor, PE_SetPassCursor),
 	    HLL_EXPORT(SetClickable, PE_SetClickable),
 	    HLL_EXPORT(SetSpeedupRateByMessageSkip, PE_SetSpeedupRateByMessageSkip),
-	    HLL_EXPORT(SetResetTimerByChangeInputStatus, PartsEngine_SetResetTimerByChangeInputStatus),
+	    HLL_OVERLOAD(SetResetTimerByChangeInputStatus, PartsEngine_ResolveSetResetTimerByChangeInputStatus),
 	    HLL_EXPORT(GetPartsX, PE_GetPartsX),
 	    HLL_EXPORT(GetPartsY, PE_GetPartsY),
 	    HLL_EXPORT(GetPartsZ, PE_GetPartsZ),
@@ -3176,7 +3240,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetPartsPassCursor, PE_GetPartsPassCursor),
 	    HLL_EXPORT(GetPartsClickable, PE_GetPartsClickable),
 	    HLL_EXPORT(GetPartsSpeedupRateByMessageSkip, PE_GetSpeedupRateByMessageSkip),
-	    HLL_EXPORT(GetResetTimerByChangeInputStatus, PartsEngine_GetResetTimerByChangeInputStatus),
+	    HLL_OVERLOAD(GetResetTimerByChangeInputStatus, PartsEngine_ResolveGetResetTimerByChangeInputStatus),
 	    HLL_EXPORT(GetPartsUpperLeftPosX, PE_GetPartsUpperLeftPosX),
 	    HLL_EXPORT(GetPartsUpperLeftPosY, PE_GetPartsUpperLeftPosY),
 	    HLL_EXPORT(GetPartsWidth, PE_GetPartsWidth),
@@ -3239,7 +3303,7 @@ HLL_LIBRARY(PartsEngine,
 	    // Rance 9
 	    HLL_EXPORT(PartsFunc, PartsEngine_PartsFunc),
 	    HLL_EXPORT(Release, PE_ReleaseParts),
-	    HLL_EXPORT(ReleaseAll, PE_ReleaseAllParts),
+	    HLL_OVERLOAD(ReleaseAll, PartsEngine_ResolveReleaseAll),
 	    HLL_EXPORT(ReleaseAllWithoutSystem, PE_ReleaseAllWithoutSystem),
 	    HLL_EXPORT(GetFreeNumber, PE_GetFreeNumber),
 	    HLL_EXPORT(IsExist, PE_IsExist),
@@ -3247,7 +3311,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(RemoveController, PE_RemoveController),
 	    HLL_EXPORT(MoveController, PE_MoveController),
 	    HLL_EXPORT(UpdateComponent, PartsEngine_Update),
-	    HLL_EXPORT(UpdateMatrix, PartsEngine_UpdateMatrix_v12),
+	    HLL_EXPORT(UpdateMatrix, PartsEngine_UpdateMatrix),
 	    HLL_EXPORT(GetComponentAbsoluteSquarePos, PE_GetComponentAbsoluteSquarePos),
 	    HLL_EXPORT(SetRectangleDetectionPoint, PE_SetRectangleDetectionPoint),
 	    HLL_EXPORT(GetRectangleDetectionPoint, PE_GetRectangleDetectionPoint),
@@ -3850,7 +3914,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_GetNumeralSpace, PE_GetNumeralSpace),
 	    HLL_EXPORT(IsNumerarlFullPitch, PartsEngine_IsNumerarlFullPitch),
 	    HLL_EXPORT(Parts_SetNumeralLinkedCGNumberWidthWidthList, PE_SetNumeralLinkedCGNumberWidthWidthList),
-	    HLL_EXPORT(Parts_SetNumeralFont, PE_SetNumeralFont),
+	    HLL_OVERLOAD(Parts_SetNumeralFont, PartsEngine_ResolveSetNumeralFont),
 	    HLL_EXPORT(Parts_SetNumeralNumber, PE_SetNumeralNumber),
 	    HLL_EXPORT(Parts_SetNumeralShowComma, PE_SetNumeralShowComma),
 	    HLL_EXPORT(Parts_SetNumeralSpace, PE_SetNumeralSpace),
@@ -3895,7 +3959,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(ClearChangeFlatCG, PE_ClearChangeFlatCG),
 	    HLL_EXPORT(NumofFlatSound, PE_NumofFlatSound),
 	    HLL_EXPORT(GetFlatSoundName, PE_GetFlatSoundName),
-	    HLL_EXPORT(Parts_ChangeFlatSound, PE_ChangeFlatSound),
+	    HLL_OVERLOAD(Parts_ChangeFlatSound, PartsEngine_ResolveChangeFlatSound),
 	    HLL_EXPORT(GetProxyFlatSound, PE_GetProxyFlatSound),
 	    HLL_EXPORT(ReturnChangeFlatSound, PE_ReturnChangeFlatSound),
 	    HLL_EXPORT(ClearChangeFlatSound, PE_ClearChangeFlatSound),
@@ -3995,6 +4059,12 @@ static void PartsEngine_PreLink(void)
 		} else {
 			static_library_replace(&lib_PartsEngine, "UpdateComponent", PartsEngine_Update_v12);
 		}
+	}
+	fun = get_fun(libno, "UpdateMatrix");
+	if (fun && fun->nr_arguments == 3) {
+		static_library_replace(&lib_PartsEngine, "UpdateMatrix", PartsEngine_UpdateMatrix_v8);
+	} else if (fun && fun->nr_arguments == 1) {
+		static_library_replace(&lib_PartsEngine, "UpdateMatrix", PartsEngine_UpdateMatrix);
 	}
 	fun = get_fun(libno, "Parts_GetPartsCGName");
 	if (fun && fun->return_type.data == AIN_STRING) {

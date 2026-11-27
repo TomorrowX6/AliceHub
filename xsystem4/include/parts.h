@@ -52,6 +52,8 @@ void PE_Update(int passed_time, bool message_window_show);
 void PE_UpdateWithTimeScale(int passed_time, int scaled_time, bool message_window_show);
 void PE_UpdateComponent(int passed_time);
 void PE_UpdateParts(int passed_time, bool is_skip, bool message_window_show);
+void PE_SetMessageWindowShow(bool show);
+void PE_SetMessageWindowEffectRates(float multiply_rate, float alpha_rate);
 void PE_SetDelegateIndex(int parts_no, int delegate_index);
 int PE_GetDelegateIndex(int parts_no);
 void PE_SetComment(int parts_no, struct string *comment);
@@ -118,6 +120,7 @@ void PE_GetNumeralCGNumberWidthList(int no, int *w0, int *w1, int *w2, int *w3,
 void PE_GetNumeralSurfaceArea(int no, int *x, int *y, int *w, int *h, int state);
 void PE_ReleaseParts(int parts_no);
 void PE_ReleaseAllParts(void);
+void PE_ReleaseAll_list(struct page **erase_number_list);
 void PE_ReleaseAllPartsWithoutSystem(void);
 void PE_ReleaseAllWithoutSystem(struct page **erase_number_list);
 void PE_SetPos(int parts_no, int x, int y);

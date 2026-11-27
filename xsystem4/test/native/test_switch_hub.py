@@ -1767,3 +1767,117 @@ int main(void)
                 check=True,
             )
             subprocess.run([str(exe)], cwd=root, check=True)
+
+
+class SwitchModsCatalogParityTest(unittest.TestCase):
+    def test_uncensored_catalog_parity_and_spinoff_exclusions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            exe = work / "test_catalog"
+            subprocess.run(
+                ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(HUB), "-I", str(ENGINE / "include"),
+                 str(HUB / "mods_catalog.c"),
+                 str(HUB / "install_transaction.c"),
+                 str(HUB / "fs_util.c"),
+                 str(HUB / "model.c"),
+                 str(ENGINE / "src/cJSON.c"),
+                 "-x", "c", "-", "-o", str(exe)],
+                input=r"""
+#include "mods.h"
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
+static void make_game(const char *dir, const char *file)
+{
+    assert(!mkdir(dir, 0700));
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%s", dir, file);
+    FILE *f = fopen(path, "wb");
+    assert(f && fputs("x", f) >= 0 && !fclose(f));
+}
+
+static void add_file(const char *dir, const char *file)
+{
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%s", dir, file);
+    FILE *f = fopen(path, "wb");
+    assert(f && fputs("x", f) >= 0 && !fclose(f));
+}
+
+int main(void)
+{
+    // Dohna Dohna (ain and CG archive markers)
+    make_game("dohna_ain", "dohnadohna.ain");
+    const ModsGame *g = mods_game("dohna_ain", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "dohnadohna") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
+
+    make_game("dohna_cg", "DohnaDohnaCG.afa");
+    g = mods_game("dohna_cg", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "dohnadohna") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
+
+    // Haruka (Japanese, CN, English, and mojibake markers)
+    make_game("haruka_jp", "超昂閃忍ハルカ.ain");
+    g = mods_game("haruka_jp", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "haruka") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
+
+    make_game("haruka_en", "haruka.ain");
+    g = mods_game("haruka_en", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "haruka") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
+
+    make_game("haruka_cn", "超昂闪忍遥GA.ald");
+    g = mods_game("haruka_cn", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "haruka") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
+
+    // Evenicle supports BOTH translation AND uncensored; Evenicle 2 supports translation only.
+    make_game("evenicle", "Evenicle.ain");
+    g = mods_game("evenicle", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "evenicle") && g->kind == MODS_TRANSLATION && mods_game_has_uncensored(g));
+
+    make_game("evenicle2", "Evenicle2.ain");
+    g = mods_game("evenicle2", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "evenicle2") && g->kind == MODS_TRANSLATION && !mods_game_has_uncensored(g));
+
+    // Spin-off exclusions must never match even when a base CG archive is also present.
+    const char *excluded[] = {
+        "Evenicle2Rance.ain",
+        "EvenicleRance.ain",
+        "EvenicleGaiden.ain",
+        "EvenicleGaiten.ain",
+        "EvenicleAPC.ain",
+        "ハルカvs.ain",
+        "疾風!?忍者大作戦.ain",
+    };
+    for (size_t i = 0; i < sizeof(excluded) / sizeof(*excluded); ++i) {
+        char dir[64];
+        snprintf(dir, sizeof(dir), "excl_%zu", i);
+        make_game(dir, excluded[i]);
+        add_file(dir, "Evenicle.ain");
+        add_file(dir, "haruka.ain");
+        assert(!mods_game(dir, HUB_XSYSTEM4));
+    }
+
+    // Verify manifest parsing accepts dohnadohna, haruka, and evenicle uncensored manifests.
+    const char *sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const char *ids[] = {"dohnadohna", "haruka", "evenicle"};
+    for (size_t i = 0; i < sizeof(ids) / sizeof(*ids); ++i) {
+        ModsGame cg = {.id = ids[i], .kind = MODS_UNCENSORED};
+        char json[512];
+        snprintf(json, sizeof(json),
+            "{\"gameId\":\"%s\",\"size\":128,\"key\":\"uncensored/AliceHubUncensoredCG.afa\","
+            "\"fileName\":\"AliceHubUncensoredCG.afa\",\"sha256\":\"%s\"}",
+            ids[i], sha);
+        ModsCatalog cat = {0};
+        assert(mods_catalog_parse(&cat, &cg, json) && cat.count == 1);
+        free(cat.rows);
+    }
+    return 0;
+}
+""",
+                text=True,
+                check=True,
+            )
+            subprocess.run([str(exe)], cwd=work, check=True)

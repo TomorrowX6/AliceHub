@@ -15,6 +15,7 @@
  */
 
 #include <math.h>
+#include <string.h>
 
 #include "effect.h"
 #include "hll.h"
@@ -67,7 +68,13 @@ void DrawEffect_End(void)
 	draw_effect.on = false;
 }
 
+static void DrawEffect_ModuleFini(void)
+{
+	memset(&draw_effect, 0, sizeof(draw_effect));
+}
+
 HLL_LIBRARY(DrawEffect,
+	    HLL_EXPORT(_ModuleFini, DrawEffect_ModuleFini),
 	    HLL_EXPORT(Begin, DrawEffect_Begin),
 	    HLL_EXPORT(Draw, DrawEffect_Draw),
 	    HLL_EXPORT(End, DrawEffect_End)

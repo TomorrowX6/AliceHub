@@ -39,5 +39,6 @@ bool movie_set_volume(struct movie_context *mc, int volume /* 0-100 */);
 bool movie_has_active_playback(void);
 uint32_t movie_get_playback_seq(void);
 bool movie_skip_active(void);
+void movie_end_session(void);
 
 #endif /* SYSTEM4_MOVIE_H */

@@ -1095,7 +1095,7 @@ void mixer_init(void)
 		mixers[i].parent = node_parent;
 		node_parent->children = xrealloc_array(node_parent->children, node_parent->nr_children, node_parent->nr_children+1, sizeof(struct mixer*));
 		node_parent->children[node_parent->nr_children++] = &mixers[i];
-		if (!split_voice_mixers && !game_rance10 && !game_evenicle2 && !game_ixseal && !game_rance03 && !game_okusama && !game_haharanman && !game_night_remaster && !game_tsumamigui3_jun && !game_tsumamigui3_ntr && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
+		if (!split_voice_mixers && !game_rance10 && !game_dohnadohna && !game_evenicle2 && !game_ixseal && !game_rance03 && !game_okusama && !game_haharanman && !game_night_remaster && !game_tsumamigui3_jun && !game_tsumamigui3_ntr && !game_maman && (!strcmp(mixers[i].name, "Voice") || !strcmp(mixers[i].name, SJIS_VOICE))) {
 			parent = &mixers[i];
 		}
 	}
