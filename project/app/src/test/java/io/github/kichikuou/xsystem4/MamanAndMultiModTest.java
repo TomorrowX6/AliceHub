@@ -473,6 +473,15 @@ public class MamanAndMultiModTest {
                 GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", pascha3PrefixedSave, null)
         );
 
+        File pascha3PrefixedEnqueteSave = makeDir(
+                "Pascha3PrefixedEnqueteUnknown",
+                "ModPrefix_PC3Enquete.sav"
+        );
+        assertEquals(
+                GameCatalog.ID_PASCHA3,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", pascha3PrefixedEnqueteSave, null)
+        );
+
         File tsuma3Save = makeDir(
                 "Tsuma3SaveUnknown",
                 "Tuma3Extra.sav",

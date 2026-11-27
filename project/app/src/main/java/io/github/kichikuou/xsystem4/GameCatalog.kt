@@ -6962,7 +6962,8 @@ object GameCatalog {
                         lower.startsWith("パステルチャイム3_") ||
                         lower.endsWith("_pc3.sav") ||
                         lower.endsWith("_pc3user.sav") ||
-                        lower.endsWith("_pc3conf.sav")
+                        lower.endsWith("_pc3conf.sav") ||
+                        lower.endsWith("_pc3enquete.sav")
                 }
             ) {
                 return ID_PASCHA3
