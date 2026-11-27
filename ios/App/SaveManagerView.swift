@@ -14,9 +14,26 @@ struct SaveManagerView: View {
     @State private var confirmation: SaveConfirmation?
     @State private var naming: SaveNaming?
 
+    private var ainPath: String? {
+        guard game.engine == .system4 else { return nil }
+        let bootEntry = UserDefaults.standard.string(forKey: "hub.system4BootEntry." + game.id) ?? ""
+        let isDsr = saveDirectoryName.hasSuffix(GameLibrary.daiSengokuSaveDirSuffix)
+        return SaveManager.resolveAinPath(in: game.url, bootEntry: bootEntry, isDaiSengokuSave: isDsr)
+    }
+
     private var manager: SaveManager {
-        SaveManager(game: saveDirectoryName) { source, destination in
-            guard savedata_export_pc_file(source.path, destination.path) else { throw SaveManager.Failure.conversion }
+        let resolvedAinPath = ainPath
+        return SaveManager(
+            game: saveDirectoryName,
+            hasXSystem4OnlyState: { savedata_file_has_xsystem4_only_state($0.path) }
+        ) { source, destination in
+            let ok: Bool
+            if let resolvedAinPath {
+                ok = savedata_export_pc_file_with_ain(source.path, destination.path, resolvedAinPath)
+            } else {
+                ok = savedata_export_pc_file_with_ain(source.path, destination.path, nil)
+            }
+            guard ok else { throw SaveManager.Failure.conversionFile(source.lastPathComponent) }
         }
     }
 
@@ -118,7 +135,7 @@ struct SaveManagerView: View {
                     operate {
                         let access = url.startAccessingSecurityScopedResource()
                         defer { if access { url.stopAccessingSecurityScopedResource() } }
-                        return exportMessage(try manager.export(to: url, pc: pc, zip: false), pc: pc)
+                        return exportMessage(try manager.exportWithReport(to: url, pc: pc, zip: false), pc: pc)
                     }
                 case .exportFile(let url, let result):
                     try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
@@ -168,22 +185,39 @@ struct SaveManagerView: View {
         }
     }
 
-    private func exportMessage(_ counts: (Int, Int), pc: Bool) -> String {
-        pc ? hubText("已导出 %lld 个 PC 兼容存档文件，其中 %lld 个已自动转换", counts.0, counts.1) : hubText("已导出 %lld 个存档文件", counts.0)
+    private func exportMessage(_ summary: SaveManager.ExportSummary, pc: Bool) -> String {
+        let base: String
+        if pc {
+            base = summary.converted > 0
+                ? hubText("已导出 %lld 个 PC 兼容存档文件，其中 %lld 个已自动转换", summary.exported, summary.converted)
+                : hubText("已导出 %lld 个 PC 兼容存档文件", summary.exported)
+        } else {
+            base = hubText("已导出 %lld 个存档文件", summary.exported)
+        }
+        guard pc, !summary.xsystem4OnlyFiles.isEmpty else { return base }
+        let names = summary.xsystem4OnlyFiles.prefix(5).joined(separator: ", ") +
+            (summary.xsystem4OnlyFiles.count > 5 ? "…" : "")
+        let warning = hubText(
+            "提示：常规槽位存档和全局存档已兼容 PC，但其中 %lld 个中途恢复快照文件（%@）包含仅 xsystem4 支持的界面状态，无法在 Windows PC 版读取。",
+            summary.xsystem4OnlyFiles.count,
+            names
+        )
+        return base + "\n\n" + warning
     }
 
     private func prepareExport(pc: Bool, zip: Bool, single: SaveManager.FileEntry? = nil) {
         guard zip || single != nil else { picker = SavePickerRequest(kind: .folder(pc: pc)); return }
+        let saveManager = manager
         busy = true
         DispatchQueue.global(qos: .userInitiated).async {
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             do {
                 try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
-                let url = temporary.appendingPathComponent(single?.url.lastPathComponent ?? manager.exportName(pc: pc))
-                let counts = try manager.export(to: url, pc: pc, zip: zip, single: single)
+                let url = temporary.appendingPathComponent(single?.url.lastPathComponent ?? saveManager.exportName(pc: pc))
+                let summary = try saveManager.exportWithReport(to: url, pc: pc, zip: zip, single: single)
                 DispatchQueue.main.async {
                     busy = false
-                    picker = SavePickerRequest(kind: .exportFile(url, exportMessage(counts, pc: pc)))
+                    picker = SavePickerRequest(kind: .exportFile(url, exportMessage(summary, pc: pc)))
                 }
             } catch {
                 try? FileManager.default.removeItem(at: temporary)

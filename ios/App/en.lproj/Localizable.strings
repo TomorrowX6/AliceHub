@@ -349,6 +349,8 @@
 "已删除 %@" = "Deleted %@.";
 "操作失败：%@" = "Operation failed: %@";
 "已导出 %lld 个 PC 兼容存档文件，其中 %lld 个已自动转换" = "PC-compatible save files exported: %lld (%lld converted).";
+"已导出 %lld 个 PC 兼容存档文件" = "PC-compatible save files exported: %lld.";
+"提示：常规槽位存档和全局存档已兼容 PC，但其中 %lld 个中途恢复快照文件（%@）包含仅 xsystem4 支持的界面状态，无法在 Windows PC 版读取。" = "Note: Regular slot and global saves are PC-compatible, but %lld mid-scene resume snapshot file(s) (%@) contain xsystem4-only UI state and cannot be loaded on Windows PC.";
 "已导出 %lld 个存档文件" = "Save files exported: %lld.";
 "未知错误" = "Unknown error";
 "无法读取存档：%@" = "Couldn’t read the save: %@";
@@ -357,6 +359,7 @@
 "以下字段未能写入：%@" = "Couldn’t save these fields: %@";
 "存档路径不安全。" = "Unsafe save path.";
 "转换 PC 存档失败。" = "Couldn’t convert the PC save.";
+"转换 PC 存档失败：%@" = "Couldn’t convert the PC save: %@";
 "无法替换存档目录。" = "Couldn’t replace the save folder.";
 "恢复失败；原存档保留在 %@" = "Couldn’t restore the backup. Original saves are still at %@.";
 "ZIP 压缩包损坏或校验失败。" = "The ZIP archive is damaged or failed verification.";

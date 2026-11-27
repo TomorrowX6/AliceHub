@@ -2512,7 +2512,8 @@ static void x4ss_write_value(struct x4ss_save_ctx *ctx, struct x4ss_buf *b, cons
 	case AIN_REF_DELEGATE:
 		x4ss_put_u8(b, X4SS_VAL_NONE);
 		break;
-	case AIN_STRING: {
+	case AIN_STRING:
+	case AIN_REF_STRING: {
 		x4ss_put_u8(b, X4SS_VAL_STRING);
 		if (string_index_valid(vals[0].i)) {
 			struct string *s = heap_get_string(vals[0].i);
@@ -3301,13 +3302,16 @@ static void gd_ss_assign_value(struct gd_ss_load_ctx *ctx, union vm_value *dst,
 		return;
 	}
 
-	const struct ain_type *eff = (t->data == AIN_WRAP && t->array_type) ? t->array_type : t;
+	const struct ain_type *eff = t;
+	while (eff->data == AIN_WRAP && eff->array_type)
+		eff = eff->array_type;
 	switch (eff->data) {
 	case AIN_VOID:
 	case AIN_DELEGATE:
 	case AIN_REF_DELEGATE:
 		break;
-	case AIN_STRING: {
+	case AIN_STRING:
+	case AIN_REF_STRING: {
 		struct string *s;
 		if (raw_val == INT32_MAX || raw_val < 0 || (uint32_t)raw_val >= ctx->p->nr_strings)
 			s = string_ref(&EMPTY_STRING);
@@ -3445,11 +3449,6 @@ static bool deserialize_gd_structs(const char *path, const char *filename,
 				m = -1;
 			} else if (fn && fn[0]) {
 				m = struct_member_index(st, fn);
-			} else if ((int)fi < st->nr_members && sd->fields[fi].type1 != AIN_VOID) {
-				if ((!st->members[fi].name2 || !st->members[fi].name2[0])
-						&& st->members[fi].type.data == (enum ain_data_type)sd->fields[fi].type1) {
-					m = (int)fi;
-				}
 			}
 			schema_fmap[si][fi] = m;
 		}
@@ -3500,11 +3499,20 @@ static bool deserialize_gd_structs(const char *path, const char *filename,
 
 			bool is_none = false;
 			bool has_opt_none = false;
-			if (mt->data == AIN_OPTION && fi + 1 < nfields && sd->fields[fi + 1].type1 == AIN_VOID) {
-				uint32_t nv_idx = gd_read_u32_le(parsed.objs[id].val_idxs_le + (fi + 1) * 4);
-				if (nv_idx < parsed.nr_vals) {
-					is_none = (gd_read_i32_le(parsed.vals_le + nv_idx * 4) != 0);
-					has_opt_none = true;
+			if (mt->data == AIN_OPTION) {
+				uint32_t none_off = (mw > 1) ? (uint32_t)(mw - 1) : 1u;
+				if (fi + none_off < nfields && sd->fields[fi + none_off].type1 == AIN_VOID) {
+					uint32_t nv_idx = gd_read_u32_le(parsed.objs[id].val_idxs_le + (fi + none_off) * 4);
+					if (nv_idx < parsed.nr_vals) {
+						is_none = (gd_read_i32_le(parsed.vals_le + nv_idx * 4) != 0);
+						has_opt_none = true;
+					}
+				} else if (fi + 1 < nfields && sd->fields[fi + 1].type1 == AIN_VOID) {
+					uint32_t nv_idx = gd_read_u32_le(parsed.objs[id].val_idxs_le + (fi + 1) * 4);
+					if (nv_idx < parsed.nr_vals) {
+						is_none = (gd_read_i32_le(parsed.vals_le + nv_idx * 4) != 0);
+						has_opt_none = true;
+					}
 				}
 			}
 			gd_ss_assign_value(&ctx, &sp->values[m_idx], mt, raw_val, is_none, has_opt_none, true);
@@ -3931,6 +3939,13 @@ static void gd_ss_builder_set_roots(struct gd_ss_builder *b, const int32_t *root
 	b->root_ids = xcalloc(max(nr_roots, 1u), sizeof(int32_t));
 	if (nr_roots > 0)
 		memcpy(b->root_ids, roots, nr_roots * sizeof(int32_t));
+
+	b->objs[0].struct_def = -1;
+	b->objs[0].nr_vals = nr_roots;
+	free(b->objs[0].val_idxs);
+	b->objs[0].val_idxs = xcalloc(max(nr_roots, 1u), sizeof(uint32_t));
+	for (uint32_t r = 0; r < nr_roots; r++)
+		b->objs[0].val_idxs[r] = r;
 }
 
 static void gd_ss_builder_set_comment(struct gd_ss_builder *b, const uint8_t *comment, uint32_t len, bool has_comment)
@@ -4029,7 +4044,7 @@ static bool gd_ss_builder_write_file(const struct gd_ss_builder *b, const char *
 
 	uint32_t sec_off[7] = { 64u, c1_off, c2_off, c3_off, c4_off, c5_off, c6_off };
 	uint32_t sec_cnt[7] = {
-		1u,
+		b->nr_roots,
 		b->nr_objs,
 		b->nr_roots + 1u,
 		b->nr_strings,
@@ -4072,23 +4087,42 @@ static bool gd_ss_builder_write_file(const struct gd_ss_builder *b, const char *
 	return atomic_save_commit(fp, path, tmp_path, keep_backup);
 }
 
-static int32_t gd_ss_normalize_type_code(const struct ain_type *t)
+static int32_t gd_ss_wrap_to_ref(int32_t inner)
+{
+	switch (inner) {
+	case AIN_INT:        return AIN_REF_INT;        /* 10 -> 18 */
+	case AIN_FLOAT:      return AIN_REF_FLOAT;      /* 11 -> 19 */
+	case AIN_STRING:     return AIN_REF_STRING;     /* 12 -> 20 */
+	case AIN_STRUCT:     return AIN_REF_STRUCT;     /* 13 -> 21 */
+	case AIN_BOOL:       return AIN_REF_BOOL;       /* 47 -> 51 */
+	case AIN_LONG_INT:   return AIN_REF_LONG_INT;   /* 55 -> 59 */
+	case AIN_DELEGATE:   return AIN_REF_DELEGATE;   /* 63 -> 67 */
+	case AIN_ARRAY:      return AIN_REF_ARRAY;      /* 79 -> 80 */
+	case AIN_WRAP:       return AIN_WRAP;           /* 82 -> 82 */
+	case AIN_OPTION:     return AIN_REF_OPTION;     /* 86 -> 87 */
+	case AIN_ENUM:       return AIN_REF_ENUM;       /* 92 -> 93 */
+	case AIN_IFACE_WRAP: return AIN_IFACE;          /* 100 -> 89 */
+	case AIN_FUNC_TYPE:  return AIN_REF_FUNC_TYPE;  /* 27 -> 31 */
+	default:             return inner;
+	}
+}
+
+static int32_t gd_ss_compute_type2(const struct ain_type *t)
+{
+	if (!t)
+		return AIN_VOID;
+	if (t->data == AIN_WRAP)
+		return t->array_type ? gd_ss_wrap_to_ref((int32_t)t->array_type->data) : AIN_WRAP;
+	if (t->data == AIN_OPTION)
+		return t->array_type ? gd_ss_compute_type2(t->array_type) : AIN_VOID;
+	return (int32_t)t->data;
+}
+
+static int32_t gd_ss_compute_array_elem_type(const struct ain_type *t)
 {
 	if (!t)
 		return AIN_INT;
-	const struct ain_type *eff = t;
-	while (eff->data == AIN_WRAP && eff->array_type)
-		eff = eff->array_type;
-	switch (eff->data) {
-	case AIN_IFACE_WRAP:
-		return AIN_IFACE;
-	case AIN_ENUM2:
-	case AIN_REF_ENUM:
-		return AIN_ENUM;
-	case AIN_REF_STRUCT:
-		return AIN_STRUCT;
-	case AIN_REF_FUNC_TYPE:
-		return AIN_FUNC_TYPE;
+	switch (t->data) {
 	case AIN_ARRAY_INT:
 	case AIN_ARRAY_FLOAT:
 	case AIN_ARRAY_STRING:
@@ -4097,7 +4131,6 @@ static int32_t gd_ss_normalize_type_code(const struct ain_type *t)
 	case AIN_ARRAY_BOOL:
 	case AIN_ARRAY_LONG_INT:
 	case AIN_ARRAY_DELEGATE:
-	case AIN_REF_ARRAY:
 	case AIN_REF_ARRAY_INT:
 	case AIN_REF_ARRAY_FLOAT:
 	case AIN_REF_ARRAY_STRING:
@@ -4108,8 +4141,29 @@ static int32_t gd_ss_normalize_type_code(const struct ain_type *t)
 	case AIN_REF_ARRAY_DELEGATE:
 		return AIN_ARRAY;
 	default:
-		return (int32_t)eff->data;
+		return gd_ss_compute_type2(t);
 	}
+}
+
+static bool gd_ss_type_is_struct_or_iface(int32_t type1, int32_t type2)
+{
+	int32_t eff = (type1 == AIN_WRAP || type1 == AIN_OPTION) ? type2 : type1;
+	switch (eff) {
+	case AIN_STRUCT:
+	case AIN_REF_STRUCT:
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static const char *gd_ss_member_save_name(const struct ain *a, const struct ain_variable *v)
+{
+	if (a && a->version >= 12 && v->name2 != NULL)
+		return v->name2;
+	return v->name ? v->name : "";
 }
 
 static bool gd_ss_vm_is_page_var(const struct ain_type *t)
@@ -4150,15 +4204,15 @@ struct gd_ss_vm_ctx {
 	bool unsupported;
 };
 
-static uint32_t gd_ss_vm_reg_struct(struct gd_ss_vm_ctx *ctx, int slot)
+static int32_t gd_ss_vm_reg_struct(struct gd_ss_vm_ctx *ctx, int slot)
 {
 	if (slot < 0 || !page_index_valid(slot))
-		return 0;
+		return -1;
 	struct page *p = heap[slot].page;
 	if (!p || p->type != STRUCT_PAGE)
-		return 0;
+		return -1;
 	if (ctx->slot_to_c1[slot] > 0)
-		return (uint32_t)ctx->slot_to_c1[slot];
+		return (int32_t)ctx->slot_to_c1[slot];
 	if (ctx->nr_c1 >= ctx->cap_c1) {
 		ctx->cap_c1 = ctx->cap_c1 ? ctx->cap_c1 * 2 : 128;
 		ctx->c1_to_slot = xrealloc(ctx->c1_to_slot, ctx->cap_c1 * sizeof(int));
@@ -4166,7 +4220,7 @@ static uint32_t gd_ss_vm_reg_struct(struct gd_ss_vm_ctx *ctx, int slot)
 	uint32_t id = ctx->nr_c1++;
 	ctx->slot_to_c1[slot] = (int)id;
 	ctx->c1_to_slot[id] = slot;
-	return id;
+	return (int32_t)id;
 }
 
 static int32_t gd_ss_vm_reg_array(struct gd_ss_vm_ctx *ctx, int slot)
@@ -4236,7 +4290,12 @@ static int32_t gd_ss_vm_emit_value(struct gd_ss_vm_ctx *ctx, struct gd_ss_builde
 	while (eff->data == AIN_WRAP && eff->array_type)
 		eff = eff->array_type;
 	switch (eff->data) {
+	case AIN_VOID:
+	case AIN_DELEGATE:
+	case AIN_REF_DELEGATE:
+		return 0;
 	case AIN_STRING:
+	case AIN_REF_STRING:
 		if (string_index_valid(vals[0].i)) {
 			struct string *s = heap_get_string(vals[0].i);
 			return gd_ss_builder_add_string(b, s->text, (size_t)s->size);
@@ -4247,7 +4306,7 @@ static int32_t gd_ss_vm_emit_value(struct gd_ss_vm_ctx *ctx, struct gd_ss_builde
 	case AIN_IFACE:
 	case AIN_IFACE_WRAP:
 		return (vals[0].i >= 0 && page_index_valid(vals[0].i) && ctx->slot_to_c1[vals[0].i] > 0)
-			? (int32_t)ctx->slot_to_c1[vals[0].i] : 0;
+			? (int32_t)ctx->slot_to_c1[vals[0].i] : -1;
 	case AIN_ARRAY:
 	case AIN_REF_ARRAY:
 	case AIN_ARRAY_TYPE:
@@ -4315,7 +4374,7 @@ static int serialize_gd_structs(const char *filename, struct page *struct_page_l
 
 	int32_t *root_ids = xcalloc((size_t)max(nr_roots, 1), sizeof(int32_t));
 	for (int i = 0; i < nr_roots; i++)
-		root_ids[i] = (int32_t)gd_ss_vm_reg_struct(&ctx, struct_page_list->values[i].i);
+		root_ids[i] = gd_ss_vm_reg_struct(&ctx, struct_page_list->values[i].i);
 
 	uint32_t next_c1 = 1;
 	uint32_t next_c4 = 1;
@@ -4325,15 +4384,21 @@ static int serialize_gd_structs(const char *filename, struct page *struct_page_l
 			struct ain_struct *st = &ain->structures[p->index];
 			for (int m = 0; m < st->nr_members && !ctx.unsupported; m++) {
 				const struct ain_type *mt = &st->members[m].type;
+				const char *mname = gd_ss_member_save_name(ain, &st->members[m]);
 				if (mt->data == AIN_VOID || mt->data == AIN_DELEGATE || mt->data == AIN_REF_DELEGATE)
 					continue;
-				if (st->members[m].name && !strcmp(st->members[m].name, "<vtable>"))
+				if (!mname[0] || !strcmp(mname, "<vtable>"))
 					continue;
-				gd_ss_vm_collect_value(&ctx, &p->values[m], mt);
+				if (m >= p->nr_vars)
+					continue;
 				if (mt->data == AIN_OPTION) {
 					int w = ain_type_slot_width(mt);
+					if (m + w <= p->nr_vars)
+						gd_ss_vm_collect_value(&ctx, &p->values[m], mt);
 					if (w > 1)
 						m += w - 1;
+				} else {
+					gd_ss_vm_collect_value(&ctx, &p->values[m], mt);
 				}
 			}
 		}
@@ -4342,8 +4407,8 @@ static int serialize_gd_structs(const char *filename, struct page *struct_page_l
 			struct ain_type et = p->a_type == AIN_ARRAY
 				? p->array.element_type
 				: (struct ain_type){ .data = array_type(p->a_type), .struc = p->array.struct_type };
-			int32_t ec = gd_ss_normalize_type_code(&et);
-			if (ec == AIN_IFACE)
+			int32_t ec = gd_ss_compute_array_elem_type(&et);
+			if (ec == AIN_IFACE || ec == AIN_IFACE_WRAP)
 				continue; /* PC writes -1 placeholders for AIN_IFACE arrays */
 			if (et.data == AIN_OPTION) {
 				ctx.unsupported = true;
@@ -4382,51 +4447,15 @@ static int serialize_gd_structs(const char *filename, struct page *struct_page_l
 		struct ain_struct *st = &ain->structures[p->index];
 
 		if (sno_to_schema[p->index] < 0) {
+			uint32_t nf = (uint32_t)st->nr_members;
 			struct gd_ss_bschema_field *fields = xcalloc((size_t)max(st->nr_members, 1), sizeof(*fields));
-			uint32_t nf = 0;
 			for (int m = 0; m < st->nr_members; m++) {
-				const char *mname = st->members[m].name ? st->members[m].name : "";
+				const char *mname = gd_ss_member_save_name(ain, &st->members[m]);
 				const struct ain_type *mt = &st->members[m].type;
-				if (!strcmp(mname, "<vtable>")) {
-					fields[nf].type1 = AIN_ARRAY;
-					fields[nf].type2 = AIN_ARRAY;
-					fields[nf].name = (char *)mname;
-					fields[nf].name_len = strlen(mname);
-					nf++;
-					continue;
-				}
-				if (mt->data == AIN_VOID || mt->data == AIN_REF_DELEGATE)
-					continue;
-				if (mt->data == AIN_DELEGATE) {
-					fields[nf].type1 = AIN_DELEGATE;
-					fields[nf].type2 = AIN_DELEGATE;
-					fields[nf].name = (char *)mname;
-					fields[nf].name_len = strlen(mname);
-					nf++;
-					continue;
-				}
-				if (mt->data == AIN_OPTION) {
-					fields[nf].type1 = AIN_OPTION;
-					fields[nf].type2 = gd_ss_normalize_type_code(mt->array_type);
-					fields[nf].name = (char *)mname;
-					fields[nf].name_len = strlen(mname);
-					nf++;
-					fields[nf].type1 = AIN_VOID;
-					fields[nf].type2 = AIN_VOID;
-					fields[nf].name = "";
-					fields[nf].name_len = 0;
-					nf++;
-					int w = ain_type_slot_width(mt);
-					if (w > 1)
-						m += w - 1;
-					continue;
-				}
-				int32_t tc = gd_ss_normalize_type_code(mt);
-				fields[nf].type1 = tc;
-				fields[nf].type2 = tc;
-				fields[nf].name = (char *)mname;
-				fields[nf].name_len = strlen(mname);
-				nf++;
+				fields[m].type1 = (int32_t)mt->data;
+				fields[m].type2 = gd_ss_compute_type2(mt);
+				fields[m].name = (char *)mname;
+				fields[m].name_len = strlen(mname);
 			}
 			struct gd_ss_bschema cand = {
 				.name = st->name ? st->name : "",
@@ -4444,35 +4473,45 @@ static int serialize_gd_structs(const char *filename, struct page *struct_page_l
 		b.objs[id].nr_vals = nf;
 		b.objs[id].val_idxs = xcalloc(max(nf, 1u), sizeof(uint32_t));
 
-		uint32_t fi = 0;
-		for (int m = 0; m < st->nr_members && fi < nf; m++) {
-			const char *mname = st->members[m].name ? st->members[m].name : "";
+		for (int m = 0; m < st->nr_members && (uint32_t)m < nf; m++) {
+			const char *mname = gd_ss_member_save_name(ain, &st->members[m]);
 			const struct ain_type *mt = &st->members[m].type;
-			if (!strcmp(mname, "<vtable>")) {
-				b.objs[id].val_idxs[fi++] = 0; /* vals[0] = 0 -> empty arr[0] */
+			int32_t ft1 = (int32_t)mt->data;
+			int32_t ft2 = gd_ss_compute_type2(mt);
+
+			if (mt->data == AIN_VOID || mt->data == AIN_DELEGATE || mt->data == AIN_REF_DELEGATE
+					|| !strcmp(mname, "<vtable>")) {
+				b.objs[id].val_idxs[m] = 0; /* vals[0] = 0 */
 				continue;
 			}
-			if (mt->data == AIN_VOID || mt->data == AIN_REF_DELEGATE)
-				continue;
-			if (mt->data == AIN_DELEGATE) {
-				b.objs[id].val_idxs[fi++] = 0;
+			if (!mname[0]) {
+				if (gd_ss_type_is_struct_or_iface(ft1, ft2))
+					b.objs[id].val_idxs[m] = gd_ss_builder_add_val(&b, -1);
+				else
+					b.objs[id].val_idxs[m] = 0;
 				continue;
 			}
 			if (mt->data == AIN_OPTION) {
 				int w = ain_type_slot_width(mt);
-				bool is_none = (p->values[m + w - 1].i != 0);
-				int32_t iv = (is_none || !mt->array_type)
+				bool is_none = (m + w <= p->nr_vars) ? (p->values[m + w - 1].i != 0) : true;
+				int32_t iv = (is_none || !mt->array_type || m >= p->nr_vars)
 					? -1
 					: gd_ss_vm_emit_value(&ctx, &b, &p->values[m], mt->array_type);
-				b.objs[id].val_idxs[fi++] = gd_ss_builder_add_val(&b, iv);
-				if (fi < nf)
-					b.objs[id].val_idxs[fi++] = gd_ss_builder_add_val(&b, is_none ? 1 : 0);
+				b.objs[id].val_idxs[m] = gd_ss_builder_add_val(&b, iv);
+				for (int k = 1; k < w && m + k < st->nr_members && (uint32_t)(m + k) < nf; k++) {
+					int32_t sv = (k == w - 1)
+						? (is_none ? 1 : 0)
+						: ((is_none || m + k >= p->nr_vars) ? -1 : p->values[m + k].i);
+					b.objs[id].val_idxs[m + k] = gd_ss_builder_add_val(&b, sv);
+				}
 				if (w > 1)
 					m += w - 1;
 				continue;
 			}
-			int32_t v = gd_ss_vm_emit_value(&ctx, &b, &p->values[m], mt);
-			b.objs[id].val_idxs[fi++] = gd_ss_builder_add_val(&b, v);
+			int32_t v = (m < p->nr_vars)
+				? gd_ss_vm_emit_value(&ctx, &b, &p->values[m], mt)
+				: (gd_ss_type_is_struct_or_iface(ft1, ft2) ? -1 : 0);
+			b.objs[id].val_idxs[m] = gd_ss_builder_add_val(&b, v);
 		}
 	}
 	free(sno_to_schema);
@@ -4482,7 +4521,7 @@ static int serialize_gd_structs(const char *filename, struct page *struct_page_l
 		struct ain_type et = p->a_type == AIN_ARRAY
 			? p->array.element_type
 			: (struct ain_type){ .data = array_type(p->a_type), .struc = p->array.struct_type };
-		int32_t ec = gd_ss_normalize_type_code(&et);
+		int32_t ec = gd_ss_compute_array_elem_type(&et);
 		int w = ain_type_slot_width(&et);
 		int len = p->nr_vars / w;
 
@@ -4490,7 +4529,7 @@ static int serialize_gd_structs(const char *filename, struct page *struct_page_l
 		b.arrays[aid].total = (uint32_t)len;
 		b.arrays[aid].elem_type = ec;
 		b.arrays[aid].elems = xcalloc((size_t)max(len, 1), sizeof(int32_t));
-		if (ec == AIN_IFACE) {
+		if (ec == AIN_IFACE || ec == AIN_IFACE_WRAP) {
 			for (int k = 0; k < len; k++)
 				b.arrays[aid].elems[k] = -1;
 		} else {
@@ -5042,48 +5081,129 @@ int read_serialize_struct_comment(const char *filename, struct string **comment_
 	return 1;
 }
 
-int write_group_save_comment(const char *keyname, const char *filename, const struct string *log)
+static char *make_comment_sidecar_path(const char *base)
 {
-	(void)keyname;
-	if (!filename)
-		return 0;
-	char *base = savedir_path(filename);
 	size_t blen = strlen(base);
 	char *cpath = xmalloc(blen + 9);
 	memcpy(cpath, base, blen);
 	memcpy(cpath + blen, ".comment", 9);
-	free(base);
+	return cpath;
+}
 
-	char *tmp = NULL;
-	FILE *fp = atomic_save_open(cpath, "wb", &tmp);
+static bool gsave_upgrade_and_set_comment(struct gsave *gs, const char *text, size_t len)
+{
+	if (!gs || gs->version < 7)
+		return false;
+	if (gs->version == 7) {
+		gs->version = 8;
+		gs->uk2 = 64;
+		bool has_sentinel = (gs->nr_globals > 0
+				&& gs->globals[gs->nr_globals - 1].type == AIN_VOID
+				&& gs->globals[gs->nr_globals - 1].name
+				&& gs->globals[gs->nr_globals - 1].name[0] == '\0');
+		if (!has_sentinel) {
+			gs->globals = xrealloc(gs->globals, (size_t)(gs->nr_globals + 1) * sizeof(*gs->globals));
+			memset(&gs->globals[gs->nr_globals], 0, sizeof(*gs->globals));
+			gs->globals[gs->nr_globals].type = AIN_VOID;
+			gs->globals[gs->nr_globals].name = xstrdup("");
+			gs->nr_globals++;
+		}
+	}
+	if (gs->comments) {
+		for (int32_t i = 0; i < gs->nr_comments; i++) {
+			if (gs->comments[i])
+				free_string(gs->comments[i]);
+		}
+		free(gs->comments);
+	}
+	gs->nr_comments = 1;
+	gs->comments = xcalloc(1, sizeof(struct string *));
+	gs->comments[0] = make_string(text ? text : "", (unsigned int)len);
+	return true;
+}
+
+int write_group_save_comment(const char *keyname, const char *filename, const struct string *log)
+{
+	if (!filename || !log)
+		return 0;
+	char *path = savedir_path(filename);
+	enum savefile_error err;
+	struct gsave *gs = gsave_read(path, &err);
+	if (!gs) {
+		WARNING("%s: %s", display_utf0(path), savefile_strerror(err));
+		free(path);
+		return 0;
+	}
+	if (keyname && keyname[0] && gs->key && !save_names_equal(keyname, gs->key)) {
+		WARNING("Attempted to write save comment with wrong key: expected '%s', got '%s'",
+				display_sjis0(gs->key), display_sjis1(keyname));
+		gsave_free(gs);
+		free(path);
+		return 0;
+	}
+	if (!gsave_upgrade_and_set_comment(gs, log->text, (size_t)log->size)) {
+		gsave_free(gs);
+		free(path);
+		return 0;
+	}
+
+	char *tmp_path = NULL;
+	FILE *fp = atomic_save_open(path, "wb", &tmp_path);
 	if (!fp) {
-		free(cpath);
+		WARNING("Failed to open save file %s: %s", display_utf0(path), strerror(errno));
+		gsave_free(gs);
+		free(path);
 		return 0;
 	}
-	size_t slen = log ? (size_t)log->size : 0;
-	bool ok = (slen == 0) || (fwrite(log->text, 1, slen, fp) == slen);
-	if (!ok) {
-		atomic_save_abort(fp, tmp);
-		free(cpath);
+
+	bool encrypt = ain ? !AIN_VERSION_GTE(ain, 6, 0) : (gs->version <= 5);
+	int compression_level = (ain ? AIN_VERSION_GTE(ain, 6, 0) : (gs->version >= 7)) ? 1 : 9;
+	err = gsave_write(gs, fp, encrypt, compression_level);
+	gsave_free(gs);
+	if (err != SAVEFILE_SUCCESS) {
+		WARNING("Failed to write save file: %s", savefile_strerror(err));
+		atomic_save_abort(fp, tmp_path);
+		free(path);
 		return 0;
 	}
-	ok = atomic_save_commit(fp, cpath, tmp, false);
-	free(cpath);
+	bool ok = atomic_save_commit(fp, path, tmp_path, false);
+	if (ok) {
+		char *cpath = make_comment_sidecar_path(path);
+		if (file_exists(cpath))
+			remove_utf8(cpath);
+		free(cpath);
+	}
+	free(path);
 	return ok ? 1 : 0;
 }
 
 int read_group_save_comment(const char *keyname, const char *filename, struct string **log_out)
 {
-	(void)keyname;
 	if (!filename || !log_out)
 		return 0;
-	char *base = savedir_path(filename);
-	size_t blen = strlen(base);
-	char *cpath = xmalloc(blen + 9);
-	memcpy(cpath, base, blen);
-	memcpy(cpath + blen, ".comment", 9);
-	free(base);
+	char *path = savedir_path(filename);
+	enum savefile_error err;
+	struct gsave *gs = gsave_read(path, &err);
+	if (gs) {
+		if (keyname && keyname[0] && gs->key && !save_names_equal(keyname, gs->key)) {
+			WARNING("Attempted to read save comment with wrong key: expected '%s', got '%s'",
+					display_sjis0(gs->key), display_sjis1(keyname));
+			gsave_free(gs);
+			free(path);
+			return 0;
+		}
+		if (gs->nr_comments > 0 && gs->comments && gs->comments[0]) {
+			*log_out = string_dup(gs->comments[0]);
+			gsave_free(gs);
+			free(path);
+			return 1;
+		}
+		gsave_free(gs);
+	}
 
+	/* Fallback for pre-existing AliceHub saves with legacy <file>.comment sidecars */
+	char *cpath = make_comment_sidecar_path(path);
+	free(path);
 	size_t len = 0;
 	uint8_t *data = file_read(cpath, &len);
 	free(cpath);
@@ -5095,9 +5215,87 @@ int read_group_save_comment(const char *keyname, const char *filename, struct st
 }
 
 /* =========================================================================
- * Standalone X4SS -> Windows PC "GD\x01\x01 serialize_struct" Converter
+ * Standalone PC Export & X4SS / GD\x01\x01 Repair Helpers
  * (Must not dereference VM globals such as `ain` or `heap`.)
  * ========================================================================= */
+
+static int ext_ain_type_slot_width(const struct ain *a, const struct ain_type *type)
+{
+	if (!type)
+		return 1;
+	switch (type->data) {
+	case AIN_IFACE:
+	case AIN_IFACE_WRAP:
+	case AIN_REF_OPTION:
+	case AIN_REF_INT:
+	case AIN_REF_FLOAT:
+	case AIN_REF_BOOL:
+	case AIN_REF_LONG_INT:
+	case AIN_REF_ENUM:
+	case AIN_REF_FUNC_TYPE:
+		return 2;
+	case AIN_WRAP:
+		if (a && a->version < 14)
+			return 2;
+		if (!type->array_type)
+			return 1;
+		switch (type->array_type->data) {
+		case AIN_STRING:
+		case AIN_STRUCT:
+		case AIN_ARRAY:
+		case AIN_DELEGATE:
+		case AIN_ARRAY_TYPE:
+			return 1;
+		default:
+			return 2;
+		}
+	case AIN_OPTION:
+		return (type->array_type ? ext_ain_type_slot_width(a, type->array_type) : 1) + 1;
+	default:
+		return 1;
+	}
+}
+
+static int ext_ain_find_struct(const struct ain *a, const char *name, size_t len)
+{
+	if (!a || !name || len == 0)
+		return -1;
+	char stack_buf[256];
+	char *tmp = (len < sizeof(stack_buf)) ? stack_buf : xmalloc(len + 1);
+	memcpy(tmp, name, len);
+	tmp[len] = '\0';
+	int id = ain_get_struct((struct ain *)a, tmp);
+	if (id < 0) {
+		for (int i = 0; i < a->nr_structures; i++) {
+			if (a->structures[i].name && save_symbols_equal(a->structures[i].name, tmp)) {
+				id = i;
+				break;
+			}
+		}
+	}
+	if (tmp != stack_buf)
+		free(tmp);
+	return id;
+}
+
+static bool ext_cstr_eq_slice(const char *s, const char *slice, size_t slen)
+{
+	return s && strlen(s) == slen && (slen == 0 || memcmp(s, slice, slen) == 0);
+}
+
+static bool ext_sym_eq_slice(const char *s, const char *slice, size_t slen)
+{
+	if (!s || slen == 0)
+		return false;
+	char stack_buf[256];
+	char *tmp = (slen < sizeof(stack_buf)) ? stack_buf : xmalloc(slen + 1);
+	memcpy(tmp, slice, slen);
+	tmp[slen] = '\0';
+	bool eq = save_symbols_equal(s, tmp);
+	if (tmp != stack_buf)
+		free(tmp);
+	return eq;
+}
 
 static bool x4ss_get_cstr_slice(struct x4ss_reader *r, uint32_t *off_out, uint32_t *len_out)
 {
@@ -5117,11 +5315,6 @@ static bool x4ss_get_cstr_slice(struct x4ss_reader *r, uint32_t *off_out, uint32
 static int32_t x4ss_conv_norm_code(int32_t data)
 {
 	switch (data) {
-	case AIN_IFACE_WRAP:
-		return AIN_IFACE;
-	case AIN_ENUM2:
-	case AIN_REF_ENUM:
-		return AIN_ENUM;
 	case AIN_ARRAY_INT:
 	case AIN_ARRAY_FLOAT:
 	case AIN_ARRAY_STRING:
@@ -5130,7 +5323,6 @@ static int32_t x4ss_conv_norm_code(int32_t data)
 	case AIN_ARRAY_BOOL:
 	case AIN_ARRAY_LONG_INT:
 	case AIN_ARRAY_DELEGATE:
-	case AIN_REF_ARRAY:
 	case AIN_REF_ARRAY_INT:
 	case AIN_REF_ARRAY_FLOAT:
 	case AIN_REF_ARRAY_STRING:
@@ -5140,8 +5332,6 @@ static int32_t x4ss_conv_norm_code(int32_t data)
 	case AIN_REF_ARRAY_LONG_INT:
 	case AIN_REF_ARRAY_DELEGATE:
 		return AIN_ARRAY;
-	case AIN_REF_FUNC_TYPE:
-		return AIN_FUNC_TYPE;
 	default:
 		return data;
 	}
@@ -5168,7 +5358,7 @@ static bool x4ss_conv_read_type(struct x4ss_reader *r, int32_t *eff_data_out, in
 			return false;
 	}
 	if (dt == AIN_WRAP && has_inner)
-		*eff_data_out = inner_dt;
+		*eff_data_out = gd_ss_wrap_to_ref(inner_dt);
 	else
 		*eff_data_out = dt;
 	return true;
@@ -5211,6 +5401,7 @@ struct x4ss_conv_group {
 	uint32_t rep_oid;
 	uint32_t hash;
 	int32_t schema_id;
+	int ain_sno;
 	struct x4ss_conv_ftype *ftypes;
 };
 
@@ -5359,9 +5550,11 @@ static int32_t x4ss_conv_emit_scalar_or_ref(struct gd_ss_builder *b, const uint8
 {
 	switch (tag) {
 	case X4SS_VAL_NONE:
-		if (expected_type == AIN_ARRAY || expected_type == AIN_IFACE)
+		if (expected_type == AIN_ARRAY || expected_type == AIN_REF_ARRAY
+				|| expected_type == AIN_STRUCT || expected_type == AIN_REF_STRUCT
+				|| expected_type == AIN_IFACE || expected_type == AIN_IFACE_WRAP)
 			return -1;
-		if (expected_type == AIN_STRING)
+		if (expected_type == AIN_STRING || expected_type == AIN_REF_STRING)
 			return INT32_MAX;
 		return 0;
 	case X4SS_VAL_SCALAR:
@@ -5373,11 +5566,43 @@ static int32_t x4ss_conv_emit_scalar_or_ref(struct gd_ss_builder *b, const uint8
 		uint32_t oid = (raw_i > 0) ? (uint32_t)raw_i : 0;
 		if (oid > 0 && oid <= nr_objs && objs[oid].kind != X4SS_OBJ_NULL)
 			return (int32_t)objs[oid].gd_id;
-		return (expected_type == AIN_ARRAY || expected_type == AIN_IFACE) ? -1 : 0;
+		return (expected_type == AIN_ARRAY || expected_type == AIN_REF_ARRAY
+				|| expected_type == AIN_STRUCT || expected_type == AIN_REF_STRUCT
+				|| expected_type == AIN_IFACE || expected_type == AIN_IFACE_WRAP) ? -1 : 0;
 	}
 	default:
 		return 0;
 	}
+}
+
+static int x4ss_conv_find_field_for_member(const uint8_t *raw, const struct x4ss_conv_obj *o,
+		const struct ain_variable *v)
+{
+	if (v->name2 && v->name2[0]) {
+		for (uint32_t f = 0; f < o->count; f++) {
+			if (ext_cstr_eq_slice(v->name2, (const char *)(raw + o->fields[f].name_off), o->fields[f].name_len))
+				return (int)f;
+		}
+	}
+	if (v->name && v->name[0]) {
+		for (uint32_t f = 0; f < o->count; f++) {
+			if (ext_cstr_eq_slice(v->name, (const char *)(raw + o->fields[f].name_off), o->fields[f].name_len))
+				return (int)f;
+		}
+	}
+	if (v->name2 && v->name2[0]) {
+		for (uint32_t f = 0; f < o->count; f++) {
+			if (ext_sym_eq_slice(v->name2, (const char *)(raw + o->fields[f].name_off), o->fields[f].name_len))
+				return (int)f;
+		}
+	}
+	if (v->name && v->name[0]) {
+		for (uint32_t f = 0; f < o->count; f++) {
+			if (ext_sym_eq_slice(v->name, (const char *)(raw + o->fields[f].name_off), o->fields[f].name_len))
+				return (int)f;
+		}
+	}
+	return -1;
 }
 
 bool x4ss_is_container_file(const char *path)
@@ -5393,7 +5618,7 @@ bool x4ss_is_container_file(const char *path)
 	return is_x4ss;
 }
 
-bool x4ss_convert_to_gdss_file(const char *src_path, const char *dst_path)
+static bool x4ss_convert_to_gdss_file_with_ain(const char *src_path, const char *dst_path, const struct ain *ext_ain)
 {
 	if (!src_path || !dst_path)
 		return false;
@@ -5553,6 +5778,9 @@ bool x4ss_convert_to_gdss_file(const char *src_path, const char *dst_path)
 			groups[gid].rep_oid = oid;
 			groups[gid].hash = h;
 			groups[gid].schema_id = -1;
+			groups[gid].ain_sno = ext_ain
+				? ext_ain_find_struct(ext_ain, (const char *)(raw + o->sname_off), o->sname_len)
+				: -1;
 			groups[gid].ftypes = xcalloc(max(o->count, 1u), sizeof(struct x4ss_conv_ftype));
 			for (uint32_t f = 0; f < o->count; f++)
 				groups[gid].ftypes[f].t1 = -1;
@@ -5591,68 +5819,147 @@ bool x4ss_convert_to_gdss_file(const char *src_path, const char *dst_path)
 
 	for (uint32_t gi = 0; gi < nr_groups; gi++) {
 		const struct x4ss_conv_obj *rep = &objs[groups[gi].rep_oid];
-		const struct x4ss_conv_ftype *gft = groups[gi].ftypes;
-		uint32_t schema_nf = 0;
-		for (uint32_t f = 0; f < rep->count; f++)
-			schema_nf += (gft[f].t1 == AIN_OPTION) ? 2u : 1u;
-
-		struct gd_ss_bschema_field *fields = xcalloc(max(schema_nf, 1u), sizeof(*fields));
-		uint32_t fi = 0;
-		for (uint32_t f = 0; f < rep->count; f++) {
-			int32_t ft1 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t1;
-			int32_t ft2 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t2;
-			fields[fi].type1 = ft1;
-			fields[fi].type2 = ft2;
-			fields[fi].name = (char *)(raw + rep->fields[f].name_off);
-			fields[fi].name_len = rep->fields[f].name_len;
-			fi++;
-			if (ft1 == AIN_OPTION) {
-				fields[fi].type1 = AIN_VOID;
-				fields[fi].type2 = AIN_VOID;
-				fields[fi].name = "";
-				fields[fi].name_len = 0;
-				fi++;
+		int sno = groups[gi].ain_sno;
+		if (ext_ain && sno >= 0 && sno < ext_ain->nr_structures) {
+			const struct ain_struct *st = &ext_ain->structures[sno];
+			uint32_t nf = (uint32_t)st->nr_members;
+			struct gd_ss_bschema_field *fields = xcalloc(max(nf, 1u), sizeof(*fields));
+			for (int m = 0; m < st->nr_members; m++) {
+				const char *mname = gd_ss_member_save_name(ext_ain, &st->members[m]);
+				fields[m].type1 = (int32_t)st->members[m].type.data;
+				fields[m].type2 = gd_ss_compute_type2(&st->members[m].type);
+				fields[m].name = (char *)mname;
+				fields[m].name_len = strlen(mname);
 			}
+			struct gd_ss_bschema cand = {
+				.name = st->name ? st->name : "",
+				.name_len = st->name ? strlen(st->name) : 0,
+				.nr_fields = nf,
+				.fields = fields,
+			};
+			groups[gi].schema_id = gd_ss_builder_intern_schema(&b, &cand);
+			free(fields);
+		} else {
+			const struct x4ss_conv_ftype *gft = groups[gi].ftypes;
+			uint32_t schema_nf = 0;
+			for (uint32_t f = 0; f < rep->count; f++)
+				schema_nf += (gft[f].t1 == AIN_OPTION) ? 2u : 1u;
+
+			struct gd_ss_bschema_field *fields = xcalloc(max(schema_nf, 1u), sizeof(*fields));
+			uint32_t fi = 0;
+			for (uint32_t f = 0; f < rep->count; f++) {
+				int32_t ft1 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t1;
+				int32_t ft2 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t2;
+				fields[fi].type1 = ft1;
+				fields[fi].type2 = ft2;
+				fields[fi].name = (char *)(raw + rep->fields[f].name_off);
+				fields[fi].name_len = rep->fields[f].name_len;
+				fi++;
+				if (ft1 == AIN_OPTION) {
+					fields[fi].type1 = AIN_VOID;
+					fields[fi].type2 = AIN_VOID;
+					fields[fi].name = "";
+					fields[fi].name_len = 0;
+					fi++;
+				}
+			}
+			struct gd_ss_bschema cand = {
+				.name = (char *)(raw + rep->sname_off),
+				.name_len = rep->sname_len,
+				.nr_fields = schema_nf,
+				.fields = fields,
+			};
+			groups[gi].schema_id = gd_ss_builder_intern_schema(&b, &cand);
+			free(fields);
 		}
-		struct gd_ss_bschema cand = {
-			.name = (char *)(raw + rep->sname_off),
-			.name_len = rep->sname_len,
-			.nr_fields = schema_nf,
-			.fields = fields,
-		};
-		groups[gi].schema_id = gd_ss_builder_intern_schema(&b, &cand);
-		free(fields);
 	}
 
 	for (uint32_t oid = 1; oid <= nr_objs; oid++) {
 		const struct x4ss_conv_obj *o = &objs[oid];
 		if (o->kind == X4SS_OBJ_STRUCT) {
 			const struct x4ss_conv_group *g = &groups[o->group_id];
-			const struct x4ss_conv_ftype *gft = g->ftypes;
 			uint32_t schema_nf = b.schemas[g->schema_id].nr_fields;
 			struct gd_ss_bobj *dst = &b.objs[o->gd_id];
 			dst->struct_def = g->schema_id;
 			dst->nr_vals = schema_nf;
 			dst->val_idxs = xcalloc(max(schema_nf, 1u), sizeof(uint32_t));
 
-			uint32_t fi = 0;
-			for (uint32_t f = 0; f < o->count && fi < schema_nf; f++) {
-				const struct x4ss_conv_val *v = &o->fields[f].val;
-				int32_t ft1 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t1;
-				int32_t ft2 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t2;
-				if (ft1 == AIN_OPTION) {
-					bool is_none = (v->tag != X4SS_VAL_OPTION) || v->opt_is_none;
-					int32_t iv = is_none
-						? -1
-						: x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
-								v->opt_tag, v->i, v->str_off, v->str_len, ft2);
-					dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, iv);
-					if (fi < schema_nf)
-						dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, is_none ? 1 : 0);
-				} else {
-					int32_t gv = x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
-							v->tag, v->i, v->str_off, v->str_len, ft1);
-					dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, gv);
+			if (ext_ain && g->ain_sno >= 0 && g->ain_sno < ext_ain->nr_structures) {
+				const struct ain_struct *st = &ext_ain->structures[g->ain_sno];
+				for (int m = 0; m < st->nr_members && (uint32_t)m < schema_nf; m++) {
+					const struct ain_type *mt = &st->members[m].type;
+					const char *mname = gd_ss_member_save_name(ext_ain, &st->members[m]);
+					int32_t ft1 = (int32_t)mt->data;
+					int32_t ft2 = gd_ss_compute_type2(mt);
+					if (mt->data == AIN_VOID || mt->data == AIN_DELEGATE || mt->data == AIN_REF_DELEGATE
+							|| !strcmp(mname, "<vtable>")) {
+						dst->val_idxs[m] = 0;
+						continue;
+					}
+					if (!mname[0]) {
+						dst->val_idxs[m] = gd_ss_type_is_struct_or_iface(ft1, ft2)
+							? gd_ss_builder_add_val(&b, -1) : 0;
+						continue;
+					}
+					int xf = x4ss_conv_find_field_for_member(raw, o, &st->members[m]);
+					if (mt->data == AIN_OPTION) {
+						int w = ext_ain_type_slot_width(ext_ain, mt);
+						bool is_none = true;
+						int32_t iv = -1;
+						if (xf >= 0 && o->fields[xf].val.tag == X4SS_VAL_OPTION
+								&& !o->fields[xf].val.opt_is_none) {
+							const struct x4ss_conv_val *v = &o->fields[xf].val;
+							is_none = false;
+							iv = x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
+									v->opt_tag, v->i, v->str_off, v->str_len, ft2);
+						}
+						dst->val_idxs[m] = gd_ss_builder_add_val(&b, iv);
+						for (int k = 1; k < w && m + k < st->nr_members && (uint32_t)(m + k) < schema_nf; k++) {
+							int32_t sv = (k == w - 1) ? (is_none ? 1 : 0) : (is_none ? -1 : 0);
+							dst->val_idxs[m + k] = gd_ss_builder_add_val(&b, sv);
+						}
+						if (w > 1)
+							m += w - 1;
+						continue;
+					}
+					int32_t eff_t = (ft1 == AIN_WRAP) ? ft2 : ft1;
+					int32_t gv;
+					if (xf >= 0) {
+						const struct x4ss_conv_val *v = &o->fields[xf].val;
+						gv = x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
+								v->tag, v->i, v->str_off, v->str_len, eff_t);
+					} else if (gd_ss_type_is_struct_or_iface(ft1, ft2)
+							|| eff_t == AIN_ARRAY || eff_t == AIN_REF_ARRAY) {
+						gv = -1;
+					} else if (eff_t == AIN_STRING || eff_t == AIN_REF_STRING) {
+						gv = INT32_MAX;
+					} else {
+						gv = 0;
+					}
+					dst->val_idxs[m] = gd_ss_builder_add_val(&b, gv);
+				}
+			} else {
+				const struct x4ss_conv_ftype *gft = g->ftypes;
+				uint32_t fi = 0;
+				for (uint32_t f = 0; f < o->count && fi < schema_nf; f++) {
+					const struct x4ss_conv_val *v = &o->fields[f].val;
+					int32_t ft1 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t1;
+					int32_t ft2 = (gft[f].t1 < 0) ? AIN_VOID : gft[f].t2;
+					if (ft1 == AIN_OPTION) {
+						bool is_none = (v->tag != X4SS_VAL_OPTION) || v->opt_is_none;
+						int32_t iv = is_none
+							? -1
+							: x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
+									v->opt_tag, v->i, v->str_off, v->str_len, ft2);
+						dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, iv);
+						if (fi < schema_nf)
+							dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, is_none ? 1 : 0);
+					} else {
+						int32_t eff_t = (ft1 == AIN_WRAP) ? ft2 : ft1;
+						int32_t gv = x4ss_conv_emit_scalar_or_ref(&b, raw, objs, nr_objs,
+								v->tag, v->i, v->str_off, v->str_len, eff_t);
+						dst->val_idxs[fi++] = gd_ss_builder_add_val(&b, gv);
+					}
 				}
 			}
 		} else if (o->kind == X4SS_OBJ_ARRAY) {
@@ -5689,13 +5996,318 @@ fail:
 	return ok;
 }
 
-bool savedata_export_pc_file(const char *src_path, const char *dst_path)
+bool x4ss_convert_to_gdss_file(const char *src_path, const char *dst_path)
 {
-	if (!src_path || !dst_path)
-		return false;
-	if (x4ss_is_container_file(src_path))
-		return x4ss_convert_to_gdss_file(src_path, dst_path);
+	return x4ss_convert_to_gdss_file_with_ain(src_path, dst_path, NULL);
+}
 
+static int gd_ss_find_old_field_for_member(const struct gd_ss_struct_def *sd, const struct ain_variable *v)
+{
+	if (!sd || !v)
+		return -1;
+	if (v->name2 && v->name2[0]) {
+		for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+			const char *fn = sd->fields[fi].name;
+			if (sd->fields[fi].type1 != AIN_VOID && fn && fn[0] && !strcmp(v->name2, fn))
+				return (int)fi;
+		}
+	}
+	if (v->name && v->name[0]) {
+		for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+			const char *fn = sd->fields[fi].name;
+			if (sd->fields[fi].type1 != AIN_VOID && fn && fn[0] && !strcmp(v->name, fn))
+				return (int)fi;
+		}
+	}
+	if (v->name2 && v->name2[0]) {
+		for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+			const char *fn = sd->fields[fi].name;
+			if (sd->fields[fi].type1 != AIN_VOID && fn && fn[0] && save_symbols_equal(v->name2, fn))
+				return (int)fi;
+		}
+	}
+	if (v->name && v->name[0]) {
+		for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+			const char *fn = sd->fields[fi].name;
+			if (sd->fields[fi].type1 != AIN_VOID && fn && fn[0] && save_symbols_equal(v->name, fn))
+				return (int)fi;
+		}
+	}
+	return -1;
+}
+
+static bool gd_ss_repair_raw_with_ain(uint8_t *gd_raw, uint32_t gd_ulen, const char *dst_path,
+		const struct ain *ext_ain)
+{
+	struct gd_ss_parsed parsed;
+	if (!gd_ss_parse(gd_raw, gd_ulen, &parsed)) {
+		free(gd_raw);
+		return false;
+	}
+
+	struct gd_ss_builder b;
+	gd_ss_builder_init(&b);
+
+	/* Preserve C3 string pool 1-to-1 by index */
+	if (parsed.nr_strings > 0) {
+		b.cap_strings = parsed.nr_strings;
+		b.nr_strings = parsed.nr_strings;
+		b.strings = xcalloc(parsed.nr_strings, sizeof(char *));
+		b.string_lens = xcalloc(parsed.nr_strings, sizeof(size_t));
+		for (uint32_t i = 0; i < parsed.nr_strings; i++) {
+			size_t slen = parsed.strings[i].len;
+			b.strings[i] = xmalloc(slen + 1);
+			if (slen > 0)
+				memcpy(b.strings[i], parsed.strings[i].ptr, slen);
+			b.strings[i][slen] = '\0';
+			b.string_lens[i] = slen;
+		}
+	}
+
+	gd_ss_builder_reserve_objs(&b, max(parsed.nr_objs, 1u));
+	gd_ss_builder_reserve_arrays(&b, max(parsed.nr_arrays, 1u));
+	gd_ss_builder_set_roots(&b, parsed.root_ids, parsed.nr_roots);
+
+	uint32_t nr_defs = parsed.nr_struct_defs;
+	int *schema_snos = xcalloc(max(nr_defs, 1u), sizeof(int));
+	int32_t *new_schema_ids = xcalloc(max(nr_defs, 1u), sizeof(int32_t));
+	int **schema_old_fi = xcalloc(max(nr_defs, 1u), sizeof(int *));
+
+	for (uint32_t si = 0; si < nr_defs; si++) {
+		const struct gd_ss_struct_def *sd = &parsed.struct_defs[si];
+		int sno = (ext_ain && sd->name) ? ext_ain_find_struct(ext_ain, sd->name, strlen(sd->name)) : -1;
+		schema_snos[si] = sno;
+
+		if (ext_ain && sno >= 0 && sno < ext_ain->nr_structures) {
+			const struct ain_struct *st = &ext_ain->structures[sno];
+			uint32_t nf = (uint32_t)st->nr_members;
+			struct gd_ss_bschema_field *fields = xcalloc(max(nf, 1u), sizeof(*fields));
+			schema_old_fi[si] = xcalloc(max(nf, 1u), sizeof(int));
+			for (int m = 0; m < st->nr_members; m++) {
+				const char *mname = gd_ss_member_save_name(ext_ain, &st->members[m]);
+				fields[m].type1 = (int32_t)st->members[m].type.data;
+				fields[m].type2 = gd_ss_compute_type2(&st->members[m].type);
+				fields[m].name = (char *)mname;
+				fields[m].name_len = strlen(mname);
+				if (st->members[m].type.data == AIN_VOID || !mname[0] || !strcmp(mname, "<vtable>"))
+					schema_old_fi[si][m] = -1;
+				else
+					schema_old_fi[si][m] = gd_ss_find_old_field_for_member(sd, &st->members[m]);
+			}
+			struct gd_ss_bschema cand = {
+				.name = st->name ? st->name : "",
+				.name_len = st->name ? strlen(st->name) : 0,
+				.nr_fields = nf,
+				.fields = fields,
+			};
+			new_schema_ids[si] = gd_ss_builder_intern_schema(&b, &cand);
+			free(fields);
+		} else {
+			struct gd_ss_bschema_field *fields = xcalloc(max(sd->nr_fields, 1u), sizeof(*fields));
+			for (uint32_t fi = 0; fi < sd->nr_fields; fi++) {
+				const char *fn = sd->fields[fi].name ? sd->fields[fi].name : "";
+				fields[fi].type1 = sd->fields[fi].type1;
+				fields[fi].type2 = sd->fields[fi].type2;
+				fields[fi].name = (char *)fn;
+				fields[fi].name_len = strlen(fn);
+			}
+			struct gd_ss_bschema cand = {
+				.name = (char *)(sd->name ? sd->name : ""),
+				.name_len = sd->name ? strlen(sd->name) : 0,
+				.nr_fields = sd->nr_fields,
+				.fields = fields,
+			};
+			new_schema_ids[si] = gd_ss_builder_intern_schema(&b, &cand);
+			free(fields);
+		}
+	}
+
+	int32_t *arr_repaired_elem_type = xmalloc(max(parsed.nr_arrays, 1u) * sizeof(int32_t));
+	for (uint32_t ai = 0; ai < max(parsed.nr_arrays, 1u); ai++)
+		arr_repaired_elem_type[ai] = -1;
+
+	for (uint32_t id = 1; id < parsed.nr_objs; id++) {
+		const struct gd_ss_obj *old_obj = &parsed.objs[id];
+		int32_t sd_idx = old_obj->struct_def;
+		if (sd_idx < 0 || (uint32_t)sd_idx >= nr_defs) {
+			b.objs[id].struct_def = sd_idx;
+			b.objs[id].nr_vals = 0;
+			continue;
+		}
+		const struct gd_ss_struct_def *old_sd = &parsed.struct_defs[sd_idx];
+		int32_t new_sd = new_schema_ids[sd_idx];
+		int sno = schema_snos[sd_idx];
+
+		if (ext_ain && sno >= 0 && sno < ext_ain->nr_structures) {
+			const struct ain_struct *st = &ext_ain->structures[sno];
+			uint32_t nf = (uint32_t)st->nr_members;
+			b.objs[id].struct_def = new_sd;
+			b.objs[id].nr_vals = nf;
+			b.objs[id].val_idxs = xcalloc(max(nf, 1u), sizeof(uint32_t));
+
+			for (int m = 0; m < st->nr_members; m++) {
+				const char *mname = gd_ss_member_save_name(ext_ain, &st->members[m]);
+				const struct ain_type *mt = &st->members[m].type;
+				int32_t ft1 = (int32_t)mt->data;
+				int32_t ft2 = gd_ss_compute_type2(mt);
+
+				if (mt->data == AIN_VOID || mt->data == AIN_DELEGATE || mt->data == AIN_REF_DELEGATE
+						|| !strcmp(mname, "<vtable>")) {
+					b.objs[id].val_idxs[m] = 0;
+					continue;
+				}
+				if (!mname[0]) {
+					b.objs[id].val_idxs[m] = gd_ss_type_is_struct_or_iface(ft1, ft2)
+						? gd_ss_builder_add_val(&b, -1) : 0;
+					continue;
+				}
+
+				int old_fi = schema_old_fi[sd_idx][m];
+				if (mt->data == AIN_OPTION) {
+					int w = ext_ain_type_slot_width(ext_ain, mt);
+					bool is_none = true;
+					int32_t raw_val = -1;
+					int32_t mid_val = -1;
+					if (old_fi >= 0 && (uint32_t)old_fi < old_obj->nr_vals) {
+						uint32_t v_idx = gd_read_u32_le(old_obj->val_idxs_le + (uint32_t)old_fi * 4u);
+						if (v_idx < parsed.nr_vals)
+							raw_val = gd_read_i32_le(parsed.vals_le + v_idx * 4u);
+						uint32_t none_off = (w > 1) ? (uint32_t)(w - 1) : 1u;
+						uint32_t old_none_fi = UINT32_MAX;
+						if ((uint32_t)old_fi + none_off < old_sd->nr_fields
+								&& (uint32_t)old_fi + none_off < old_obj->nr_vals
+								&& old_sd->fields[(uint32_t)old_fi + none_off].type1 == AIN_VOID) {
+							old_none_fi = (uint32_t)old_fi + none_off;
+						} else if ((uint32_t)old_fi + 1u < old_sd->nr_fields
+								&& (uint32_t)old_fi + 1u < old_obj->nr_vals
+								&& old_sd->fields[(uint32_t)old_fi + 1u].type1 == AIN_VOID) {
+							old_none_fi = (uint32_t)old_fi + 1u;
+						}
+						if (old_none_fi != UINT32_MAX) {
+							uint32_t nv_idx = gd_read_u32_le(old_obj->val_idxs_le + old_none_fi * 4u);
+							if (nv_idx < parsed.nr_vals)
+								is_none = (gd_read_i32_le(parsed.vals_le + nv_idx * 4u) != 0);
+						}
+						if (w >= 3 && old_none_fi == (uint32_t)old_fi + (uint32_t)(w - 1)) {
+							uint32_t mv_idx = gd_read_u32_le(old_obj->val_idxs_le + ((uint32_t)old_fi + 1u) * 4u);
+							if (mv_idx < parsed.nr_vals)
+								mid_val = gd_read_i32_le(parsed.vals_le + mv_idx * 4u);
+						} else if (!is_none) {
+							mid_val = 0;
+						}
+					}
+					if (is_none) {
+						b.objs[id].val_idxs[m] = gd_ss_builder_add_val(&b, -1);
+						for (int k = 1; k < w && m + k < st->nr_members; k++) {
+							int32_t sv = (k == w - 1) ? 1 : -1;
+							b.objs[id].val_idxs[m + k] = gd_ss_builder_add_val(&b, sv);
+						}
+					} else {
+						if (gd_ss_type_is_struct_or_iface(ft1, ft2) && raw_val == 0)
+							raw_val = -1;
+						if ((ft2 == AIN_ARRAY || ft2 == AIN_REF_ARRAY) && mt->array_type) {
+							const struct ain_type *arr_t = mt->array_type;
+							while (arr_t->data == AIN_WRAP && arr_t->array_type)
+								arr_t = arr_t->array_type;
+							if (arr_t->array_type && raw_val > 0 && (uint32_t)raw_val < parsed.nr_arrays)
+								arr_repaired_elem_type[raw_val] = gd_ss_compute_array_elem_type(arr_t->array_type);
+						}
+						b.objs[id].val_idxs[m] = gd_ss_builder_add_val(&b, raw_val);
+						for (int k = 1; k < w && m + k < st->nr_members; k++) {
+							int32_t sv = (k == w - 1) ? 0 : (k == 1 ? mid_val : 0);
+							b.objs[id].val_idxs[m + k] = gd_ss_builder_add_val(&b, sv);
+						}
+					}
+					if (w > 1)
+						m += w - 1;
+					continue;
+				}
+
+				int32_t raw_val = 0;
+				bool found = false;
+				if (old_fi >= 0 && (uint32_t)old_fi < old_obj->nr_vals) {
+					uint32_t v_idx = gd_read_u32_le(old_obj->val_idxs_le + (uint32_t)old_fi * 4u);
+					if (v_idx < parsed.nr_vals) {
+						raw_val = gd_read_i32_le(parsed.vals_le + v_idx * 4u);
+						found = true;
+					}
+				}
+				int32_t eff_t = (ft1 == AIN_WRAP) ? ft2 : ft1;
+				if (!found) {
+					if (gd_ss_type_is_struct_or_iface(ft1, ft2)
+							|| eff_t == AIN_ARRAY || eff_t == AIN_REF_ARRAY)
+						raw_val = -1;
+					else if (eff_t == AIN_STRING || eff_t == AIN_REF_STRING)
+						raw_val = INT32_MAX;
+					else
+						raw_val = 0;
+				} else {
+					if (gd_ss_type_is_struct_or_iface(ft1, ft2) && raw_val == 0)
+						raw_val = -1;
+					if ((eff_t == AIN_ARRAY || eff_t == AIN_REF_ARRAY) && raw_val > 0
+							&& (uint32_t)raw_val < parsed.nr_arrays) {
+						const struct ain_type *arr_t = mt;
+						while (arr_t->data == AIN_WRAP && arr_t->array_type)
+							arr_t = arr_t->array_type;
+						if (arr_t->array_type)
+							arr_repaired_elem_type[raw_val] = gd_ss_compute_array_elem_type(arr_t->array_type);
+					}
+				}
+				b.objs[id].val_idxs[m] = gd_ss_builder_add_val(&b, raw_val);
+			}
+		} else {
+			uint32_t nf = old_obj->nr_vals;
+			b.objs[id].struct_def = new_sd;
+			b.objs[id].nr_vals = nf;
+			b.objs[id].val_idxs = xcalloc(max(nf, 1u), sizeof(uint32_t));
+			for (uint32_t fi = 0; fi < nf; fi++) {
+				uint32_t v_idx = gd_read_u32_le(old_obj->val_idxs_le + fi * 4u);
+				int32_t raw_val = (v_idx < parsed.nr_vals)
+					? gd_read_i32_le(parsed.vals_le + v_idx * 4u) : 0;
+				if (fi < old_sd->nr_fields
+						&& gd_ss_type_is_struct_or_iface(old_sd->fields[fi].type1, old_sd->fields[fi].type2)
+						&& raw_val == 0) {
+					raw_val = -1;
+				}
+				b.objs[id].val_idxs[fi] = gd_ss_builder_add_val(&b, raw_val);
+			}
+		}
+	}
+
+	for (uint32_t ai = 0; ai < parsed.nr_arrays; ai++) {
+		const struct gd_ss_array *sa = &parsed.arrays[ai];
+		int32_t et = (arr_repaired_elem_type[ai] >= 0) ? arr_repaired_elem_type[ai] : sa->elem_type;
+		bool is_struct_elem = gd_ss_type_is_struct_or_iface(et, et);
+		b.arrays[ai].rank = sa->rank > 0 ? sa->rank : 1;
+		b.arrays[ai].total = sa->count;
+		b.arrays[ai].elem_type = et;
+		free(b.arrays[ai].elems);
+		b.arrays[ai].elems = sa->count > 0 ? xcalloc(sa->count, sizeof(int32_t)) : NULL;
+		for (uint32_t k = 0; k < sa->count; k++) {
+			int32_t ev = gd_read_i32_le(sa->elems_le + k * 4u);
+			if (is_struct_elem && ev == 0)
+				ev = -1;
+			b.arrays[ai].elems[k] = ev;
+		}
+	}
+
+	gd_ss_builder_set_comment(&b, (const uint8_t *)parsed.comment, parsed.comment_len, parsed.has_comment);
+
+	bool ok = gd_ss_builder_write_file(&b, dst_path, false);
+
+	free(arr_repaired_elem_type);
+	for (uint32_t si = 0; si < nr_defs; si++)
+		free(schema_old_fi[si]);
+	free(schema_old_fi);
+	free(new_schema_ids);
+	free(schema_snos);
+	gd_ss_builder_free(&b);
+	gd_ss_free_parsed(&parsed);
+	return ok;
+}
+
+static bool savedata_copy_file_atomic(const char *src_path, const char *dst_path)
+{
 	FILE *in = file_open_utf8(src_path, "rb");
 	if (!in)
 		return false;
@@ -5722,4 +6334,209 @@ bool savedata_export_pc_file(const char *src_path, const char *dst_path)
 		return false;
 	}
 	return atomic_save_commit(out, dst_path, tmp_path, false);
+}
+
+bool savedata_export_pc_file_with_ain(const char *src_path, const char *dst_path, const char *ain_path)
+{
+	if (!src_path || !dst_path)
+		return false;
+
+	/* (b) Legacy X4SS container -> convert to Windows GD\x01\x01 SerializeStruct */
+	if (x4ss_is_container_file(src_path)) {
+		struct ain *ext_ain = NULL;
+		if (ain_path && ain_path[0]) {
+			int ain_err = 0;
+			ext_ain = ain_open(ain_path, &ain_err);
+		}
+		bool ok = x4ss_convert_to_gdss_file_with_ain(src_path, dst_path, ext_ain);
+		if (ext_ain)
+			ain_free(ext_ain);
+		return ok;
+	}
+
+	/* (a) Existing GD\x01\x01 SerializeStruct v9 -> repair null structs, multi-root objs[0], and .ain schemas */
+	uint8_t *gd_raw = NULL;
+	uint32_t gd_ulen = 0;
+	if (gd_ss_decompress_file(src_path, &gd_raw, &gd_ulen)) {
+		struct ain *ext_ain = NULL;
+		if (ain_path && ain_path[0]) {
+			int ain_err = 0;
+			ext_ain = ain_open(ain_path, &ain_err);
+		}
+		bool ok = gd_ss_repair_raw_with_ain(gd_raw, gd_ulen, dst_path, ext_ain);
+		if (ext_ain)
+			ain_free(ext_ain);
+		return ok;
+	}
+
+	/* Check GD\x01\x01 RSM resume saves & gsave files */
+	enum savefile_error sf_err = SAVEFILE_SUCCESS;
+	struct savefile *sf = savefile_read(src_path, &sf_err);
+	if (sf) {
+		/* (d) Encrypted RSM resume saves -> decrypt to plain zlib for AIN v6+ / RSM v6+ */
+		if (sf->len >= 8 && memcmp(sf->buf, "RSM\0", 4) == 0 && gd_read_i32_le(sf->buf + 4) != 1000) {
+			int32_t rsm_ver = gd_read_i32_le(sf->buf + 4);
+			if (sf->encrypted) {
+				bool should_decrypt = (rsm_ver >= 6);
+				if (ain_path && ain_path[0]) {
+					int ain_err = 0;
+					struct ain *ext_ain = ain_open(ain_path, &ain_err);
+					if (ext_ain) {
+						should_decrypt = (ext_ain->version >= 6);
+						ain_free(ext_ain);
+					}
+				}
+				if (should_decrypt) {
+					char *tmp_path = NULL;
+					FILE *out = atomic_save_open(dst_path, "wb", &tmp_path);
+					if (!out) {
+						savefile_free(sf);
+						return false;
+					}
+					struct savefile out_sf = {
+						.buf = sf->buf,
+						.len = sf->len,
+						.encrypted = false,
+						.compression_level = 1,
+					};
+					enum savefile_error werr = savefile_write(&out_sf, out);
+					savefile_free(sf);
+					if (werr != SAVEFILE_SUCCESS) {
+						atomic_save_abort(out, tmp_path);
+						return false;
+					}
+					return atomic_save_commit(out, dst_path, tmp_path, false);
+				}
+			}
+			savefile_free(sf);
+			return savedata_copy_file_atomic(src_path, dst_path);
+		}
+
+		/* (c) gsave with <src_path>.comment sidecar -> fold into gs->comments[0] (gsave v8) */
+		char *cpath = make_comment_sidecar_path(src_path);
+		if (file_exists(cpath)) {
+			struct gsave *gs = xcalloc(1, sizeof(struct gsave));
+			if (gsave_parse(sf->buf, sf->len, gs) == SAVEFILE_SUCCESS) {
+				size_t clen = 0;
+				uint8_t *cdata = file_read(cpath, &clen);
+				free(cpath);
+				if (cdata && gsave_upgrade_and_set_comment(gs, (const char *)cdata, clen)) {
+					free(cdata);
+					char *tmp_path = NULL;
+					FILE *out = atomic_save_open(dst_path, "wb", &tmp_path);
+					if (!out) {
+						gsave_free(gs);
+						savefile_free(sf);
+						return false;
+					}
+					bool encrypt = (gs->version <= 5) ? sf->encrypted : false;
+					int comp_level = (gs->version >= 7) ? 1 : 9;
+					enum savefile_error werr = gsave_write(gs, out, encrypt, comp_level);
+					gsave_free(gs);
+					savefile_free(sf);
+					if (werr != SAVEFILE_SUCCESS) {
+						atomic_save_abort(out, tmp_path);
+						return false;
+					}
+					return atomic_save_commit(out, dst_path, tmp_path, false);
+				}
+				free(cdata);
+				gsave_free(gs);
+				savefile_free(sf);
+				return savedata_copy_file_atomic(src_path, dst_path);
+			}
+			gsave_free(gs);
+		}
+		free(cpath);
+		savefile_free(sf);
+	}
+
+	/* (e) All other files (PSR\0, CSD\0, QNT, MsgSkip.asd, plain gsave, unencrypted RSM, etc.) */
+	return savedata_copy_file_atomic(src_path, dst_path);
+}
+
+bool savedata_export_pc_file(const char *src_path, const char *dst_path)
+{
+	return savedata_export_pc_file_with_ain(src_path, dst_path, NULL);
+}
+
+static bool buf_contains_bytes(const uint8_t *haystack, size_t hlen, const uint8_t *needle, size_t nlen)
+{
+	if (!haystack || !needle || nlen == 0 || hlen < nlen)
+		return false;
+	for (size_t i = 0; i <= hlen - nlen; i++) {
+		if (haystack[i] == needle[0] && memcmp(haystack + i, needle, nlen) == 0)
+			return true;
+	}
+	return false;
+}
+
+bool savedata_file_has_xsystem4_only_state(const char *src_path)
+{
+	if (!src_path)
+		return false;
+	enum savefile_error err = SAVEFILE_SUCCESS;
+	struct savefile *sf = savefile_read(src_path, &err);
+	if (!sf)
+		return false;
+	if (sf->len < 8 || memcmp(sf->buf, "RSM\0", 4) != 0) {
+		savefile_free(sf);
+		return false;
+	}
+	int32_t rsm_ver = gd_read_i32_le(sf->buf + 4);
+	if (rsm_ver == 1000) {
+		savefile_free(sf);
+		return false;
+	}
+
+	bool has_x4_only = false;
+	struct rsave *rs = xcalloc(1, sizeof(struct rsave));
+	enum savefile_error perr = rsave_parse(sf->buf, sf->len, RSAVE_READ_ALL, rs);
+	if (perr == SAVEFILE_SUCCESS) {
+		if (!rs->comments_only) {
+			for (int32_t i = 0; i < rs->nr_heap_objs; i++) {
+				enum rsave_heap_tag *tag = rs->heap[i];
+				if (!tag || *tag != RSAVE_ARRAY)
+					continue;
+				const struct rsave_heap_array *a = rs->heap[i];
+				if (a->data_type != AIN_INT && a->data_type != AIN_ARRAY_INT && a->data_type != AIN_ARRAY)
+					continue;
+				/* PartsEngine.Save writes iarray header "XPE\0" as 4 int32 elements */
+				if (a->nr_slots >= 4
+						&& a->slots[0] == 'X' && a->slots[1] == 'P'
+						&& a->slots[2] == 'E' && a->slots[3] == 0) {
+					has_x4_only = true;
+					break;
+				}
+				/* PartsEngine.SaveParts writes iarray header "XPP2\0" as 5 int32 elements */
+				if (a->nr_slots >= 5
+						&& a->slots[0] == 'X' && a->slots[1] == 'P'
+						&& a->slots[2] == 'P' && a->slots[3] == '2' && a->slots[4] == 0) {
+					has_x4_only = true;
+					break;
+				}
+				/* Packed 4-byte int32 magic ("XPE\0" = 0x00455058, "XPP2" = 0x32505058) */
+				if (a->nr_slots >= 1
+						&& (a->slots[0] == 0x00455058 || a->slots[0] == 0x32505058)) {
+					has_x4_only = true;
+					break;
+				}
+			}
+		}
+	} else if (perr == SAVEFILE_UNSUPPORTED_FORMAT && rsm_ver >= 1 && rsm_ver <= 64) {
+		static const uint8_t xpe_iarray[16] = {
+			'X', 0, 0, 0,  'P', 0, 0, 0,  'E', 0, 0, 0,  0, 0, 0, 0
+		};
+		static const uint8_t xpp2_iarray[20] = {
+			'X', 0, 0, 0,  'P', 0, 0, 0,  'P', 0, 0, 0,  '2', 0, 0, 0,  0, 0, 0, 0
+		};
+		if (buf_contains_bytes(sf->buf, sf->len, xpe_iarray, sizeof(xpe_iarray))
+				|| buf_contains_bytes(sf->buf, sf->len, xpp2_iarray, sizeof(xpp2_iarray))) {
+			has_x4_only = true;
+		}
+	}
+
+	rsave_free(rs);
+	savefile_free(sf);
+	return has_x4_only;
 }

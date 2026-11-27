@@ -7,6 +7,8 @@
 #include <zlib.h>
 #include <stdbool.h>
 bool savedata_export_pc_file(const char *src, const char *dst);
+bool savedata_export_pc_file_with_ain(const char *src, const char *dst, const char *ain_path);
+bool savedata_file_has_xsystem4_only_state(const char *src);
 #include "../EnginePlatform.h"
 #include "../../xsystem4/include/input.h"
 #include "xsystem35_main.h"

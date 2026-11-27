@@ -242,6 +242,8 @@ err:
 
 int ain_get_struct(struct ain *ain, char *name)
 {
+	if (!ain || !ain->_struct_ht)
+		return -1;
 	return (intptr_t)ht_get(ain->_struct_ht, name, (void*)-1);
 }
 
@@ -1792,9 +1794,12 @@ void ain_free(struct ain *ain)
 	free(ain->ain_path);
 	free(ain->code);
 
-	ht_foreach_value(ain->_func_ht, free);
-	ht_free(ain->_func_ht);
-	ht_free(ain->_struct_ht);
+	if (ain->_func_ht) {
+		ht_foreach_value(ain->_func_ht, free);
+		ht_free(ain->_func_ht);
+	}
+	if (ain->_struct_ht)
+		ht_free(ain->_struct_ht);
 	if (ain->_string_ht)
 		ht_free(ain->_string_ht);
 
