@@ -185,6 +185,8 @@ static void *worker(void *unused)
     (void)unused;
     editor.notice = NULL;
     if (editor.job == SCAN) {
+        free(editor.slots.paths);
+        editor.slots = (HubSaveSlots){0};
         editor.supported = hub_save_supported(editor.game_dir);
         if (editor.supported)
             editor.scan_ok = hub_save_recover(editor.dir) && hub_save_scan(editor.dir, &editor.slots);
@@ -289,6 +291,8 @@ static void draw_menu(HubApp *app, size_t *focus, const HubGame *game)
 {
     if (*focus == (size_t)-1) {
         *focus = 0;
+        free(editor.slots.paths);
+        editor.slots = (HubSaveSlots){0};
         editor.supported = editor.scan_ok = editor.unlock_backup = false;
         char dir[HUB_PATH_SIZE], game_dir[HUB_PATH_SIZE];
         if (game && hub_game_save_path(HUB_ROOT, game, dir) && hub_game_path(HUB_ROOT, game, game_dir)) {

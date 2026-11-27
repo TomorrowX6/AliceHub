@@ -8,9 +8,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URLEncoder
+import java.security.MessageDigest
 import java.util.Locale
 
 data class UncensoredPatchManifest(
@@ -123,38 +126,104 @@ object UncensoredPatchManager {
     private val lock = Any()
     private var activeJob: Job? = null
     private var activeAbortHandle: InstallAbortHandle? = null
+    private var installGeneration: Long = 0L
+    private var stateSeq: Long = 0L
     private val listeners = LinkedHashSet<(UncensoredInstallState) -> Unit>()
+
+    @Volatile
+    private var stateDispatcherOverride: ((() -> Unit) -> Unit)? = null
+
+    @JvmName("setStateDispatcherOverride")
+    internal fun setStateDispatcherOverride(override: ((() -> Unit) -> Unit)?) {
+        stateDispatcherOverride = override
+    }
 
     @Volatile
     var state: UncensoredInstallState = UncensoredInstallState.Idle
         private set
 
     fun addListener(listener: (UncensoredInstallState) -> Unit) {
-        synchronized(lock) { listeners.add(listener) }
-        listener(state)
+        val current = synchronized(lock) {
+            listeners.add(listener)
+            state
+        }
+        listener(current)
     }
 
     fun removeListener(listener: (UncensoredInstallState) -> Unit) {
         synchronized(lock) { listeners.remove(listener) }
     }
 
-    private fun publishState(newState: UncensoredInstallState) {
-        state = newState
-        val snapshot = synchronized(lock) { listeners.toList() }
-        scope.launch {
-            for (l in snapshot) {
-                l(newState)
-            }
+    @JvmName("beginGenerationForTest")
+    internal fun beginGenerationForTest(initialState: UncensoredInstallState): Long {
+        synchronized(lock) {
+            val gen = ++installGeneration
+            publishState(initialState, expectedGeneration = gen, allowFromTerminal = true)
+            return gen
         }
     }
 
+    @JvmName("publishStateForTest")
+    internal fun publishState(
+        newState: UncensoredInstallState,
+        expectedGeneration: Long? = null,
+        allowFromTerminal: Boolean = true
+    ): Boolean {
+        val (snapshot, seq) = synchronized(lock) {
+            if (expectedGeneration != null && expectedGeneration != installGeneration) {
+                return false
+            }
+            if (!allowFromTerminal && state !is UncensoredInstallState.Downloading) {
+                return false
+            }
+            state = newState
+            stateSeq++
+            listeners.toList() to stateSeq
+        }
+        val deliver = {
+            val currentSeq = synchronized(lock) { stateSeq }
+            if (seq == currentSeq) {
+                for (l in snapshot) {
+                    l(newState)
+                }
+            }
+        }
+        val override = stateDispatcherOverride
+        if (override != null) {
+            override(deliver)
+        } else {
+            scope.launch { deliver() }
+        }
+        return true
+    }
+
     fun consumeTerminalState() {
-        val cur = state
-        if (cur is UncensoredInstallState.Succeeded ||
-            cur is UncensoredInstallState.Cancelled ||
-            cur is UncensoredInstallState.Failed
-        ) {
-            publishState(UncensoredInstallState.Idle)
+        val (snapshot, seq) = synchronized(lock) {
+            val cur = state
+            if (cur is UncensoredInstallState.Succeeded ||
+                cur is UncensoredInstallState.Cancelled ||
+                cur is UncensoredInstallState.Failed
+            ) {
+                state = UncensoredInstallState.Idle
+                stateSeq++
+                listeners.toList() to stateSeq
+            } else {
+                return
+            }
+        }
+        val deliver = {
+            val currentSeq = synchronized(lock) { stateSeq }
+            if (seq == currentSeq) {
+                for (l in snapshot) {
+                    l(UncensoredInstallState.Idle)
+                }
+            }
+        }
+        val override = stateDispatcherOverride
+        if (override != null) {
+            override(deliver)
+        } else {
+            scope.launch { deliver() }
         }
     }
 
@@ -284,6 +353,92 @@ object UncensoredPatchManager {
     }
 
     @JvmOverloads
+    @JvmName("installPartFileAtomically")
+    @Throws(IOException::class)
+    internal fun installPartFileAtomically(
+        partFile: File,
+        destFile: File,
+        expectedSize: Long,
+        expectedSha256: String,
+        checkCancelled: () -> Unit = {},
+        renameFn: (File, File) -> Boolean = { src, dst -> src.renameTo(dst) }
+    ) {
+        if (renameFn(partFile, destFile)) {
+            return
+        }
+        val destParent = destFile.parentFile ?: throw IOException("Destination file has no parent directory")
+        if (!destParent.isDirectory && !destParent.mkdirs()) {
+            throw IOException("Cannot create destination directory: $destParent")
+        }
+        val tmpFile = File(destParent, ".${destFile.name}.${System.nanoTime()}.tmp")
+        var backupFile: File? = null
+        try {
+            val md = if (expectedSha256.isNotBlank()) MessageDigest.getInstance("SHA-256") else null
+            var written = 0L
+            FileInputStream(partFile).use { input ->
+                FileOutputStream(tmpFile, false).use { output ->
+                    val buf = ByteArray(256 * 1024)
+                    while (true) {
+                        checkCancelled()
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        if (n == 0) continue
+                        output.write(buf, 0, n)
+                        md?.update(buf, 0, n)
+                        written += n.toLong()
+                    }
+                    output.flush()
+                    output.fd.sync()
+                }
+            }
+            if (expectedSize > 0L && written != expectedSize) {
+                throw IOException("Fallback copy size mismatch: expected $expectedSize, got $written")
+            }
+            if (md != null) {
+                val actualSha = md.digest().joinToString("") { "%02x".format(it) }
+                if (!actualSha.equals(expectedSha256, ignoreCase = true)) {
+                    throw IOException("Fallback copy SHA-256 mismatch for ${destFile.name}")
+                }
+            }
+            if (!renameFn(tmpFile, destFile)) {
+                if (destFile.exists()) {
+                    val bak = File(destParent, ".${destFile.name}.${System.nanoTime()}.bak")
+                    if (!renameFn(destFile, bak)) {
+                        throw IOException("Cannot replace existing destination file: ${destFile.name}")
+                    }
+                    backupFile = bak
+                    if (!renameFn(tmpFile, destFile)) {
+                        try {
+                            if (renameFn(bak, destFile)) {
+                                backupFile = null
+                            }
+                        } catch (_: Throwable) {
+                        }
+                        throw IOException("Cannot finalize atomic copy to ${destFile.name}")
+                    }
+                } else {
+                    throw IOException("Cannot rename staged copy to ${destFile.name}")
+                }
+            }
+            backupFile?.delete()
+            partFile.delete()
+        } catch (t: Throwable) {
+            try {
+                tmpFile.delete()
+            } catch (_: Throwable) {
+            }
+            val bak = backupFile
+            if (bak != null && bak.exists() && !destFile.exists()) {
+                try {
+                    renameFn(bak, destFile)
+                } catch (_: Throwable) {
+                }
+            }
+            throw t
+        }
+    }
+
+    @JvmOverloads
     fun startInstall(
         gameDir: File,
         gameId: String,
@@ -294,6 +449,7 @@ object UncensoredPatchManager {
             if (activeJob?.isActive == true) return false
             val abort = InstallAbortHandle()
             activeAbortHandle = abort
+            val myGen = ++installGeneration
             val dirPath = gameDir.path
             publishState(
                 UncensoredInstallState.Downloading(
@@ -303,7 +459,9 @@ object UncensoredPatchManager {
                     doneBytes = 0L,
                     totalBytes = manifest.size,
                     speedBps = 0L
-                )
+                ),
+                expectedGeneration = myGen,
+                allowFromTerminal = true
             )
             activeJob = scope.launch(Dispatchers.IO) {
                 try {
@@ -350,7 +508,9 @@ object UncensoredPatchManager {
                                     doneBytes = done,
                                     totalBytes = if (total > 0L) total else manifest.size,
                                     speedBps = speed
-                                )
+                                ),
+                                expectedGeneration = myGen,
+                                allowFromTerminal = false
                             )
                         },
                         maxConnections = AppSettings.normalizeDownloadConcurrency(maxConcurrency)
@@ -363,15 +523,13 @@ object UncensoredPatchManager {
                         val prevFile = File(gameDir, prevInfo.fileName)
                         if (prevFile.isFile) prevFile.delete()
                     }
-                    if (!partFile.renameTo(destFile)) {
-                        if (destFile.exists()) {
-                            destFile.delete()
-                        }
-                        if (!partFile.renameTo(destFile)) {
-                            partFile.copyTo(destFile, overwrite = true)
-                            partFile.delete()
-                        }
-                    }
+                    installPartFileAtomically(
+                        partFile = partFile,
+                        destFile = destFile,
+                        expectedSize = manifest.size,
+                        expectedSha256 = manifest.sha256,
+                        checkCancelled = checkCancelled
+                    )
                     metaFile.delete()
                     cleanupLegacyGameDirPartFiles(gameDir)
                     InstalledUncensoredInfo.write(
@@ -387,25 +545,41 @@ object UncensoredPatchManager {
                             installedAtMs = System.currentTimeMillis()
                         )
                     )
-                    publishState(UncensoredInstallState.Succeeded(dirPath, gameId))
+                    publishState(
+                        UncensoredInstallState.Succeeded(dirPath, gameId),
+                        expectedGeneration = myGen,
+                        allowFromTerminal = false
+                    )
                 } catch (_: CancellationException) {
-                    publishState(UncensoredInstallState.Cancelled(dirPath, gameId))
+                    publishState(
+                        UncensoredInstallState.Cancelled(dirPath, gameId),
+                        expectedGeneration = myGen,
+                        allowFromTerminal = false
+                    )
                 } catch (e: Throwable) {
                     if (abort.isAborted) {
-                        publishState(UncensoredInstallState.Cancelled(dirPath, gameId))
+                        publishState(
+                            UncensoredInstallState.Cancelled(dirPath, gameId),
+                            expectedGeneration = myGen,
+                            allowFromTerminal = false
+                        )
                     } else {
                         publishState(
                             UncensoredInstallState.Failed(
                                 dirPath,
                                 gameId,
                                 e.localizedMessage ?: e.javaClass.simpleName
-                            )
+                            ),
+                            expectedGeneration = myGen,
+                            allowFromTerminal = false
                         )
                     }
                 } finally {
                     synchronized(lock) {
-                        activeAbortHandle = null
-                        activeJob = null
+                        if (installGeneration == myGen) {
+                            activeAbortHandle = null
+                            activeJob = null
+                        }
                     }
                 }
             }

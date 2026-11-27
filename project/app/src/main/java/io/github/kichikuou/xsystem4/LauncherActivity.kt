@@ -407,6 +407,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
         internal fun showStorageMigration(activity: Activity, retry: Boolean = false, onComplete: () -> Unit): Boolean {
             if (SharedStorageMigration.attach(activity, onComplete)) return true
             if (savedGameList?.canRelocateStorage() == false || SaveManagerActivity.hasActiveSaveOperation() ||
+                UncensoredPatchManager.isAnyDownloading() ||
                 GameCatalog.isGameProcessRunning(activity)
             ) return false
             if (!AppStorage.needsPublicStoragePreparation(activity, retry)) {
@@ -901,6 +902,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun renderInstallState(state: InstallState) {
+        if (isFinishing || isDestroyed) return
         val banner = findViewById<TextView>(R.id.active_install_banner)
         banner?.visibility = if (state is InstallState.Installing) View.VISIBLE else View.GONE
 
@@ -1008,7 +1010,13 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     private fun dismissProgressDialog() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        progressDialog?.dismiss()
+        val dlg = progressDialog
         progressDialog = null
+        if (dlg != null && !isDestroyed && dlg.isShowing) {
+            try {
+                dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
     }
 }

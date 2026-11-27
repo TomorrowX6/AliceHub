@@ -89,4 +89,26 @@ public class GenericModifierRegistryTest {
         assertTrue(GameModifierBridge.INSTANCE.isEvenicleFamilyGameDir(null, "EvenicleRance", null));
         assertTrue(GameModifierBridge.INSTANCE.isEvenicleFamilyGameDir(null, "EvenicleGaiden", null));
     }
+
+    @Test
+    public void ixsealCheatsExposeMaxMagicPlates12AndMaxItems() {
+        GenericModifierSpec ixseal = GenericModifierRegistry.find(GameCatalog.ID_IXSEAL);
+        assertNotNull(ixseal);
+        boolean foundMaxPlates = false;
+        boolean foundMaxItems = false;
+        for (ModCheatSpec cheat : ixseal.getCheats()) {
+            Map<String, Object> action = cheat.getJsonAction();
+            assertNotNull(action);
+            assertFalse("ixseal should not send addGold", action.containsKey("addGold"));
+            if (Integer.valueOf(12).equals(action.get("gold"))) {
+                assertEquals("魔石板拉满 (12)", cheat.getLabel().getZh());
+                foundMaxPlates = true;
+            }
+            if ("maxItems".equals(action.get("cheat"))) {
+                foundMaxItems = true;
+            }
+        }
+        assertTrue("ixseal must expose gold=12 cheat", foundMaxPlates);
+        assertTrue("ixseal must expose maxItems cheat", foundMaxItems);
+    }
 }

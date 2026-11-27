@@ -44,6 +44,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var catalogJob: Job? = null
+    private var catalogLoadGen: Long = 0L
     private var progressDialog: Dialog? = null
     private var restoreProgressDialog: Dialog? = null
     private val trackedDialogs = mutableListOf<Dialog>()
@@ -55,7 +56,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private val isCnPatch: Boolean
         get() = descriptor.isCnPatch
     private var currentTargetPath: String = ""
-    private lateinit var currentTarget: Item
+    private var currentTarget: Item? = null
     private lateinit var adapter: ModReleaseAdapter
 
     private var releases: List<ModReleaseEntry> = emptyList()
@@ -85,20 +86,31 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         trackedDialogs.clear()
     }
 
+    private fun safeDismiss(dlg: Dialog?) {
+        if (dlg != null && !isDestroyed && dlg.isShowing) {
+            try {
+                dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     private fun isInstallingCurrentTarget(): Boolean {
         if (!::gameList.isInitialized) return false
+        val target = currentTarget
         return gameList.isInstallingForGame(targetGameId) ||
-            (::currentTarget.isInitialized && gameList.isInstallingInto(currentTarget))
+            (target != null && gameList.isInstallingInto(target))
     }
 
     private fun resolveGameContext(srcIntent: Intent?, savedInstanceState: Bundle? = null) {
         val pathExtra = savedInstanceState?.getString(STATE_TARGET_PATH)?.takeIf { it.isNotBlank() }
             ?: srcIntent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
-        if (pathExtra != null) {
-            currentTargetPath = AppStorage.resolveGamePath(this, pathExtra)
-        }
         val idExtra = savedInstanceState?.getString(STATE_TARGET_GAME_ID)?.takeIf { it.isNotBlank() }
             ?: srcIntent?.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }
+        if (savedInstanceState != null || srcIntent != null) {
+            currentTargetPath = pathExtra?.let { AppStorage.resolveGamePath(this, it) } ?: ""
+            currentTarget = null
+        }
         targetGameId = idExtra ?: if (currentTargetPath.isNotBlank()) {
             val f = File(currentTargetPath)
             GameCatalog.classifyDirectory(f, f.name)
@@ -189,7 +201,26 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
         val prevGameId = targetGameId
         resolveGameContext(intent)
+        val bound = if (::gameList.isInitialized) rebindCurrentTarget() else false
+        if (!bound) {
+            catalogLoadGen++
+            catalogJob?.cancel()
+            catalogJob = null
+            isLoadingCatalog = false
+            catalogLoadError = false
+            releases = emptyList()
+            selectedGroup = ""
+            userPickedGroup = false
+            renderedGroupKey = null
+            Toast.makeText(this, R.string.mod_no_game_installed, Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
         if (targetGameId != prevGameId) {
+            catalogLoadGen++
+            catalogJob?.cancel()
+            catalogJob = null
+            isLoadingCatalog = false
             releases = emptyList()
             selectedGroup = ""
             userPickedGroup = false
@@ -200,7 +231,6 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             }
         }
         if (::gameList.isInitialized && gameList.size > 0) {
-            rebindCurrentTarget()
             handleRestoreDialogIntent(intent)
             updateUi()
             renderInstallState(gameList.installState)
@@ -230,14 +260,14 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     override fun onResume() {
         super.onResume()
         gameList = LauncherActivity.obtainGameList(this)
-        if (overlayGameItems().isEmpty()) {
+        if (!rebindCurrentTarget()) {
             finish()
             return
         }
-        rebindCurrentTarget()
         gameList.observer = this
         val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
         if (!onlineEnabled) {
+            catalogLoadGen++
             catalogJob?.cancel()
             catalogJob = null
             isLoadingCatalog = false
@@ -296,10 +326,12 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     pendingPostResumeAction = {
                         ensureGameNotRunning(this) {
                             InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                            rebindCurrentTarget()
-                            gameList.installModArchive(currentTarget, uri)
-                            updateUi()
-                            renderInstallState(gameList.installState)
+                            if (rebindCurrentTarget()) {
+                                val target = currentTarget ?: return@ensureGameNotRunning
+                                gameList.installModArchive(target, uri)
+                                updateUi()
+                                renderInstallState(gameList.installState)
+                            }
                         }
                     }
                 }
@@ -310,10 +342,12 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     pendingPostResumeAction = {
                         ensureGameNotRunning(this) {
                             InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-                            rebindCurrentTarget()
-                            gameList.installModDirectory(currentTarget, uri)
-                            updateUi()
-                            renderInstallState(gameList.installState)
+                            if (rebindCurrentTarget()) {
+                                val target = currentTarget ?: return@ensureGameNotRunning
+                                gameList.installModDirectory(target, uri)
+                                updateUi()
+                                renderInstallState(gameList.installState)
+                            }
                         }
                     }
                 }
@@ -324,12 +358,18 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     private fun overlayGameItems(): List<Item> =
         GameCatalog.matchingItems(gameList, targetGameId)
 
-    private fun rebindCurrentTarget() {
+    private fun rebindCurrentTarget(): Boolean {
         val candidates = overlayGameItems()
-        if (candidates.isEmpty()) return
-        val resolved = AppStorage.resolveGamePath(this, currentTargetPath)
-        currentTarget = candidates.firstOrNull { it.path.path == resolved } ?: candidates[0]
-        currentTargetPath = currentTarget.path.path
+        if (candidates.isEmpty()) {
+            currentTarget = null
+            currentTargetPath = ""
+            return false
+        }
+        val resolved = if (currentTargetPath.isNotBlank()) AppStorage.resolveGamePath(this, currentTargetPath) else ""
+        val bound = candidates.firstOrNull { it.path.path == resolved } ?: candidates[0]
+        currentTarget = bound
+        currentTargetPath = bound.path.path
+        return true
     }
 
     private fun availableGroups(): List<String> =
@@ -349,8 +389,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         if (!forceAuto && userPickedGroup && currentStillValid) {
             return
         }
-        val installedGroup = if (::currentTarget.isInitialized && gameList.hasInstalledMod(currentTarget)) {
-            val info = gameList.getInstalledModInfo(currentTarget)
+        val target = currentTarget
+        val installedGroup = if (target != null && gameList.hasInstalledMod(target)) {
+            val info = gameList.getInstalledModInfo(target)
             val idx = OnlineInstaller.matchInstalledIndex(releases, info)
             val fromCatalog = if (idx in releases.indices) releases[idx].group else ""
             fromCatalog.ifBlank { info?.group.orEmpty() }
@@ -367,6 +408,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
 
     private fun loadCatalog() {
         if (!AppSettings.isOnlineInstallEnabled(this)) {
+            catalogLoadGen++
             catalogJob?.cancel()
             catalogJob = null
             isLoadingCatalog = false
@@ -378,6 +420,8 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             updateUi()
             return
         }
+        val loadGen = ++catalogLoadGen
+        val loadGameId = targetGameId
         catalogJob?.cancel()
         isLoadingCatalog = true
         catalogLoadError = false
@@ -392,13 +436,21 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 val loaded = withContext(Dispatchers.IO) {
                     OnlineInstaller.fetchModCatalog(cdnBaseUrl, catalogRelPath)
                 }
+                if (loadGen != catalogLoadGen || loadGameId != targetGameId || isFinishing || isDestroyed) {
+                    return@launch
+                }
                 releases = loaded
                 syncLocalModVersionWithCatalog(loaded)
                 syncSelectedGroupWithInstalled()
                 isLoadingCatalog = false
                 catalogLoadError = false
                 updateUi()
-            } catch (_: Throwable) {
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (loadGen != catalogLoadGen || loadGameId != targetGameId || isFinishing || isDestroyed) {
+                    return@launch
+                }
                 isLoadingCatalog = false
                 catalogLoadError = true
                 updateUi()
@@ -407,10 +459,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun syncLocalModVersionWithCatalog(catalog: List<ModReleaseEntry>) {
-        if (catalog.isEmpty() || !::currentTarget.isInitialized) return
-        val hasMod = gameList.hasInstalledMod(currentTarget)
+        val target = currentTarget ?: return
+        if (catalog.isEmpty()) return
+        val hasMod = gameList.hasInstalledMod(target)
         if (!hasMod) return
-        val installed = gameList.getInstalledModInfo(currentTarget) ?: return
+        val installed = gameList.getInstalledModInfo(target) ?: return
         val idx = OnlineInstaller.matchInstalledIndex(catalog, installed)
         if (idx !in catalog.indices) return
         val matched = catalog[idx]
@@ -427,7 +480,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 matched.baseFileId ?: installed.baseFileId
             }
             InstalledModInfo.write(
-                currentTarget.path,
+                target.path,
                 installed.copy(
                     version = matched.version,
                     baseVersion = resolvedBaseVer,
@@ -437,7 +490,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                     group = matched.group.ifBlank { installed.group }
                 )
             )
-            gameList.refreshItemMetadata(currentTarget)
+            gameList.refreshItemMetadata(target)
             rebindCurrentTarget()
         }
     }
@@ -486,9 +539,10 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun updateUi() {
+        val target = currentTarget ?: return
         val onlineEnabled = AppSettings.isOnlineInstallEnabled(this)
-        val hasMod = gameList.hasInstalledMod(currentTarget)
-        val installed = gameList.getInstalledModInfo(currentTarget)
+        val hasMod = gameList.hasInstalledMod(target)
+        val installed = gameList.getInstalledModInfo(target)
         val groups = availableGroups()
         if (groups.size > 1 && (selectedGroup.isBlank() || groups.none { it.equals(selectedGroup, ignoreCase = true) })) {
             syncSelectedGroupWithInstalled()
@@ -515,9 +569,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         }
 
         findViewById<TextView>(R.id.mod_mgr_title).text =
-            getString(R.string.save_manager_current_dir, currentTarget.path.name)
+            getString(R.string.save_manager_current_dir, target.path.name)
 
-        val canRestore = gameList.canRestoreVanilla(currentTarget)
+        val canRestore = gameList.canRestoreVanilla(target)
         val switchingSeries = hasMod && visible.isNotEmpty() &&
             OnlineInstaller.groupsConflict(visible[0].group, installed?.group)
         val switchBlockedByNoBackup = switchingSeries && !canRestore
@@ -681,8 +735,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 .setTitle(R.string.mod_select_game_title)
                 .setSingleChoiceItems(names, curIdx) { dlg, which ->
                     if (which in candidates.indices) {
-                        currentTarget = candidates[which]
-                        currentTargetPath = currentTarget.path.path
+                        val chosen = candidates[which]
+                        currentTarget = chosen
+                        currentTargetPath = chosen.path.path
                         userPickedGroup = false
                         syncSelectedGroupWithInstalled(forceAuto = true)
                         updateUi()
@@ -755,17 +810,19 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
             loadCatalog()
             return
         }
-        val hasMod = gameList.hasInstalledMod(currentTarget)
-        val installed = gameList.getInstalledModInfo(currentTarget)
-        val canRestore = gameList.canRestoreVanilla(currentTarget)
+        val target = currentTarget ?: return
+        val hasMod = gameList.hasInstalledMod(target)
+        val installed = gameList.getInstalledModInfo(target)
+        val canRestore = gameList.canRestoreVanilla(target)
         val plan = OnlineInstaller.computeUpdatePlan(visibleReleases(), hasMod, installed, canRestore = canRestore)
             ?: return
         executeSteps(plan.steps)
     }
 
     private fun confirmRestoreVanilla() {
+        val target = currentTarget ?: return
         if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
-        if (!gameList.canRestoreVanilla(currentTarget)) return
+        if (!gameList.canRestoreVanilla(target)) return
         trackDialog(
             AlertDialog.Builder(this)
                 .setTitle(if (isCnPatch) R.string.action_uninstall_cn_patch else R.string.action_uninstall_mod)
@@ -781,10 +838,11 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun startRestoreVanillaAsync() {
+        val target = currentTarget ?: return
         if (gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
         val restoredToastRes = if (isCnPatch) R.string.cn_patch_restored_toast else R.string.mod_restored_toast
         val appCtx = AppSettings.wrapThemeContext(applicationContext)
-        val started = gameList.launchRestoreMod(currentTarget) { ok ->
+        val started = gameList.launchRestoreMod(target) { ok ->
             if (!isFinishing && !isDestroyed) {
                 dismissRestoreProgressDialog()
                 rebindCurrentTarget()
@@ -803,6 +861,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun showRestoreProgressDialog() {
+        if (isFinishing || isDestroyed) return
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (restoreProgressDialog == null) {
             restoreProgressDialog = Dialog(this).apply {
@@ -833,14 +892,16 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun dismissRestoreProgressDialog() {
-        restoreProgressDialog?.dismiss()
+        val dlg = restoreProgressDialog
         restoreProgressDialog = null
+        safeDismiss(dlg)
         if (progressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
     private fun showReleaseDetailDialog(index: Int) {
+        val target = currentTarget ?: return
         if (gameList.isRestoringMod) return
         if (gameList.installState is InstallState.Installing) {
             if (isInstallingCurrentTarget()) {
@@ -854,9 +915,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         val visible = visibleReleases()
         if (index !in visible.indices) return
         val entry = visible[index]
-        val hasMod = gameList.hasInstalledMod(currentTarget)
-        val installed = gameList.getInstalledModInfo(currentTarget)
-        val canRestore = gameList.canRestoreVanilla(currentTarget)
+        val hasMod = gameList.hasInstalledMod(target)
+        val installed = gameList.getInstalledModInfo(target)
+        val canRestore = gameList.canRestoreVanilla(target)
         val switchingGroup = hasMod && OnlineInstaller.groupsConflict(entry.group, installed?.group)
         val switchBlockedByNoBackup = switchingGroup && !canRestore
         val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(visible, installed) else -1
@@ -984,8 +1045,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         if (steps.isEmpty() || gameList.installState is InstallState.Installing || gameList.isRestoringMod) return
         ensureGameNotRunning(this) {
             InstallForegroundService.requestNotificationPermissionIfNeeded(this)
-            rebindCurrentTarget()
-            gameList.installOnlineModPlan(currentTarget, steps)
+            if (!rebindCurrentTarget()) return@ensureGameNotRunning
+            val target = currentTarget ?: return@ensureGameNotRunning
+            gameList.installOnlineModPlan(target, steps)
             renderInstallState(gameList.installState)
         }
     }
@@ -1024,6 +1086,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun renderInstallState(state: InstallState) {
+        if (isFinishing || isDestroyed) return
         when (state) {
             InstallState.Idle -> {
                 dismissProgressDialog()
@@ -1082,6 +1145,7 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
         cancellable: Boolean = false,
         resumable: Boolean = false
     ) {
+        if (isFinishing || isDestroyed) return
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (progressDialog == null) {
             progressDialog = Dialog(this).apply {
@@ -1136,8 +1200,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun dismissProgressDialog() {
-        progressDialog?.dismiss()
+        val dlg = progressDialog
         progressDialog = null
+        safeDismiss(dlg)
         if (restoreProgressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -1153,8 +1218,9 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
                 .inflate(R.layout.list_item_entry, parent, false)
             val visible = visibleReleases()
             val entry = visible[position]
-            val hasMod = gameList.hasInstalledMod(currentTarget)
-            val installed = gameList.getInstalledModInfo(currentTarget)
+            val target = currentTarget
+            val hasMod = target != null && gameList.hasInstalledMod(target)
+            val installed = if (target != null) gameList.getInstalledModInfo(target) else null
             val installedIdx = if (hasMod) OnlineInstaller.matchInstalledIndex(visible, installed) else -1
             val isCurrent = hasMod && installedIdx == position
             val isCurrentBase = hasMod && !isCurrent && !entry.isPatch && installed != null &&

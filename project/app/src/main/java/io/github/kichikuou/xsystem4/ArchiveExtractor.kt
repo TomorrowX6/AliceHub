@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.os.StatFs
 import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import java.io.File
 import java.io.FileInputStream
@@ -175,6 +177,41 @@ object ArchiveExtractor {
         return repairedSegments.joinToString(sep.toString())
     }
 
+    private enum class Cp932CharClass {
+        ASCII, KANA_SYM, JIS1, JIS2, HALFWIDTH, EXT, NON_CP932, PUA
+    }
+
+    private fun classifyCp932Char(ch: Char): Cp932CharClass {
+        val code = ch.code
+        if (code < 0x80) return Cp932CharClass.ASCII
+        if (code in 0xE000..0xF8FF || ch == '\uFFFD') return Cp932CharClass.PUA
+        val encoded = encodeStrict(ch.toString(), CP932_CHARSET) ?: return Cp932CharClass.NON_CP932
+        if (encoded.size == 1) return Cp932CharClass.HALFWIDTH
+        if (encoded.size != 2) return Cp932CharClass.EXT
+        val sjis = ((encoded[0].toInt() and 0xFF) shl 8) or (encoded[1].toInt() and 0xFF)
+        return when (sjis) {
+            in 0x8140..0x84BE -> Cp932CharClass.KANA_SYM
+            in 0x889F..0x9872 -> Cp932CharClass.JIS1
+            in 0x989F..0xEAA4 -> Cp932CharClass.JIS2
+            else -> Cp932CharClass.EXT
+        }
+    }
+
+    private fun scoreJapanesePlausibility(text: String): Int {
+        var score = 0
+        for (ch in text) {
+            when (classifyCp932Char(ch)) {
+                Cp932CharClass.ASCII -> Unit
+                Cp932CharClass.KANA_SYM -> score += 4
+                Cp932CharClass.JIS1 -> score += 3
+                Cp932CharClass.JIS2 -> score -= 1
+                Cp932CharClass.HALFWIDTH, Cp932CharClass.EXT, Cp932CharClass.NON_CP932 -> score -= 4
+                Cp932CharClass.PUA -> score -= 20
+            }
+        }
+        return score
+    }
+
     private fun repairSegmentSjisAsGbk(seg: String): String {
         if (seg.isEmpty() || seg.none { it.code >= 0x80 }) return seg
         val gbkBytes = encodeStrict(seg, GBK_CHARSET) ?: return seg
@@ -207,6 +244,33 @@ object ArchiveExtractor {
         if (cjkPairs == 0 || nonGb2312Pairs != cjkPairs) return seg
         val decoded = decodeStrict(gbkBytes, CP932_CHARSET) ?: return seg
         if (decoded.indexOf('\uFFFD') >= 0) return seg
+
+        // Do not rewrite segments whose non-ASCII characters are already valid JIS-1 kanji / kana.
+        var origAllJis1OrKana = true
+        for (ch in seg) {
+            if (ch.code < 0x80) continue
+            val cls = classifyCp932Char(ch)
+            if (cls != Cp932CharClass.KANA_SYM && cls != Cp932CharClass.JIS1) {
+                origAllJis1OrKana = false
+                break
+            }
+        }
+        if (origAllJis1OrKana) return seg
+
+        // Reject repairs that introduce PUA, halfwidth katakana, or non-JIS X 0208 characters.
+        for (ch in decoded) {
+            if (ch.code < 0x80) continue
+            val cls = classifyCp932Char(ch)
+            if (cls == Cp932CharClass.PUA || cls == Cp932CharClass.NON_CP932 ||
+                cls == Cp932CharClass.EXT || cls == Cp932CharClass.HALFWIDTH
+            ) {
+                return seg
+            }
+        }
+
+        val origScore = scoreJapanesePlausibility(seg)
+        val decScore = scoreJapanesePlausibility(decoded)
+        if (decScore <= origScore || decScore <= 0) return seg
         return decoded
     }
 
@@ -237,7 +301,7 @@ object ArchiveExtractor {
         onEntryAccepted: ((outFile: File, normalizedRelPath: String) -> Unit)? = null,
         onProgress: ((totalBytes: Long, currentEntryPath: String) -> Unit)? = null
     ): Int {
-        if (Iso9660Extractor.isIsoOrMdfName(archiveFile.name)) {
+        if (Iso9660Extractor.isIsoOrMdfName(archiveFile.name) || Iso9660Extractor.isIsoOrMdfFile(archiveFile)) {
             return Iso9660Extractor.extractFileToDirectory(
                 isoFile = archiveFile,
                 outDir = destDir,
@@ -279,17 +343,6 @@ object ArchiveExtractor {
         onProgress: ((totalBytes: Long, currentEntryPath: String) -> Unit)? = null,
         decodePath: (ByteArray) -> String = ::decodeEntryPath
     ): Int {
-        ensureLoaded()
-        val trackingCallback = createTrackingCallback(
-            destDir = destDir,
-            shouldSkip = shouldSkip,
-            throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
-            checkCancelled = checkCancelled,
-            onEntryAccepted = onEntryAccepted,
-            onProgress = onProgress,
-            decodePath = decodePath
-        )
-
         var directPfd: ParcelFileDescriptor? = null
         var tempArchiveFile: File? = null
         try {
@@ -302,14 +355,19 @@ object ArchiveExtractor {
 
             if (directPfd != null) {
                 val isIso = try {
-                    val ch = FileInputStream(directPfd.fileDescriptor).channel
-                    val detected = Iso9660Extractor.isIsoOrMdfChannel(ch)
-                    if (!detected) {
-                        try { ch.position(0L) } catch (_: Throwable) {}
+                    ParcelFileDescriptor.dup(directPfd.fileDescriptor).use { dup ->
+                        FileInputStream(dup.fileDescriptor).use { fis ->
+                            Iso9660Extractor.isIsoOrMdfChannel(fis.channel)
+                        }
                     }
-                    detected
                 } catch (_: Throwable) {
                     false
+                }
+                if (!isIso) {
+                    try {
+                        Os.lseek(directPfd.fileDescriptor, 0L, OsConstants.SEEK_SET)
+                    } catch (_: Throwable) {
+                    }
                 }
                 if (isIso) {
                     directPfd.close()
@@ -326,7 +384,17 @@ object ArchiveExtractor {
                         onProgress = onProgress
                     )
                 }
+                ensureLoaded()
                 if (nativeIsFdSeekable(directPfd.fd)) {
+                    val trackingCallback = createTrackingCallback(
+                        destDir = destDir,
+                        shouldSkip = shouldSkip,
+                        throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                        checkCancelled = checkCancelled,
+                        onEntryAccepted = onEntryAccepted,
+                        onProgress = onProgress,
+                        decodePath = decodePath
+                    )
                     return runNativeExtract(directPfd.fd, trackingCallback, throwInstallFailureOnNoSpace)
                 }
             }
@@ -340,18 +408,47 @@ object ArchiveExtractor {
 
             val input = context.contentResolver.openInputStream(uri)
                 ?: throw IOException("Cannot open selected archive URI")
-            input.use { src ->
-                stagedFile.outputStream().buffered().use { dst ->
-                    val buf = ByteArray(256 * 1024)
-                    while (true) {
-                        checkCancelled?.invoke()
-                        val n = src.read(buf)
-                        if (n < 0) break
-                        dst.write(buf, 0, n)
+            try {
+                input.use { src ->
+                    stagedFile.outputStream().buffered().use { dst ->
+                        val buf = ByteArray(256 * 1024)
+                        while (true) {
+                            checkCancelled?.invoke()
+                            val n = src.read(buf)
+                            if (n < 0) break
+                            dst.write(buf, 0, n)
+                        }
                     }
                 }
+            } catch (e: IOException) {
+                if (throwInstallFailureOnNoSpace && Iso9660Extractor.isNoSpaceException(e)) {
+                    throw GameList.InstallFailureException(R.string.import_no_space)
+                }
+                throw e
             }
 
+            if (Iso9660Extractor.isIsoOrMdfFile(stagedFile)) {
+                return Iso9660Extractor.extractFileToDirectory(
+                    isoFile = stagedFile,
+                    outDir = destDir,
+                    shouldSkip = shouldSkip,
+                    throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                    checkCancelled = checkCancelled,
+                    onEntryAccepted = onEntryAccepted,
+                    onProgress = onProgress
+                )
+            }
+
+            ensureLoaded()
+            val trackingCallback = createTrackingCallback(
+                destDir = destDir,
+                shouldSkip = shouldSkip,
+                throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                checkCancelled = checkCancelled,
+                onEntryAccepted = onEntryAccepted,
+                onProgress = onProgress,
+                decodePath = decodePath
+            )
             ParcelFileDescriptor.open(stagedFile, ParcelFileDescriptor.MODE_READ_ONLY).use { stagedPfd ->
                 return runNativeExtract(stagedPfd.fd, trackingCallback, throwInstallFailureOnNoSpace)
             }

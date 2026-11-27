@@ -9,7 +9,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
+
+#define AH_ARCHIVE_COPY_BUFFER_SIZE 131072
 
 static pthread_once_t locale_once = PTHREAD_ONCE_INIT;
 struct extracted_path {
@@ -63,8 +66,10 @@ int ah_archive_extract(const char *file, AHModArchiveEntry accept, AHModArchiveP
     struct extracted_path *paths = NULL;
     int64_t total = 0;
     char *path = NULL;
+    char *buffer = malloc(AH_ARCHIVE_COPY_BUFFER_SIZE);
     const char *message = NULL;
-    if (archive_read_open_filename(a, file, 131072) != ARCHIVE_OK) goto archive_error;
+    if (!buffer) { message = "Cannot allocate copy buffer"; goto cleanup; }
+    if (archive_read_open_filename(a, file, AH_ARCHIVE_COPY_BUFFER_SIZE) != ARCHIVE_OK) goto archive_error;
     for (;;) {
         if (progress(context, total)) { message = "Extraction cancelled"; goto cleanup; }
         struct archive_entry *entry;
@@ -92,6 +97,7 @@ int ah_archive_extract(const char *file, AHModArchiveEntry accept, AHModArchiveP
         }
         const char *hardlink = archive_entry_hardlink_utf8(entry);
         if (!hardlink || !*hardlink) hardlink = archive_entry_hardlink(entry);
+        int same_file = 0;
         if (hardlink) {
             struct extracted_path *source = paths;
             while (source && strcmp(source->name, hardlink)) source = source->next;
@@ -101,32 +107,43 @@ int ah_archive_extract(const char *file, AHModArchiveEntry accept, AHModArchiveP
             }
             source_fd = open(source->path, O_RDONLY | O_NOFOLLOW);
             if (source_fd < 0) goto system_error;
-        }
-        fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
-        if (fd < 0) goto system_error;
-        opened = 1;
-        char buffer[131072];
-        for (;;) {
-            la_ssize_t n = source_fd >= 0 ? read(source_fd, buffer, sizeof(buffer)) : archive_read_data(a, buffer, sizeof(buffer));
-            if (n < 0) {
-                if (source_fd >= 0) {
-                    if (errno == EINTR) continue;
-                    goto system_error;
+            struct stat src_st, dst_st;
+            if (fstat(source_fd, &src_st) != 0) goto system_error;
+            if (lstat(path, &dst_st) == 0) {
+                if (src_st.st_dev == dst_st.st_dev && src_st.st_ino == dst_st.st_ino) {
+                    same_file = 1;
                 }
-                goto archive_error;
+            } else if (errno != ENOENT) {
+                goto system_error;
             }
-            if (!n) break;
-            for (la_ssize_t offset = 0; offset < n;) {
-                ssize_t written = write(fd, buffer + offset, (size_t)(n - offset));
-                if (written < 0 && errno == EINTR) continue;
-                if (written <= 0) goto system_error;
-                offset += written;
-            }
-            total += n;
-            if (progress(context, total)) { message = "Extraction cancelled"; goto cleanup; }
         }
-        if (close(fd) != 0) { fd = -1; goto system_error; }
-        fd = -1;
+        if (!same_file) {
+            fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+            if (fd < 0) goto system_error;
+            opened = 1;
+            for (;;) {
+                la_ssize_t n = source_fd >= 0 ? read(source_fd, buffer, AH_ARCHIVE_COPY_BUFFER_SIZE)
+                                              : archive_read_data(a, buffer, AH_ARCHIVE_COPY_BUFFER_SIZE);
+                if (n < 0) {
+                    if (source_fd >= 0) {
+                        if (errno == EINTR) continue;
+                        goto system_error;
+                    }
+                    goto archive_error;
+                }
+                if (!n) break;
+                for (la_ssize_t offset = 0; offset < n;) {
+                    ssize_t written = write(fd, buffer + offset, (size_t)(n - offset));
+                    if (written < 0 && errno == EINTR) continue;
+                    if (written <= 0) goto system_error;
+                    offset += written;
+                }
+                total += n;
+                if (progress(context, total)) { message = "Extraction cancelled"; goto cleanup; }
+            }
+            if (close(fd) != 0) { fd = -1; goto system_error; }
+            fd = -1;
+        }
         if (source_fd >= 0) {
             close(source_fd); source_fd = -1;
             if (archive_read_data_skip(a) < ARCHIVE_WARN) goto archive_error;
@@ -153,6 +170,7 @@ cleanup:
     if (fd >= 0) close(fd);
     if (source_fd >= 0) close(source_fd);
     if (path) { if (opened) unlink(path); free(path); }
+    free(buffer);
     while (paths) {
         struct extracted_path *next = paths->next;
         free(paths->name); free(paths->path); free(paths); paths = next;

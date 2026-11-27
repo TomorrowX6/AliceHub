@@ -12,12 +12,23 @@
 #include <switch.h>
 #endif
 
-enum { TREE_PATH_SIZE = 1024 };
+enum { TREE_PATH_SIZE = 1024, TREE_MAX_DEPTH = 64 };
 
 static bool child_path(char path[TREE_PATH_SIZE], const char *base, const char *name)
 {
-    if (snprintf(path, TREE_PATH_SIZE, "%s/%s", base, name) < TREE_PATH_SIZE)
+    int n = snprintf(path, TREE_PATH_SIZE, "%s/%s", base, name);
+    if (n >= 0 && (size_t)n < TREE_PATH_SIZE)
         return true;
+    errno = ENAMETOOLONG;
+    return false;
+}
+
+static bool append_child(char *path, size_t base_len, const char *name)
+{
+    int n = snprintf(path + base_len, TREE_PATH_SIZE - base_len, "/%s", name);
+    if (n >= 0 && (size_t)n < TREE_PATH_SIZE - base_len)
+        return true;
+    path[base_len] = '\0';
     errno = ENAMETOOLONG;
     return false;
 }
@@ -38,10 +49,16 @@ static bool copy_file(const char *src, const char *dst, unsigned char *buffer, s
     return ok;
 }
 
-static bool walk(const char *src, const char *dst, unsigned char *buffer, size_t capacity)
+static bool walk_rec(char *src, char *dst, unsigned char *buffer, size_t capacity, unsigned depth)
 {
+    if (depth > TREE_MAX_DEPTH) {
+        errno = ELOOP;
+        return false;
+    }
     DIR *dir = opendir(src);
     if (!dir) return false;
+    size_t src_len = strlen(src);
+    size_t dst_len = dst ? strlen(dst) : 0;
     bool ok = true;
     for (;;) {
         errno = 0;
@@ -52,16 +69,20 @@ static bool walk(const char *src, const char *dst, unsigned char *buffer, size_t
         }
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
             continue;
-        char from[TREE_PATH_SIZE], to[TREE_PATH_SIZE];
         struct stat st;
-        bool done = child_path(from, src, entry->d_name) && !lstat(from, &st);
+        bool done = append_child(src, src_len, entry->d_name) && !lstat(src, &st);
         if (done && !dst) {
-            done = S_ISDIR(st.st_mode) ? walk(from, NULL, NULL, 0) && !rmdir(from) : !unlink(from);
-        } else if (done && child_path(to, dst, entry->d_name)) {
-            if (S_ISDIR(st.st_mode))
-                done = !mkdir(to, 0777) && walk(from, to, buffer, capacity);
-            else if (S_ISREG(st.st_mode))
-                done = copy_file(from, to, buffer, capacity);
+            done = S_ISDIR(st.st_mode) ? walk_rec(src, NULL, NULL, 0, depth + 1) && !rmdir(src) : !unlink(src);
+        } else if (done && append_child(dst, dst_len, entry->d_name)) {
+            if (S_ISDIR(st.st_mode)) {
+                if (depth >= TREE_MAX_DEPTH) {
+                    errno = ELOOP;
+                    done = false;
+                } else {
+                    done = !mkdir(dst, 0777) && walk_rec(src, dst, buffer, capacity, depth + 1);
+                }
+            } else if (S_ISREG(st.st_mode))
+                done = copy_file(src, dst, buffer, capacity);
             else {
                 errno = EINVAL;
                 done = false;
@@ -69,6 +90,11 @@ static bool walk(const char *src, const char *dst, unsigned char *buffer, size_t
         } else {
             done = false;
         }
+        int saved_err = errno;
+        src[src_len] = '\0';
+        if (dst)
+            dst[dst_len] = '\0';
+        errno = saved_err;
         if (!done) {
             ok = false;
             break;
@@ -76,6 +102,33 @@ static bool walk(const char *src, const char *dst, unsigned char *buffer, size_t
     }
     int saved = errno;
     closedir(dir);
+    errno = saved;
+    return ok;
+}
+
+static bool walk(const char *src, const char *dst, unsigned char *buffer, size_t capacity)
+{
+    size_t src_len = strlen(src);
+    size_t dst_len = dst ? strlen(dst) : 0;
+    if (src_len >= TREE_PATH_SIZE || (dst && dst_len >= TREE_PATH_SIZE)) {
+        errno = ENAMETOOLONG;
+        return false;
+    }
+    char *src_buf = malloc(TREE_PATH_SIZE);
+    char *dst_buf = dst ? malloc(TREE_PATH_SIZE) : NULL;
+    if (!src_buf || (dst && !dst_buf)) {
+        free(src_buf);
+        free(dst_buf);
+        errno = ENOMEM;
+        return false;
+    }
+    memcpy(src_buf, src, src_len + 1);
+    if (dst)
+        memcpy(dst_buf, dst, dst_len + 1);
+    bool ok = walk_rec(src_buf, dst_buf, buffer, capacity, 0);
+    int saved = errno;
+    free(src_buf);
+    free(dst_buf);
     errno = saved;
     return ok;
 }
@@ -89,7 +142,10 @@ static int check_directory_destination(const char *source, const char *destinati
         return -1;
     }
     size_t prefix = strlen(source);
-    if (!strncmp(source, destination, prefix) && destination[prefix] == '/') {
+    while (prefix > 1 && source[prefix - 1] == '/')
+        --prefix;
+    if (prefix > 0 && !strncmp(source, destination, prefix) &&
+        (destination[prefix] == '/' || (prefix == 1 && source[0] == '/' && destination[1] != '\0'))) {
         errno = EINVAL;
         return -1;
     }
@@ -216,7 +272,7 @@ bool hub_save_recover(const char *destination)
     const char *leaf = slash ? slash + 1 : destination;
     int n = slash ? snprintf(parent, sizeof(parent), "%.*s", (int)(slash - destination), destination)
                   : snprintf(parent, sizeof(parent), ".");
-    if (n >= (int)sizeof(parent)) {
+    if (n < 0 || (size_t)n >= sizeof(parent)) {
         errno = ENAMETOOLONG;
         return false;
     }

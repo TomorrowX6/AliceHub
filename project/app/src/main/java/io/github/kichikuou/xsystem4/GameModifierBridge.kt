@@ -15,6 +15,14 @@ object GameModifierBridge {
     private const val CONFIG_FILE_NAME = "modifier_config.json"
     private val configLock = Any()
     private val configTmpSeq = AtomicLong(0L)
+    @Volatile
+    private var lastWrittenConfigSeq: Int = -1
+
+    fun getLastWrittenConfigSeq(): Int = lastWrittenConfigSeq
+
+    @JvmName("shouldSkipStaleConfigWrite")
+    internal fun shouldSkipStaleConfigWrite(diskSeq: Int, expectedConfigSeq: Int): Boolean =
+        expectedConfigSeq >= 0 && diskSeq > expectedConfigSeq
     private const val KEY_FLOATING_ENABLED = "floating_enabled"
     private const val KEY_FLOATING_DEFAULT_ON_V1 = "floating_default_on_v1"
     private const val KEY_CTRL_OVERLAY_ENABLED = "ctrl_overlay_enabled"
@@ -1947,6 +1955,7 @@ object GameModifierBridge {
                 .putString(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap.toString())
                 .putInt(KEY_CONFIG_SEQ, nextSeq)
                 .commit()
+            lastWrittenConfigSeq = nextSeq
         }
     }
 
@@ -2082,8 +2091,9 @@ object GameModifierBridge {
         return readConfigJson(context).optInt(KEY_CONFIG_SEQ, 0)
     }
 
-    fun syncLockMaskFromNative(context: Context): Int {
-        if (!loaded) return getConfigSeq(context)
+    @JvmOverloads
+    fun syncLockMaskFromNative(context: Context, expectedConfigSeq: Int = -1): Int {
+        if (!loaded) return if (expectedConfigSeq >= 0) expectedConfigSeq else getConfigSeq(context)
         return try {
             val liveMask = nativeGetLiveLocks()
             val dohnaLiveMask = getDohnaLiveLocks()
@@ -2108,6 +2118,10 @@ object GameModifierBridge {
             }
             synchronized(configLock) {
                 val json = readConfigJson(context)
+                val diskSeq = json.optInt(KEY_CONFIG_SEQ, 0)
+                if (shouldSkipStaleConfigWrite(diskSeq, expectedConfigSeq)) {
+                    return expectedConfigSeq
+                }
                 val savedMask = json.optInt(KEY_LOCK_MASK, 0)
                 val savedDohnaMask = json.optInt(KEY_DOHNA_LOCK_MASK, 0) and LOCK_DD_ALL_MASK
                 val savedEvenicleMask = json.optInt(KEY_EVENICLE_LOCK_MASK, 0) and LOCK_EV_ALL_MASK
@@ -2603,14 +2617,20 @@ object GameModifierBridge {
         }
     }
 
-    fun syncGenericS35LockMaskFromNative(context: Context, gameId: String): Int {
-        if (!loaded) return getConfigSeq(context)
-        val spec = GenericModifierRegistry.find(gameId) ?: return getConfigSeq(context)
+    @JvmOverloads
+    fun syncGenericS35LockMaskFromNative(context: Context, gameId: String, expectedConfigSeq: Int = -1): Int {
+        if (!loaded) return if (expectedConfigSeq >= 0) expectedConfigSeq else getConfigSeq(context)
+        val spec = GenericModifierRegistry.find(gameId)
+            ?: return if (expectedConfigSeq >= 0) expectedConfigSeq else getConfigSeq(context)
         val key = normalizeGenericLockKey(gameId)
         return try {
             val live = nativeGetLiveLocks() and spec.allLocksMask
             synchronized(configLock) {
                 val json = readConfigJson(context)
+                val diskSeq = json.optInt(KEY_CONFIG_SEQ, 0)
+                if (shouldSkipStaleConfigWrite(diskSeq, expectedConfigSeq)) {
+                    return expectedConfigSeq
+                }
                 val map = json.optJSONObject(KEY_EXTRA_LOCKS) ?: JSONObject()
                 val saved = map.optInt(key, map.optInt(gameId, 0)) and spec.allLocksMask
                 if (live != saved || (key != gameId && map.has(gameId))) {
@@ -2622,16 +2642,21 @@ object GameModifierBridge {
                 json.optInt(KEY_CONFIG_SEQ, 0)
             }
         } catch (_: Throwable) {
-            getConfigSeq(context)
+            if (expectedConfigSeq >= 0) expectedConfigSeq else getConfigSeq(context)
         }
     }
 
-    fun syncEscLockMaskFromNative(context: Context): Int {
-        if (!loaded) return getConfigSeq(context)
+    @JvmOverloads
+    fun syncEscLockMaskFromNative(context: Context, expectedConfigSeq: Int = -1): Int {
+        if (!loaded) return if (expectedConfigSeq >= 0) expectedConfigSeq else getConfigSeq(context)
         return try {
             val escLive = nativeGetLiveLocks() and LOCK_ESC_ALL_MASK
             synchronized(configLock) {
                 val json = readConfigJson(context)
+                val diskSeq = json.optInt(KEY_CONFIG_SEQ, 0)
+                if (shouldSkipStaleConfigWrite(diskSeq, expectedConfigSeq)) {
+                    return expectedConfigSeq
+                }
                 val savedEsc = json.optInt(KEY_ESC_LOCK_MASK, 0) and LOCK_ESC_ALL_MASK
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 val prefsEsc = prefs.getInt(KEY_ESC_LOCK_MASK, -1)
@@ -2642,7 +2667,7 @@ object GameModifierBridge {
                 json.optInt(KEY_CONFIG_SEQ, 0)
             }
         } catch (_: Throwable) {
-            getConfigSeq(context)
+            if (expectedConfigSeq >= 0) expectedConfigSeq else getConfigSeq(context)
         }
     }
 

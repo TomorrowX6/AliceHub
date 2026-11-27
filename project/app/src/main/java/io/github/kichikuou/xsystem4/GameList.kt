@@ -539,6 +539,7 @@ class GameList(activity: Activity) {
     private var syncJob: Job? = null
     private var retiringBarrierJob: Job? = null
     private var activeSessionGen: Long = 0L
+    @Volatile
     private var activeAbortHandle: InstallAbortHandle? = null
     private var activeEvictPartial: (() -> List<File>)? = null
     private var diskSnapshot: Map<String, DirSignature> = emptyMap()
@@ -694,17 +695,22 @@ class GameList(activity: Activity) {
         }
     }
     var observer: GameListObserver? = null
+    @Volatile
     var installState: InstallState = InstallState.Idle
         private set
+    @Volatile
     var isProgressMinimized: Boolean = false
         private set
     @Volatile
     var isRestoringMod: Boolean = false
         private set
+    @Volatile
     private var activeInstallResumable: Boolean = false
     @Volatile
     private var cancelDiscardPartial: Boolean = false
+    @Volatile
     private var activeTargetGamePath: String? = null
+    @Volatile
     var activeTargetGameId: String? = null
         private set
     var lastInstalledItem: Item? = null
@@ -795,6 +801,7 @@ class GameList(activity: Activity) {
 
     internal fun canRelocateStorage(): Boolean =
         installState !is InstallState.Installing && installJob?.isActive != true && !isRestoringMod &&
+            !UncensoredPatchManager.isAnyDownloading() &&
             retiringBarrierJob?.isActive != true && uninstallingPaths.isEmpty()
 
     fun minimizeInstallProgress() {

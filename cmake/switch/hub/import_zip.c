@@ -115,8 +115,11 @@ static bool zip_path(const char *dest, char *name, bool directory, char path[HUB
     }
     if (*skip)
         return true;
-    if (directory)
-        name[strlen(name) - 1] = 0;
+    if (directory) {
+        size_t len = strlen(name);
+        if (len && name[len - 1] == '/')
+            name[len - 1] = 0;
+    }
     if (!import_path(path, dest, name))
         return false;
     for (char *p = path + strlen(dest) + 1; (p = strchr(p, '/')); ++p) {
@@ -214,7 +217,7 @@ bool import_zip(const char *source, const char *dest, const ImportCallbacks *cb)
         for (size_t j = 0; j < n; ++j)
             if (name[j] == '\\') name[j] = '/';
         unsigned mode = h[5] == 3 ? (import_le32(h + 38) >> 16) & 0170000 : 0;
-        bool directory = name[n - 1] == '/', skip;
+        bool directory = name[n - 1] == '/' || mode == 0040000, skip;
         if ((mode && mode != 0100000 && mode != 0040000) ||
             !zip_path(dest, name, directory, path, &skip))
             goto done;

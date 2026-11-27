@@ -81,7 +81,7 @@ static const LiveLocks supported_locks[] = {
     {"oyakorankan",
      {"Lock Love Guard", "Max win stars", "Zero fertilization", "Zero enemy power"}, 0},
     {"tsumashibori",
-     {"Infinite money", "Lock HP & stamina", "Zero misfortune & jealousy",
+     {"Infinite money", "Lock HP & stamina", "Max affection, zero jealousy",
       "Weaken rivals", "Infinite items"}, 0},
     {"okusamajun",
      {"Infinite money", "Lock HP & MP"}, 0},

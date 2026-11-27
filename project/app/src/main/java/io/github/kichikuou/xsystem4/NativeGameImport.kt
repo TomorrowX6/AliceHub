@@ -50,6 +50,16 @@ object NativeGameImport {
                 setOf("dll", "lnk", "bat", "cmd", "ps1", "mds")
     }
 
+    @JvmName("resolveCaseInsensitiveSubdir")
+    internal fun resolveCaseInsensitiveSubdir(parent: File, name: String): File {
+        val exact = File(parent, name)
+        if (exact.isDirectory) return exact
+        val existing = parent.listFiles()?.firstOrNull {
+            it.isDirectory && it.name.equals(name, ignoreCase = true)
+        }
+        return existing ?: exact
+    }
+
     private fun children(context: Context, tree: Uri, parent: Uri): List<Document> {
         val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(parent))
         val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -59,10 +69,29 @@ object NativeGameImport {
         val cursor = context.contentResolver.query(uri, projection, null, null, null)
             ?: throw IOException("Cannot read selected directory")
         cursor.use {
+            val idIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mimeIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            val sizeIdx = it.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            if (idIdx < 0 || nameIdx < 0) return result
             while (it.moveToNext()) {
-                result.add(Document(DocumentsContract.buildDocumentUriUsingTree(tree, it.getString(0)),
-                    it.getString(1), it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR,
-                    if (it.isNull(3)) -1 else it.getLong(3)))
+                if (it.isNull(idIdx) || it.isNull(nameIdx)) continue
+                val docId = it.getString(idIdx)?.takeIf { s -> s.isNotEmpty() } ?: continue
+                val name = it.getString(nameIdx)?.takeIf { s -> s.isNotEmpty() } ?: continue
+                val mime = if (mimeIdx >= 0 && !it.isNull(mimeIdx)) it.getString(mimeIdx) else null
+                val size = if (sizeIdx >= 0 && !it.isNull(sizeIdx)) {
+                    runCatching { it.getLong(sizeIdx) }.getOrDefault(-1L)
+                } else {
+                    -1L
+                }
+                result.add(
+                    Document(
+                        uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId),
+                        name = name,
+                        folder = mime == DocumentsContract.Document.MIME_TYPE_DIR,
+                        size = size
+                    )
+                )
             }
         }
         return result
@@ -943,12 +972,13 @@ object NativeGameImport {
                     ) {
                         continue
                     }
-                    val target = File(destination, name)
                     if (document.folder) {
-                        if (!target.exists() && !target.mkdir()) throw IOException("Cannot create directory: $name")
-                        copy(children(context, tree, document.uri), target, relPath)
+                        val subDir = resolveCaseInsensitiveSubdir(destination, name)
+                        if (!subDir.isDirectory && !subDir.mkdir()) throw IOException("Cannot create directory: $name")
+                        copy(children(context, tree, document.uri), subDir, relPath)
                         continue
                     }
+                    val target = File(destination, name)
                     if (target.exists()) continue
                     if (document.size > StatFs(storage.path).availableBytes - 32L * 1024 * 1024)
                         throw GameList.InstallFailureException(R.string.import_no_space)
@@ -986,8 +1016,8 @@ object NativeGameImport {
                 if (targetSubdir.isEmpty()) {
                     copy(docs, staging)
                 } else if (isGalzooImport) {
-                    val subDest = File(staging, targetSubdir)
-                    if (!subDest.exists() && !subDest.mkdirs()) throw IOException("Cannot create directory: $targetSubdir")
+                    val subDest = resolveCaseInsensitiveSubdir(staging, targetSubdir)
+                    if (!subDest.isDirectory && !subDest.mkdirs()) throw IOException("Cannot create directory: $targetSubdir")
                     copy(docs, subDest, targetSubdir)
                 }
             }
@@ -1031,12 +1061,13 @@ object NativeGameImport {
                     if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name)
                         throw IOException("Invalid document name")
                     if (skip(document.name)) continue
-                    val target = File(destination, name)
                     if (document.folder) {
-                        if (!target.mkdir()) throw IOException("Cannot create directory: $name")
-                        copy(children(context, tree, document.uri), target)
+                        val subDir = resolveCaseInsensitiveSubdir(destination, name)
+                        if (!subDir.isDirectory && !subDir.mkdir()) throw IOException("Cannot create directory: $name")
+                        copy(children(context, tree, document.uri), subDir)
                         continue
                     }
+                    val target = File(destination, name)
                     if (document.size > StatFs(storage.path).availableBytes - 32L * 1024 * 1024)
                         throw GameList.InstallFailureException(R.string.import_no_space)
                     var fileBytes = 0L

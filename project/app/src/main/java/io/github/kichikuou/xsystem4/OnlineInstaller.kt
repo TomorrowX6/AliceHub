@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.StatFs
 import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -197,7 +196,7 @@ class InstallAbortHandle {
     private val lock = Any()
     private var aborted = false
     private val connections = HashSet<HttpURLConnection>()
-    private val workerThreads = HashSet<Thread>()
+    private val workerThreads = HashMap<Thread, Int>()
     private val children = HashSet<InstallAbortHandle>()
 
     val isAborted: Boolean
@@ -230,7 +229,7 @@ class InstallAbortHandle {
                 true
             } else {
                 connections.add(conn)
-                workerThreads.add(curThread)
+                workerThreads[curThread] = (workerThreads[curThread] ?: 0) + 1
                 false
             }
         }
@@ -242,39 +241,43 @@ class InstallAbortHandle {
 
     fun unregister(conn: HttpURLConnection?) {
         val curThread = Thread.currentThread()
-        val wasAborted = synchronized(lock) {
+        synchronized(lock) {
             if (conn != null) {
                 connections.remove(conn)
             }
-            workerThreads.remove(curThread)
-            aborted
-        }
-        if (wasAborted) {
-            // Clear interrupt flag before returning worker thread to Dispatchers.IO pool
-            Thread.interrupted()
+            val remaining = (workerThreads[curThread] ?: 0) - 1
+            if (remaining <= 0) {
+                workerThreads.remove(curThread)
+            } else {
+                workerThreads[curThread] = remaining
+            }
+            if (aborted) {
+                // Clear interrupt flag under the same lock as abort() so no pooled thread
+                // can receive a stale interrupt after unregistering.
+                Thread.interrupted()
+            }
         }
     }
 
     fun abort() {
-        val (threads, toClose, childCopy) = synchronized(lock) {
+        val (toClose, childCopy) = synchronized(lock) {
             aborted = true
-            val tCopy = workerThreads.toList()
+            for (t in workerThreads.keys) {
+                try {
+                    t.interrupt()
+                } catch (_: Throwable) {
+                }
+            }
+            workerThreads.clear()
             val cCopy = connections.toList()
             val chCopy = children.toList()
-            workerThreads.clear()
             connections.clear()
             children.clear()
-            Triple(tCopy, cCopy, chCopy)
+            cCopy to chCopy
         }
         for (ch in childCopy) {
             try {
                 ch.abort()
-            } catch (_: Throwable) {
-            }
-        }
-        for (t in threads) {
-            try {
-                t.interrupt()
             } catch (_: Throwable) {
             }
         }
@@ -477,11 +480,86 @@ object OnlineInstaller {
     private const val HEADROOM_BYTES = 64L * 1024L * 1024L
     private const val MAX_HTTP_RETRIES = 8
     private const val MAX_REDIRECTS = 6
+    private const val DEFAULT_CONNECT_READ_TIMEOUT_MS = 15_000
     private const val READ_SLICE_TIMEOUT_MS = 3_000
     private const val TOTAL_READ_TIMEOUT_MS = 45_000L
+    private const val MAX_JSON_RESPONSE_BYTES = 16 * 1024 * 1024
     const val DEFAULT_MIN_SEGMENTED_BYTES = 8L * 1024L * 1024L
     private const val MIN_SEGMENT_SIZE_BYTES = 4L * 1024L * 1024L
     private const val SEGMENT_META_PERSIST_BYTES = 2L * 1024L * 1024L
+
+    private fun monotonicTimeMs(): Long = try {
+        SystemClock.elapsedRealtime()
+    } catch (_: Throwable) {
+        System.nanoTime() / 1_000_000L
+    }
+
+    @JvmName("isSafeRemoteKey")
+    internal fun isSafeRemoteKey(key: String): Boolean {
+        if (key.isEmpty()) return false
+        if (key.startsWith("/") || key.endsWith("/")) return false
+        if (key.contains('\\') || key.contains('\u0000') || key.any { it.code < 0x20 }) return false
+        if (key.contains('?') || key.contains('#') || key.contains(':')) return false
+        val segments = key.split('/')
+        if (segments.isEmpty()) return false
+        return segments.all { seg ->
+            seg.isNotEmpty() && seg != "." && seg != ".."
+        }
+    }
+
+    @JvmName("encodeUrlPathKey")
+    internal fun encodeUrlPathKey(key: String): String =
+        key.split('/').joinToString("/") { seg ->
+            java.net.URLEncoder.encode(seg, "UTF-8").replace("+", "%20")
+        }
+
+    @JvmOverloads
+    @JvmName("readBoundedUtf8")
+    internal fun readBoundedUtf8(
+        input: java.io.InputStream,
+        maxBytes: Int = MAX_JSON_RESPONSE_BYTES,
+        checkCancelled: (() -> Unit)? = null
+    ): String {
+        input.use { stream ->
+            val buf = ByteArray(8192)
+            val out = java.io.ByteArrayOutputStream()
+            var total = 0
+            while (true) {
+                checkCancelled?.invoke()
+                val n = stream.read(buf)
+                if (n < 0) break
+                if (n == 0) continue
+                if (total + n > maxBytes) {
+                    throw IOException("HTTP response exceeds maximum allowed size ($maxBytes bytes)")
+                }
+                out.write(buf, 0, n)
+                total += n
+            }
+            return out.toString(Charsets.UTF_8.name())
+        }
+    }
+
+    @JvmOverloads
+    @JvmName("uniquePartFileForEntry")
+    internal fun uniquePartFileForEntry(
+        finalFile: File,
+        index: Int,
+        entry: ManifestEntry,
+        usedPartKeys: MutableSet<String>? = null
+    ): File {
+        val baseHash = sha256Hex(
+            "$index\u0000${entry.path}\u0000${entry.key}\u0000${entry.sha256}".toByteArray(Charsets.UTF_8)
+        ).take(12)
+        var candidate = File(finalFile.parentFile, "${finalFile.name}.${baseHash}.part")
+        if (usedPartKeys != null) {
+            var suffix = 0
+            while (!usedPartKeys.add(candidate.canonicalPath.lowercase(Locale.ROOT))) {
+                suffix++
+                candidate = File(finalFile.parentFile, "${finalFile.name}.${baseHash}_${index}_${suffix}.part")
+            }
+        }
+        return candidate
+    }
 
     data class ManifestEntry(
         val path: String,
@@ -501,10 +579,11 @@ object OnlineInstaller {
     internal data class SegmentProgress(
         val start: Long,
         val end: Long,
-        @Volatile var done: Long
+        @Volatile var done: Long,
+        @Volatile var syncedDone: Long = done
     ) {
         val length: Long get() = end - start + 1L
-        val isComplete: Boolean get() = done >= length
+        val isComplete: Boolean get() = syncedDone >= length
     }
 
     private data class SavedMeta(
@@ -512,7 +591,8 @@ object OnlineInstaller {
         val etag: String?,
         val totalBytes: Long,
         val segmented: Boolean = false,
-        val segments: List<SegmentProgress> = emptyList()
+        val segments: List<SegmentProgress> = emptyList(),
+        val completed: Boolean = false
     )
 
     internal fun computeSegmentCount(
@@ -1145,29 +1225,33 @@ object OnlineInstaller {
             if (code != HttpURLConnection.HTTP_OK) {
                 throw IOException("MOD catalog HTTP $code from $base")
             }
-            val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            val root = JSONObject(raw)
-            val arr = root.optJSONArray("releases")
+            val raw = readBoundedUtf8(conn.inputStream, MAX_JSON_RESPONSE_BYTES)
+            val root = MiniJson.parseObject(raw)
+            val arr = MiniJson.optList(root, "releases")
                 ?: throw IOException("No MOD releases array in catalog")
-            val rawRows = ArrayList<ModReleaseEntry>(arr.length())
-            for (i in 0 until arr.length()) {
-                val obj = arr.optJSONObject(i) ?: continue
-                val key = obj.optString("key", "").trim()
-                val fileName = obj.optString("fileName", "").trim()
-                val version = sanitizeParenFree(obj.optString("version", ""), multiline = false)
-                if (key.isEmpty() || fileName.isEmpty() || version.isEmpty()) continue
+            val rawRows = ArrayList<ModReleaseEntry>(arr.size)
+            for (i in arr.indices) {
+                val obj = MiniJson.asObject(arr[i]) ?: continue
+                val key = MiniJson.optString(obj, "key", "").trim()
+                val fileName = MiniJson.optString(obj, "fileName", "").trim()
+                val version = sanitizeParenFree(MiniJson.optString(obj, "version", ""), multiline = false)
+                if (key.isEmpty() || !isSafeRemoteKey(key) || fileName.isEmpty() || version.isEmpty()) continue
                 if (!ArchiveExtractor.isSupportedArchiveName(fileName)) continue
-                val fileId = obj.optInt("fileId", 1000 - i)
-                val group = sanitizeParenFree(obj.optString("group", ""), multiline = false)
-                val summary = sanitizeParenFree(obj.optString("summary", ""), multiline = false)
-                val changelog = sanitizeParenFree(obj.optString("changelog", ""), multiline = true)
+                val hasSize = obj.containsKey("size") && obj["size"] != null
+                val rawSize = if (hasSize) MiniJson.optLong(obj, "size", -1L) else -1L
+                if (hasSize && rawSize < 0L) continue
+                val fileId = MiniJson.optInt(obj, "fileId", 1000 - i)
+                val group = sanitizeParenFree(MiniJson.optString(obj, "group", ""), multiline = false)
+                val summary = sanitizeParenFree(MiniJson.optString(obj, "summary", ""), multiline = false)
+                val changelog = sanitizeParenFree(MiniJson.optString(obj, "changelog", ""), multiline = true)
                     .ifEmpty { summary }
-                val uploadedAt = obj.optString("uploadedAt", "").trim()
-                val isPatch = obj.optBoolean(
+                val uploadedAt = MiniJson.optString(obj, "uploadedAt", "").trim()
+                val isPatch = MiniJson.optBoolean(
+                    obj,
                     "isPatch",
                     version.contains("补丁") || fileName.contains("补丁")
                 )
-                val encodedKey = key.split('/').joinToString("/") { Uri.encode(it) }
+                val encodedKey = encodeUrlPathKey(key)
                 val fileUrl = "$base/files/$encodedKey"
                 rawRows.add(
                     ModReleaseEntry(
@@ -1181,8 +1265,8 @@ object OnlineInstaller {
                         isPatch = isPatch,
                         baseFileId = null,
                         baseVersion = null,
-                        expectedSize = obj.optLong("size", -1L),
-                        expectedSha256 = obj.optString("sha256", "").trim().takeIf { it.isNotEmpty() },
+                        expectedSize = rawSize,
+                        expectedSha256 = MiniJson.optString(obj, "sha256", "").trim().takeIf { it.isNotEmpty() },
                         group = group
                     )
                 )
@@ -1266,13 +1350,17 @@ object OnlineInstaller {
         )
 
         val prepared = ArrayList<PreparedEntry>(manifest.entries.size)
+        val usedPartPaths = HashSet<String>(manifest.entries.size * 2)
         var alreadyCompletedBytes = 0L
         var partialBytesOnDisk = 0L
         var alreadyDoneFiles = 0
 
         for ((index, entry) in manifest.entries.withIndex()) {
             checkCancelled()
-            val cleanPath = ArchiveExtractor.repairSjisAsGbkMojibake(entry.path)
+            if (!isSafeRemoteKey(entry.key)) {
+                throw InvalidManifestException("Invalid manifest entry key: ${entry.key}")
+            }
+            val cleanPath = entry.path
             val relParts = cleanPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
             if (relParts.isEmpty() || relParts.any { it == ".." }) {
                 throw IOException("Invalid manifest entry path: ${entry.path}")
@@ -1281,9 +1369,9 @@ object OnlineInstaller {
             if (!finalFile.path.startsWith(stagingPrefix)) {
                 throw IOException("Manifest path escapes staging directory: ${entry.path}")
             }
-            val partFile = File(finalFile.parentFile, "${finalFile.name}.part")
+            val partFile = uniquePartFileForEntry(finalFile, index, entry, usedPartPaths)
             val partMetaFile = File("${partFile.path}.meta")
-            val encodedKey = entry.key.split('/').joinToString("/") { Uri.encode(it) }
+            val encodedKey = encodeUrlPathKey(entry.key)
             val fileUrl = "$fetchBaseUrl/files/$encodedKey"
 
             val done = isManifestEntryDone(stagingDir, stagingPrefix, entry, verifiedDoneEntries, checkCancelled)
@@ -1413,7 +1501,7 @@ object OnlineInstaller {
                 val progressEmitLock = Any()
                 val activeNames = LinkedHashSet<String>()
                 var lastCompletedName = pending.first().cleanPath
-                var speedWindowStartMs = SystemClock.elapsedRealtime()
+                var speedWindowStartMs = monotonicTimeMs()
                 var speedWindowBytes = 0L
                 var currentSpeedBps = 0L
                 var lastUiReportMs = 0L
@@ -1425,7 +1513,7 @@ object OnlineInstaller {
                             if (deltaBytes > 0L) {
                                 speedWindowBytes += deltaBytes
                             }
-                            val now = SystemClock.elapsedRealtime()
+                            val now = monotonicTimeMs()
                             val elapsed = now - speedWindowStartMs
                             if (elapsed >= 600L) {
                                 currentSpeedBps = (speedWindowBytes * 1000L) / elapsed
@@ -1472,15 +1560,11 @@ object OnlineInstaller {
                     }
                 }
 
-                // Group pending entries sharing the exact same partFile (defensive deduplication)
-                val groupedByPart = LinkedHashMap<String, MutableList<PreparedEntry>>()
-                for (item in pending) {
-                    groupedByPart.getOrPut(item.partFile.canonicalPath) { ArrayList() }.add(item)
-                }
-                // Schedule largest files first so huge archives start immediately alongside smaller files
-                val orderedGroups = groupedByPart.values.sortedByDescending { grp -> grp.maxOf { it.entry.size } }
+                // Each entry has a unique partFile; schedule largest files first so huge archives
+                // start immediately alongside smaller files without any shared .part collisions.
+                val orderedPending = pending.sortedByDescending { it.entry.size }
 
-                val remainingTasks = AtomicInteger(orderedGroups.size)
+                val remainingTasks = AtomicInteger(orderedPending.size)
                 val allDoneLatch = CountDownLatch(1)
                 val firstError = AtomicReference<Throwable?>(null)
 
@@ -1500,6 +1584,9 @@ object OnlineInstaller {
                             } catch (t: Throwable) {
                                 failBatch(t)
                             } finally {
+                                if (batchAbort.isAborted || abortHandle?.isAborted == true) {
+                                    Thread.interrupted()
+                                }
                                 if (remainingTasks.decrementAndGet() == 0) {
                                     allDoneLatch.countDown()
                                 }
@@ -1522,75 +1609,54 @@ object OnlineInstaller {
                 }
 
                 try {
-                    for (group in orderedGroups) {
+                    for (item in orderedPending) {
                         pool.execute {
                             try {
-                                for (item in group) {
-                                    workerCheckCancelled()
-                                    item.finalFile.parentFile?.mkdirs()
-                                    synchronized(progressLock) { activeNames.add(item.cleanPath) }
-                                    reportAggregateProgress(0L, force = true)
-                                    val prevFileDone = AtomicLong(entryDone.get(item.index))
-                                    val onItemDone: (Throwable?) -> Unit = { err ->
-                                        synchronized(progressLock) {
-                                            activeNames.remove(item.cleanPath)
-                                            lastCompletedName = item.cleanPath
-                                        }
-                                        if (err != null) {
-                                            failBatch(err)
-                                        } else {
-                                            val prev = prevFileDone.getAndSet(item.entry.size)
-                                            val delta = (item.entry.size - prev).coerceAtLeast(0L)
-                                            entryDone.set(item.index, item.entry.size)
-                                            completedFilesCount.incrementAndGet()
-                                            reportAggregateProgress(delta, force = true)
-                                        }
+                                workerCheckCancelled()
+                                item.finalFile.parentFile?.mkdirs()
+                                synchronized(progressLock) { activeNames.add(item.cleanPath) }
+                                reportAggregateProgress(0L, force = true)
+                                val prevFileDone = AtomicLong(entryDone.get(item.index))
+                                val onItemDone: (Throwable?) -> Unit = { err ->
+                                    synchronized(progressLock) {
+                                        activeNames.remove(item.cleanPath)
+                                        lastCompletedName = item.cleanPath
                                     }
-                                    if (group.size > 1) {
-                                        // Serialized within identical-partFile group
-                                        downloadFileWithResume(
-                                            url = item.fileUrl,
-                                            destPartFile = item.partFile,
-                                            expectedSize = item.entry.size,
-                                            expectedSha256 = item.entry.sha256,
-                                            headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
-                                            abortHandle = batchAbort,
-                                            checkCancelled = workerCheckCancelled,
-                                            onProgress = { fileDoneBytes, _, _ ->
-                                                val clampedFile = fileDoneBytes.coerceAtMost(item.entry.size)
-                                                val prev = prevFileDone.getAndSet(clampedFile)
-                                                entryDone.set(item.index, clampedFile)
-                                                reportAggregateProgress((clampedFile - prev).coerceAtLeast(0L))
-                                            },
-                                            maxConnections = 1,
-                                            minSegmentedBytes = minSegmentedBytes
-                                        )
-                                        onItemDone(null)
+                                    if (err != null) {
+                                        failBatch(err)
                                     } else {
-                                        startFileDownloadOnPool(
-                                            url = item.fileUrl,
-                                            destPartFile = item.partFile,
-                                            expectedSize = item.entry.size,
-                                            expectedSha256 = item.entry.sha256,
-                                            headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
-                                            maxConnections = effectiveConcurrency,
-                                            minSegmentedBytes = minSegmentedBytes,
-                                            batchAbort = batchAbort,
-                                            checkCancelled = workerCheckCancelled,
-                                            onProgressDelta = { fileDoneBytes, delta, _ ->
-                                                val clampedFile = fileDoneBytes.coerceAtMost(item.entry.size)
-                                                prevFileDone.set(clampedFile)
-                                                entryDone.set(item.index, clampedFile)
-                                                reportAggregateProgress(delta)
-                                            },
-                                            submitSubTask = ::submitDynamicTask,
-                                            onFileFinished = onItemDone
-                                        )
+                                        val prev = prevFileDone.getAndSet(item.entry.size)
+                                        val delta = (item.entry.size - prev).coerceAtLeast(0L)
+                                        entryDone.set(item.index, item.entry.size)
+                                        completedFilesCount.incrementAndGet()
+                                        reportAggregateProgress(delta, force = true)
                                     }
                                 }
+                                startFileDownloadOnPool(
+                                    url = item.fileUrl,
+                                    destPartFile = item.partFile,
+                                    expectedSize = item.entry.size,
+                                    expectedSha256 = item.entry.sha256,
+                                    headers = mapOf("User-Agent" to DEFAULT_USER_AGENT),
+                                    maxConnections = effectiveConcurrency,
+                                    minSegmentedBytes = minSegmentedBytes,
+                                    batchAbort = batchAbort,
+                                    checkCancelled = workerCheckCancelled,
+                                    onProgressDelta = { fileDoneBytes, delta, _ ->
+                                        val clampedFile = fileDoneBytes.coerceAtMost(item.entry.size)
+                                        prevFileDone.set(clampedFile)
+                                        entryDone.set(item.index, clampedFile)
+                                        reportAggregateProgress(delta)
+                                    },
+                                    submitSubTask = ::submitDynamicTask,
+                                    onFileFinished = onItemDone
+                                )
                             } catch (t: Throwable) {
                                 failBatch(t)
                             } finally {
+                                if (batchAbort.isAborted || abortHandle?.isAborted == true) {
+                                    Thread.interrupted()
+                                }
                                 if (remainingTasks.decrementAndGet() == 0) {
                                     allDoneLatch.countDown()
                                 }
@@ -1787,7 +1853,7 @@ object OnlineInstaller {
     }
 
     fun computeBaseStagingIdentity(cleanBaseUrl: String, manifest: OnlineManifest): String {
-        val sb = StringBuilder("v1\n")
+        val sb = StringBuilder("v2\n")
         sb.append(cleanBaseUrl).append('\n')
         sb.append(manifest.baseName).append('\n')
         for (e in manifest.entries) {
@@ -1856,6 +1922,21 @@ object OnlineInstaller {
         val sanitizedAinBase = sanitizeInstallDirName(rawAinBase, fallback = "")
         val classifiedStagedId = GameCatalog.classifyGameRootDir(stagingDir)
         return when {
+            classifiedStagedId == GameCatalog.ID_RANCE10 -> sanitizedManifestBase.ifEmpty { "Rance10" }
+            classifiedStagedId == GameCatalog.ID_DOHNA_DOHNA -> sanitizedManifestBase.ifEmpty { "dohnadohna" }
+            classifiedStagedId == GameCatalog.ID_EVENICLE -> sanitizedManifestBase.ifEmpty { "Evenicle" }
+            classifiedStagedId == GameCatalog.ID_EVENICLE2 -> sanitizedManifestBase.ifEmpty { "Evenicle2" }
+            classifiedStagedId == GameCatalog.ID_SENGOKU_RANCE -> sanitizedManifestBase.ifEmpty { "SengokuRance" }
+            classifiedStagedId == GameCatalog.ID_RANCE01 -> sanitizedManifestBase.ifEmpty { "Rance01" }
+            classifiedStagedId == GameCatalog.ID_RANCE02 -> sanitizedManifestBase.ifEmpty { "Rance02" }
+            classifiedStagedId == GameCatalog.ID_RANCE03 -> sanitizedManifestBase.ifEmpty { "Rance03" }
+            classifiedStagedId == GameCatalog.ID_RANCE08 -> sanitizedManifestBase.ifEmpty { "Rance08" }
+            classifiedStagedId == GameCatalog.ID_RANCE09 -> sanitizedManifestBase.ifEmpty { "Rance09" }
+            classifiedStagedId == GameCatalog.ID_KICHIKUOU -> sanitizedManifestBase.ifEmpty { "KichikuRance" }
+            classifiedStagedId == GameCatalog.ID_DAIAKUJI -> sanitizedManifestBase.ifEmpty { "Daiakuji" }
+            classifiedStagedId == GameCatalog.ID_ESCALAYER -> sanitizedManifestBase.ifEmpty { "Escalayer" }
+            classifiedStagedId == GameCatalog.ID_ESCALAYER_REBOOT -> sanitizedManifestBase.ifEmpty { "EscalayerReboot" }
+            classifiedStagedId == GameCatalog.ID_IXSEAL -> sanitizedManifestBase.ifEmpty { "Ixseal" }
             classifiedStagedId == GameCatalog.ID_RANCE04 -> sanitizedManifestBase.ifEmpty { "Rance04" }
             classifiedStagedId == GameCatalog.ID_RANCE41 -> sanitizedManifestBase.ifEmpty { "Rance41" }
             classifiedStagedId == GameCatalog.ID_RANCE42 -> sanitizedManifestBase.ifEmpty { "Rance42" }
@@ -2239,7 +2320,7 @@ object OnlineInstaller {
             val marker = markerFileForExtractEntry(stagingDir, entry)
             return marker.isFile && marker.readText().trim().equals(entry.sha256, ignoreCase = true)
         }
-        val cleanPath = ArchiveExtractor.repairSjisAsGbkMojibake(entry.path)
+        val cleanPath = entry.path
         val relParts = cleanPath.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (relParts.isEmpty() || relParts.any { it == ".." }) return false
         val f = File(stagingDir, relParts.joinToString(File.separator)).canonicalFile
@@ -2252,32 +2333,14 @@ object OnlineInstaller {
                 f.delete()
             }
         }
-        if (cleanPath != entry.path) {
-            val rawParts = entry.path.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
-            if (rawParts.isNotEmpty() && rawParts.none { it == ".." }) {
-                val rawFile = File(stagingDir, rawParts.joinToString(File.separator)).canonicalFile
-                if (rawFile.path.startsWith(stagingPrefix) && rawFile.isFile) {
-                    if (verifyStagedEntryHash(rawFile, entry, verifiedCache, checkCancelled)) {
-                        f.parentFile?.mkdirs()
-                        if (!moveFileOrDir(rawFile, f)) {
-                            return false
-                        }
-                        if (entry.sha256.isNotBlank()) {
-                            verifiedCache.add(
-                                "${f.path}:${f.length()}:${f.lastModified()}:${entry.sha256.lowercase(Locale.ROOT)}"
-                            )
-                        }
-                        return true
-                    }
-                }
-            }
-        }
         return false
     }
 
-    private fun markerFileForExtractEntry(stagingDir: File, entry: ManifestEntry): File {
-        val safe = entry.path.replace(Regex("[^A-Za-z0-9._\\-]"), "_")
-        return File(stagingDir, ".extracted_${safe}.done")
+    @JvmName("markerFileForExtractEntry")
+    internal fun markerFileForExtractEntry(stagingDir: File, entry: ManifestEntry): File {
+        val safe = entry.path.replace(Regex("[^A-Za-z0-9._\\-]"), "_").take(80)
+        val pathHash = sha256Hex("${entry.path}\u0000${entry.key}".toByteArray(Charsets.UTF_8)).take(12)
+        return File(stagingDir, ".extracted_${safe}_${pathHash}.done")
     }
 
     fun evictFileToTrash(target: File?): File? {
@@ -3146,7 +3209,7 @@ object OnlineInstaller {
                 if (code != HttpURLConnection.HTTP_OK) {
                     throw IOException("Manifest HTTP $code")
                 }
-                val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val raw = readBoundedUtf8(conn.inputStream, MAX_JSON_RESPONSE_BYTES, checkCancelled)
                 return parseManifest(raw)
             } catch (e: CancellationException) {
                 throw e
@@ -3176,32 +3239,59 @@ object OnlineInstaller {
     }
 
     fun parseManifest(raw: String): OnlineManifest {
-        val root = JSONObject(raw)
-        val gameName = root.optString("gameName", "兰斯10")
-        val baseName = root.optString("baseName", "Rance10")
-        val filesArr = root.getJSONArray("files")
-        val entries = ArrayList<ManifestEntry>(filesArr.length())
+        val root = try {
+            MiniJson.parseObject(raw)
+        } catch (e: Exception) {
+            throw InvalidManifestException("Invalid manifest JSON: ${e.message}")
+        }
+        val gameName = MiniJson.optString(root, "gameName", "兰斯10")
+        val baseName = MiniJson.optString(root, "baseName", "Rance10")
+        val filesArr = MiniJson.optList(root, "files")
+            ?: throw InvalidManifestException("Manifest missing files array")
+        val entries = ArrayList<ManifestEntry>(filesArr.size)
         var sumBytes = 0L
-        for (i in 0 until filesArr.length()) {
-            val item = filesArr.getJSONObject(i)
-            val path = item.getString("path")
-            val sz = item.getLong("size")
-            val sha = item.getString("sha256").trim()
+        for (i in filesArr.indices) {
+            val item = MiniJson.asObject(filesArr[i])
+                ?: throw InvalidManifestException("Manifest entry $i is not an object")
+            val path = MiniJson.reqString(item, "path")
+                ?: throw InvalidManifestException("Manifest entry $i missing path")
+            val sz = MiniJson.reqLong(item, "size")
+                ?: throw InvalidManifestException("Manifest entry has invalid size: $path")
+            if (sz < 0L) {
+                throw InvalidManifestException("Manifest entry has negative size: $path")
+            }
+            val key = (MiniJson.reqString(item, "key")
+                ?: throw InvalidManifestException("Manifest entry missing key: $path")).trim()
+            if (!isSafeRemoteKey(key)) {
+                throw InvalidManifestException("Manifest entry has invalid key: $key")
+            }
+            val sha = (MiniJson.reqString(item, "sha256")
+                ?: throw InvalidManifestException("Manifest entry missing sha256: $path")).trim()
             if (!sha256HexRegex.matches(sha)) {
                 throw InvalidManifestException("Manifest entry has invalid sha256: $path")
             }
-            sumBytes += sz
+            sumBytes = try {
+                Math.addExact(sumBytes, sz)
+            } catch (e: ArithmeticException) {
+                throw InvalidManifestException("Manifest totalBytes overflow")
+            }
             entries.add(
                 ManifestEntry(
                     path = path,
-                    key = item.getString("key"),
+                    key = key,
                     size = sz,
                     sha256 = sha.lowercase(Locale.ROOT),
-                    extract = item.optBoolean("extract", false)
+                    extract = MiniJson.optBoolean(item, "extract", false)
                 )
             )
         }
-        val totalBytes = root.optLong("totalBytes", sumBytes).takeIf { it > 0L } ?: sumBytes
+        if (root.containsKey("totalBytes") && root["totalBytes"] != null) {
+            val explicitTotal = MiniJson.reqLong(root, "totalBytes")
+            if (explicitTotal == null || explicitTotal < 0L) {
+                throw InvalidManifestException("Manifest totalBytes is negative")
+            }
+        }
+        val totalBytes = MiniJson.optLong(root, "totalBytes", sumBytes).takeIf { it > 0L } ?: sumBytes
         return OnlineManifest(gameName, baseName, totalBytes, entries)
     }
 
@@ -3217,9 +3307,10 @@ object OnlineInstaller {
     ): Long {
         if (!partFile.isFile) return 0L
         val saved = readSavedMeta(metaFile, url, expectedSha256)
+        if (saved == null && expectedSha256.isNullOrBlank()) return 0L
         if (saved != null && saved.segmented) {
             if (expectedSize > 0L && saved.totalBytes != expectedSize) return 0L
-            return saved.segments.sumOf { it.done }.coerceIn(0L, expectedSize.coerceAtLeast(0L))
+            return saved.segments.sumOf { it.syncedDone }.coerceIn(0L, expectedSize.coerceAtLeast(0L))
         }
         val len = partFile.length()
         return if (expectedSize > 0L && len in 1L..expectedSize) len else 0L
@@ -3289,7 +3380,7 @@ object OnlineInstaller {
         val firstError = AtomicReference<Throwable?>(null)
         val progressLock = Any()
         val progressEmitLock = Any()
-        var speedWindowStartMs = SystemClock.elapsedRealtime()
+        var speedWindowStartMs = monotonicTimeMs()
         var speedWindowBytes = 0L
         var currentSpeedBps = 0L
         var lastUiReportMs = 0L
@@ -3302,7 +3393,7 @@ object OnlineInstaller {
                 var shouldEmit = false
                 synchronized(progressLock) {
                     if (deltaBytes > 0L) speedWindowBytes += deltaBytes
-                    val now = SystemClock.elapsedRealtime()
+                    val now = monotonicTimeMs()
                     val elapsed = now - speedWindowStartMs
                     if (elapsed >= 600L) {
                         currentSpeedBps = (speedWindowBytes * 1000L) / elapsed
@@ -3347,6 +3438,9 @@ object OnlineInstaller {
                             batchAbort.abort()
                         }
                     } finally {
+                        if (batchAbort.isAborted || abortHandle?.isAborted == true) {
+                            Thread.interrupted()
+                        }
                         if (remainingTasks.decrementAndGet() == 0) {
                             allDoneLatch.countDown()
                         }
@@ -3505,7 +3599,10 @@ object OnlineInstaller {
                 if (!hashless) {
                     val actualSha = computeFileSha256(destPartFile, checkCancelled)
                     if (actualSha.equals(expectedSha256, ignoreCase = true)) {
-                        writeSavedMeta(metaFile, url, savedMeta.etag, savedMeta.totalBytes, expectedSha256, segmented = false)
+                        writeSavedMeta(
+                            metaFile, url, savedMeta.etag, savedMeta.totalBytes, expectedSha256,
+                            segmented = false, completed = true
+                        )
                         onProgressDelta(savedMeta.totalBytes, 0L, savedMeta.totalBytes)
                         onFileFinished(null)
                         return
@@ -3515,7 +3612,10 @@ object OnlineInstaller {
                     runSingleStreamAndFinish()
                     return
                 } else {
-                    writeSavedMeta(metaFile, url, savedMeta.etag, savedMeta.totalBytes, expectedSha256, segmented = false)
+                    writeSavedMeta(
+                        metaFile, url, savedMeta.etag, savedMeta.totalBytes, expectedSha256,
+                        segmented = false, completed = true
+                    )
                     onProgressDelta(savedMeta.totalBytes, 0L, savedMeta.totalBytes)
                     onFileFinished(null)
                     return
@@ -3541,10 +3641,16 @@ object OnlineInstaller {
                     metaFile.delete()
                     curLen = 0L
                     savedMeta = null
-                } else {
+                } else if (savedMeta != null && !savedMeta.segmented && savedMeta.completed && isStrongEtag(savedMeta.etag)) {
                     onProgressDelta(curLen, 0L, knownTotal)
                     onFileFinished(null)
                     return
+                } else {
+                    // Never treat a pre-allocated sparse or unconfirmed .part as already complete on hashless entries.
+                    destPartFile.delete()
+                    metaFile.delete()
+                    curLen = 0L
+                    savedMeta = null
                 }
             }
             val remaining = if (knownTotal > 0L) knownTotal - curLen else -1L
@@ -3577,7 +3683,7 @@ object OnlineInstaller {
         val needsCleanRestart = AtomicBoolean(false)
         val activeSegTasks = AtomicInteger(1)
 
-        fun persistMeta(segmented: Boolean) {
+        fun persistMeta(segmented: Boolean, completed: Boolean = false) {
             synchronized(metaLock) {
                 writeSavedMeta(
                     metaFile = metaFile,
@@ -3586,7 +3692,8 @@ object OnlineInstaller {
                     totalBytes = totalBytes,
                     sha256 = expectedSha256,
                     segmented = segmented,
-                    segments = if (segmented) segments else emptyList()
+                    segments = if (segmented) segments else emptyList(),
+                    completed = completed
                 )
             }
         }
@@ -3603,37 +3710,59 @@ object OnlineInstaller {
             val input = conn.inputStream
             try {
                 RandomAccessFile(destPartFile, "rw").use { raf ->
-                    raf.seek(reqStart)
-                    val buf = ByteArray(256 * 1024)
-                    var idleReadMs = 0L
-                    while (segRemaining > 0L) {
-                        segCheckCancelled()
-                        val n = try {
-                            input.read(buf)
-                        } catch (ste: java.net.SocketTimeoutException) {
+                    try {
+                        raf.seek(reqStart)
+                        val buf = ByteArray(256 * 1024)
+                        var idleReadMs = 0L
+                        while (segRemaining > 0L) {
                             segCheckCancelled()
-                            idleReadMs += READ_SLICE_TIMEOUT_MS
-                            if (idleReadMs >= TOTAL_READ_TIMEOUT_MS) throw ste
-                            continue
+                            val n = try {
+                                input.read(buf)
+                            } catch (ste: java.net.SocketTimeoutException) {
+                                segCheckCancelled()
+                                idleReadMs += READ_SLICE_TIMEOUT_MS
+                                if (idleReadMs >= TOTAL_READ_TIMEOUT_MS) throw ste
+                                continue
+                            }
+                            idleReadMs = 0L
+                            segCheckCancelled()
+                            if (n < 0) break
+                            if (n == 0) continue
+                            if (n.toLong() > segRemaining) {
+                                throw IOException("Segment overflow: got $n > remaining $segRemaining")
+                            }
+                            raf.write(buf, 0, n)
+                            seg.done += n.toLong()
+                            segRemaining -= n.toLong()
+                            val totalDone = fileDoneBytes.addAndGet(n.toLong())
+                            onProgressDelta(totalDone, n.toLong(), totalBytes)
+                            if (bytesSinceMetaSave.addAndGet(n.toLong()) >= SEGMENT_META_PERSIST_BYTES) {
+                                bytesSinceMetaSave.set(0L)
+                                // Always fsync segment bytes BEFORE persisting durable progress in .part.meta
+                                raf.fd.sync()
+                                seg.syncedDone = seg.done
+                                persistMeta(true)
+                            }
                         }
-                        idleReadMs = 0L
-                        segCheckCancelled()
-                        if (n < 0) break
-                        if (n == 0) continue
-                        if (n.toLong() > segRemaining) {
-                            throw IOException("Segment overflow: got $n > remaining $segRemaining")
+                        // Normal completion/EOF path: propagate final fsync failure so unsynced bytes are never treated as durable/complete.
+                        raf.fd.sync()
+                        seg.syncedDone = seg.done
+                    } catch (t: Throwable) {
+                        // On cancellation or prior read/write/sync error: preserve the original exception and never advance syncedDone past durable bytes.
+                        if (t !is java.io.SyncFailedException) {
+                            try {
+                                raf.fd.sync()
+                                seg.syncedDone = seg.done
+                            } catch (_: Throwable) {
+                            }
                         }
-                        raf.write(buf, 0, n)
-                        seg.done += n.toLong()
-                        segRemaining -= n.toLong()
-                        val totalDone = fileDoneBytes.addAndGet(n.toLong())
-                        onProgressDelta(totalDone, n.toLong(), totalBytes)
-                        if (bytesSinceMetaSave.addAndGet(n.toLong()) >= SEGMENT_META_PERSIST_BYTES) {
-                            bytesSinceMetaSave.set(0L)
-                            persistMeta(true)
+                        val unsynced = (seg.done - seg.syncedDone).coerceAtLeast(0L)
+                        if (unsynced > 0L) {
+                            seg.done = seg.syncedDone
+                            fileDoneBytes.addAndGet(-unsynced)
                         }
+                        throw t
                     }
-                    raf.fd.sync()
                 }
                 completedNormally = true
             } finally {
@@ -3777,7 +3906,7 @@ object OnlineInstaller {
                         throw IOException("SHA-256 verification failed for ${destPartFile.name}")
                     }
                 }
-                persistMeta(false)
+                persistMeta(segmented = false, completed = true)
                 onProgressDelta(totalBytes, 0L, totalBytes)
                 onFileFinished(null)
             } catch (t: Throwable) {
@@ -3920,6 +4049,10 @@ object OnlineInstaller {
                         throw IOException("SHA-256 verification failed for ${destPartFile.name}")
                     }
                 }
+                writeSavedMeta(
+                    metaFile, url, respEtag, if (finalTotal > 0L) finalTotal else written,
+                    expectedSha256, segmented = false, completed = true
+                )
                 onProgressDelta(written, 0L, finalTotal)
                 onFileFinished(null)
                 return
@@ -4031,7 +4164,8 @@ object OnlineInstaller {
         // otherwise a changed remote file could be spliced onto the old prefix.
         val hashless = expectedSha256.isNullOrBlank()
         var savedMeta = readSavedMeta(metaFile, url, expectedSha256)
-        if ((savedMeta == null && (metaFile.isFile || (hashless && destPartFile.isFile))) ||
+        if (savedMeta?.segmented == true ||
+            (savedMeta == null && (metaFile.isFile || (hashless && destPartFile.isFile))) ||
             (hashless && destPartFile.isFile && !isStrongEtag(savedMeta?.etag))
         ) {
             destPartFile.delete()
@@ -4066,8 +4200,15 @@ object OnlineInstaller {
                     metaFile.delete()
                     curLen = 0L
                 } else {
-                    lastIoError = null
-                    break
+                    val checkMeta = readSavedMeta(metaFile, url, expectedSha256)
+                    if (checkMeta != null && !checkMeta.segmented && checkMeta.completed && isStrongEtag(checkMeta.etag)) {
+                        lastIoError = null
+                        break
+                    }
+                    // Never accept an unconfirmed or sparse .part as already complete on hashless entries.
+                    destPartFile.delete()
+                    metaFile.delete()
+                    curLen = 0L
                 }
             }
 
@@ -4078,7 +4219,7 @@ object OnlineInstaller {
             val resumeMeta = if (curLen > 0L) readSavedMeta(metaFile, url, expectedSha256) else null
             val resumeEtag = resumeMeta?.etag
             val sameResumeUrl = resumeMeta?.url == url
-            if (hashless && curLen > 0L && !isStrongEtag(resumeEtag)) {
+            if (hashless && curLen > 0L && (resumeMeta == null || resumeMeta.segmented || !isStrongEtag(resumeEtag))) {
                 destPartFile.delete()
                 metaFile.delete()
                 curLen = 0L
@@ -4109,10 +4250,10 @@ object OnlineInstaller {
 
                 when (code) {
                     HttpURLConnection.HTTP_PARTIAL -> {
-                        val parsed = parseContentRange(conn.getHeaderField("Content-Range"))
+                        val parsedFull = parseContentRangeFull(conn.getHeaderField("Content-Range"))
                         val sameRemoteFile = !hashless ||
                             (curLen > 0L && isStrongEtag(respEtag) && respEtag == resumeEtag)
-                        if (parsed == null || parsed.first != curLen || !sameRemoteFile) {
+                        if (parsedFull == null || parsedFull.first != curLen || parsedFull.second < parsedFull.first || !sameRemoteFile) {
                             abortHandle?.unregister(conn)
                             conn.disconnect()
                             conn = null
@@ -4121,12 +4262,51 @@ object OnlineInstaller {
                             attempt++
                             continue
                         }
-                        if (parsed.second > 0L) {
-                            knownTotal = parsed.second
-                        } else {
+                        if (expectedSize > 0L) {
+                            if (parsedFull.third > 0L && parsedFull.third != expectedSize) {
+                                abortHandle?.unregister(conn)
+                                conn.disconnect()
+                                conn = null
+                                destPartFile.delete()
+                                metaFile.delete()
+                                throw IOException("Downloaded size mismatch: expected $expectedSize, got ${parsedFull.third}")
+                            }
+                            if (parsedFull.second >= expectedSize) {
+                                abortHandle?.unregister(conn)
+                                conn.disconnect()
+                                conn = null
+                                destPartFile.delete()
+                                metaFile.delete()
+                                throw IOException("Downloaded size mismatch: expected $expectedSize, got range end ${parsedFull.second}")
+                            }
                             val cl = conn.contentLengthLong
-                            if (cl > 0L && knownTotal <= 0L) {
-                                knownTotal = curLen + cl
+                            if (cl > 0L && curLen + cl > expectedSize) {
+                                abortHandle?.unregister(conn)
+                                conn.disconnect()
+                                conn = null
+                                destPartFile.delete()
+                                metaFile.delete()
+                                throw IOException("Downloaded size mismatch: expected $expectedSize, got ${curLen + cl}")
+                            }
+                            knownTotal = expectedSize
+                        } else {
+                            if (parsedFull.third > 0L) {
+                                if (knownTotal > 0L && parsedFull.third != knownTotal) {
+                                    abortHandle?.unregister(conn)
+                                    conn.disconnect()
+                                    conn = null
+                                    destPartFile.delete()
+                                    metaFile.delete()
+                                    knownTotal = -1L
+                                    attempt++
+                                    continue
+                                }
+                                knownTotal = parsedFull.third
+                            } else {
+                                val cl = conn.contentLengthLong
+                                if (cl > 0L && knownTotal <= 0L) {
+                                    knownTotal = curLen + cl
+                                }
                             }
                         }
                         appendMode = true
@@ -4147,15 +4327,29 @@ object OnlineInstaller {
                     416 -> {
                         val cr = conn.getHeaderField("Content-Range")
                         val slashTotal = cr?.substringAfter('/', "")?.trim()?.toLongOrNull() ?: -1L
-                        if (slashTotal > 0L && curLen == slashTotal) {
-                            knownTotal = slashTotal
-                            completedNormally = true
+                        if (expectedSize > 0L && slashTotal > 0L && slashTotal != expectedSize) {
                             abortHandle?.unregister(conn)
                             conn.disconnect()
                             conn = null
+                            destPartFile.delete()
+                            metaFile.delete()
+                            throw IOException("Downloaded size mismatch: expected $expectedSize, got $slashTotal")
+                        }
+                        val sizeMatches = slashTotal > 0L && curLen == slashTotal &&
+                            (expectedSize <= 0L || slashTotal == expectedSize)
+                        if (sizeMatches) {
                             if (!expectedSha256.isNullOrBlank()) {
+                                knownTotal = if (expectedSize > 0L) expectedSize else slashTotal
+                                completedNormally = true
+                                abortHandle?.unregister(conn)
+                                conn.disconnect()
+                                conn = null
                                 val actualSha = computeFileSha256(destPartFile, checkCancelled)
                                 if (actualSha.equals(expectedSha256, ignoreCase = true)) {
+                                    writeSavedMeta(
+                                        metaFile, url, respEtag ?: resumeEtag, knownTotal,
+                                        expectedSha256, segmented = false, completed = true
+                                    )
                                     onProgress(curLen, knownTotal, 0L)
                                     return
                                 }
@@ -4167,12 +4361,34 @@ object OnlineInstaller {
                                     continue
                                 }
                                 throw IOException("SHA-256 verification failed for ${destPartFile.name}")
+                            } else {
+                                val etagMatches = resumeMeta != null &&
+                                    !resumeMeta.segmented &&
+                                    isStrongEtag(respEtag) &&
+                                    isStrongEtag(resumeEtag) &&
+                                    respEtag == resumeEtag
+                                if (etagMatches) {
+                                    knownTotal = if (expectedSize > 0L) expectedSize else slashTotal
+                                    completedNormally = true
+                                    abortHandle?.unregister(conn)
+                                    conn.disconnect()
+                                    conn = null
+                                    writeSavedMeta(
+                                        metaFile, url, respEtag, knownTotal,
+                                        expectedSha256, segmented = false, completed = true
+                                    )
+                                    onProgress(curLen, knownTotal, 0L)
+                                    lastIoError = null
+                                    break
+                                }
                             }
-                            lastIoError = null
-                            break
                         }
+                        abortHandle?.unregister(conn)
+                        conn.disconnect()
+                        conn = null
                         destPartFile.delete()
                         metaFile.delete()
+                        knownTotal = expectedSize
                         attempt++
                         continue
                     }
@@ -4183,12 +4399,13 @@ object OnlineInstaller {
                     ensureAvailableSpace(destPartFile.parentFile ?: destPartFile, (knownTotal - curLen).coerceAtLeast(0L))
                 }
                 val metaEtag = if (appendMode) respEtag ?: resumeEtag else respEtag
-                writeSavedMeta(metaFile, url, metaEtag, knownTotal, expectedSha256)
+                writeSavedMeta(metaFile, url, metaEtag, knownTotal, expectedSha256, segmented = false, completed = false)
 
-                var speedWindowStartMs = SystemClock.elapsedRealtime()
+                var speedWindowStartMs = monotonicTimeMs()
                 var speedWindowBytes = 0L
                 var currentSpeedBps = 0L
                 var lastUiReportMs = 0L
+                val enforcedMax = if (expectedSize > 0L) expectedSize else knownTotal
 
                 val input = conn.inputStream
                 try {
@@ -4214,11 +4431,14 @@ object OnlineInstaller {
                             checkCancelled()
                             if (n < 0) break
                             if (n == 0) continue
+                            if (enforcedMax > 0L && curLen + n.toLong() > enforcedMax) {
+                                throw IOException("Downloaded size mismatch: expected $enforcedMax, got >$enforcedMax")
+                            }
                             output.write(buf, 0, n)
                             curLen += n
                             speedWindowBytes += n
 
-                            val now = SystemClock.elapsedRealtime()
+                            val now = monotonicTimeMs()
                             val elapsedWindow = now - speedWindowStartMs
                             if (elapsedWindow >= 600L) {
                                 currentSpeedBps = (speedWindowBytes * 1000L) / elapsedWindow
@@ -4244,8 +4464,16 @@ object OnlineInstaller {
 
                 onProgress(curLen, knownTotal, currentSpeedBps)
 
-                if (knownTotal > 0L && curLen < knownTotal) {
-                    throw IOException("Premature EOF at $curLen / $knownTotal bytes")
+                val requiredSize = if (expectedSize > 0L) expectedSize else knownTotal
+                if (requiredSize > 0L) {
+                    if (curLen < requiredSize) {
+                        throw IOException("Premature EOF at $curLen / $requiredSize bytes")
+                    }
+                    if (curLen != requiredSize || !destPartFile.isFile || destPartFile.length() != requiredSize) {
+                        destPartFile.delete()
+                        metaFile.delete()
+                        throw IOException("Downloaded size mismatch: expected $requiredSize, got $curLen")
+                    }
                 }
 
                 if (!expectedSha256.isNullOrBlank()) {
@@ -4264,6 +4492,10 @@ object OnlineInstaller {
                     }
                 }
 
+                writeSavedMeta(
+                    metaFile, url, metaEtag, if (requiredSize > 0L) requiredSize else curLen,
+                    expectedSha256, segmented = false, completed = true
+                )
                 return
             } catch (e: CancellationException) {
                 throw e
@@ -4272,6 +4504,20 @@ object OnlineInstaller {
             } catch (e: Exception) {
                 if (abortHandle?.isAborted == true) throw CancellationException()
                 checkCancelled()
+                val isTerminalIo = e is IOException && (
+                    e.message == "HTTP 401" ||
+                        e.message == "HTTP 403" ||
+                        e.message?.startsWith("Downloaded size mismatch:") == true ||
+                        e.message?.startsWith("SHA-256 verification failed") == true ||
+                        e.message?.startsWith("Unsupported URL scheme:") == true
+                    )
+                if (isTerminalIo) {
+                    if (e.message?.startsWith("Downloaded size mismatch:") == true) {
+                        destPartFile.delete()
+                        metaFile.delete()
+                    }
+                    throw e
+                }
                 lastIoError = e
                 if (attempt + 1 < MAX_HTTP_RETRIES) {
                     sleepCancellable(1000L * (attempt + 1).coerceAtMost(5), checkCancelled)
@@ -4289,15 +4535,16 @@ object OnlineInstaller {
             }
         }
 
+        val requiredTotal = if (expectedSize > 0L) expectedSize else knownTotal
         if (lastIoError != null) {
             val finalLen = if (destPartFile.isFile) destPartFile.length() else 0L
-            if (knownTotal <= 0L || finalLen < knownTotal || !expectedSha256.isNullOrBlank()) {
+            if (requiredTotal <= 0L || finalLen != requiredTotal || !expectedSha256.isNullOrBlank()) {
                 throw lastIoError
             }
         }
 
-        if (knownTotal > 0L && (!destPartFile.isFile || destPartFile.length() != knownTotal)) {
-            throw IOException("Downloaded size mismatch: expected $knownTotal, got ${destPartFile.length()}")
+        if (requiredTotal > 0L && (!destPartFile.isFile || destPartFile.length() != requiredTotal)) {
+            throw IOException("Downloaded size mismatch: expected $requiredTotal, got ${destPartFile.length()}")
         }
 
         if (!expectedSha256.isNullOrBlank()) {
@@ -4310,17 +4557,26 @@ object OnlineInstaller {
         }
     }
 
+    @JvmOverloads
+    @JvmName("openFollowingRedirects")
     internal fun openFollowingRedirects(
         initialUrl: String,
         headers: Map<String, String>,
         abortHandle: InstallAbortHandle? = null,
-        readTimeoutMs: Int = READ_SLICE_TIMEOUT_MS
+        readTimeoutMs: Int = DEFAULT_CONNECT_READ_TIMEOUT_MS
     ): HttpURLConnection {
         var currentUrl = URL(initialUrl)
 
         for (hop in 0..MAX_REDIRECTS) {
             if (abortHandle?.isAborted == true) throw CancellationException()
-            val conn = (currentUrl.openConnection() as HttpURLConnection).apply {
+            val scheme = currentUrl.protocol.lowercase(Locale.ROOT)
+            if (scheme != "http" && scheme != "https") {
+                throw IOException("Unsupported URL scheme: ${currentUrl.protocol}")
+            }
+            val rawConn = currentUrl.openConnection()
+            val conn = (rawConn as? HttpURLConnection)
+                ?: throw IOException("Unsupported URL scheme: ${currentUrl.protocol}")
+            conn.apply {
                 instanceFollowRedirects = false
                 connectTimeout = 15_000
                 readTimeout = readTimeoutMs
@@ -4344,7 +4600,12 @@ object OnlineInstaller {
                 if (loc.isNullOrBlank()) {
                     throw IOException("Redirect $code missing Location header")
                 }
-                currentUrl = URL(currentUrl, loc)
+                val nextUrl = URL(currentUrl, loc)
+                val nextScheme = nextUrl.protocol.lowercase(Locale.ROOT)
+                if (nextScheme != "http" && nextScheme != "https") {
+                    throw IOException("Unsupported URL scheme: ${nextUrl.protocol}")
+                }
+                currentUrl = nextUrl
                 continue
             }
             return conn
@@ -4382,26 +4643,26 @@ object OnlineInstaller {
     private fun readSavedMeta(metaFile: File, expectedUrl: String, expectedSha256: String?): SavedMeta? {
         if (!metaFile.isFile) return null
         return try {
-            val j = JSONObject(metaFile.readText())
-            val savedSha = j.optString("sha256")
+            val j = MiniJson.parseObject(metaFile.readText(Charsets.UTF_8))
+            val savedSha = MiniJson.optString(j, "sha256", "")
             val shaMatched = !expectedSha256.isNullOrBlank() &&
                 savedSha.isNotEmpty() &&
                 savedSha.equals(expectedSha256, ignoreCase = true)
-            if (!shaMatched && j.optString("url") != expectedUrl) return null
-            val totalBytes = j.optLong("totalBytes", -1L)
-            val segmented = j.optBoolean("segmented", false)
+            if (!shaMatched && MiniJson.optString(j, "url", "") != expectedUrl) return null
+            val totalBytes = MiniJson.optLong(j, "totalBytes", -1L)
+            val segmented = MiniJson.optBoolean(j, "segmented", false)
             val segments = if (segmented) {
                 if (totalBytes <= 0L) return null
-                val arr = j.optJSONArray("segments") ?: return null
-                if (arr.length() == 0) return null
-                val list = ArrayList<SegmentProgress>(arr.length())
+                val arr = MiniJson.optList(j, "segments") ?: return null
+                if (arr.isEmpty()) return null
+                val list = ArrayList<SegmentProgress>(arr.size)
                 var expectedStart = 0L
-                for (i in 0 until arr.length()) {
-                    val segArr = arr.optJSONArray(i) ?: return null
-                    if (segArr.length() < 3) return null
-                    val s = segArr.optLong(0, -1L)
-                    val e = segArr.optLong(1, -1L)
-                    val d = segArr.optLong(2, -1L)
+                for (i in arr.indices) {
+                    val segArr = MiniJson.asList(arr[i]) ?: return null
+                    if (segArr.size < 3) return null
+                    val s = MiniJson.asLong(segArr[0]) ?: return null
+                    val e = MiniJson.asLong(segArr[1]) ?: return null
+                    val d = MiniJson.asLong(segArr[2]) ?: return null
                     if (s != expectedStart || e < s) return null
                     val len = e - s + 1L
                     if (d < 0L || d > len) return null
@@ -4414,11 +4675,12 @@ object OnlineInstaller {
                 emptyList()
             }
             SavedMeta(
-                url = j.optString("url").takeIf { it.isNotEmpty() },
-                etag = j.optString("etag").takeIf { it.isNotEmpty() },
+                url = MiniJson.optString(j, "url", "").takeIf { it.isNotEmpty() },
+                etag = MiniJson.optString(j, "etag", "").takeIf { it.isNotEmpty() },
                 totalBytes = totalBytes,
                 segmented = segmented,
-                segments = segments
+                segments = segments,
+                completed = MiniJson.optBoolean(j, "completed", false)
             )
         } catch (_: Throwable) {
             null
@@ -4432,24 +4694,27 @@ object OnlineInstaller {
         totalBytes: Long,
         sha256: String?,
         segmented: Boolean = false,
-        segments: List<SegmentProgress> = emptyList()
+        segments: List<SegmentProgress> = emptyList(),
+        completed: Boolean = false
     ) {
         try {
-            val j = JSONObject().put("url", url)
-            if (!etag.isNullOrEmpty()) j.put("etag", etag)
-            if (totalBytes > 0L) j.put("totalBytes", totalBytes)
-            if (!sha256.isNullOrBlank()) j.put("sha256", sha256)
+            val j = LinkedHashMap<String, Any?>()
+            j["url"] = url
+            if (!etag.isNullOrEmpty()) j["etag"] = etag
+            if (totalBytes > 0L) j["totalBytes"] = totalBytes
+            if (!sha256.isNullOrBlank()) j["sha256"] = sha256
+            if (completed) j["completed"] = true
             if (segmented && segments.isNotEmpty()) {
-                j.put("segmented", true)
-                val arr = JSONArray()
+                j["segmented"] = true
+                val arr = ArrayList<List<Long>>(segments.size)
                 for (seg in segments) {
-                    arr.put(JSONArray().put(seg.start).put(seg.end).put(seg.done))
+                    arr.add(listOf(seg.start, seg.end, seg.syncedDone))
                 }
-                j.put("segments", arr)
+                j["segments"] = arr
             }
             val tmp = File("${metaFile.path}.tmp")
             FileOutputStream(tmp, false).use { out ->
-                out.write(j.toString().toByteArray(Charsets.UTF_8))
+                out.write(MiniJson.encode(j).toByteArray(Charsets.UTF_8))
                 out.flush()
                 out.fd.sync()
             }
@@ -4512,6 +4777,297 @@ object OnlineInstaller {
             val step = remaining.coerceAtMost(200L)
             Thread.sleep(step)
             remaining -= step
+        }
+    }
+
+    /**
+     * Minimal RFC-8259 JSON parser/serializer without Android framework dependencies so
+     * OnlineInstaller manifest, catalog, and `.part.meta` logic works identically on Android ART
+     * and pure-JVM unit tests.
+     */
+    private object MiniJson {
+        private const val MAX_DEPTH = 64
+
+        fun parseObject(raw: String): Map<String, Any?> {
+            val parser = Parser(raw)
+            val value = parser.parseRoot()
+            @Suppress("UNCHECKED_CAST")
+            return value as? Map<String, Any?>
+                ?: throw IllegalArgumentException("Expected JSON object")
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        fun asObject(v: Any?): Map<String, Any?>? = v as? Map<String, Any?>
+
+        @Suppress("UNCHECKED_CAST")
+        fun asList(v: Any?): List<Any?>? = v as? List<Any?>
+
+        fun asLong(v: Any?): Long? = when (v) {
+            is Long -> v
+            is Int -> v.toLong()
+            is Double -> if (v.isFinite()) v.toLong() else null
+            is Number -> v.toLong()
+            is String -> v.trim().toLongOrNull()
+            else -> null
+        }
+
+        fun optList(obj: Map<String, Any?>, key: String): List<Any?>? = asList(obj[key])
+
+        fun reqString(obj: Map<String, Any?>, key: String): String? {
+            val v = obj[key] ?: return null
+            return v as? String ?: v.toString()
+        }
+
+        fun optString(obj: Map<String, Any?>, key: String, default: String = ""): String {
+            val v = obj[key] ?: return default
+            return v as? String ?: v.toString()
+        }
+
+        fun reqLong(obj: Map<String, Any?>, key: String): Long? = asLong(obj[key])
+
+        fun optLong(obj: Map<String, Any?>, key: String, default: Long = -1L): Long =
+            asLong(obj[key]) ?: default
+
+        fun optInt(obj: Map<String, Any?>, key: String, default: Int = 0): Int =
+            asLong(obj[key])?.toInt() ?: default
+
+        fun optBoolean(obj: Map<String, Any?>, key: String, default: Boolean = false): Boolean = when (val v = obj[key]) {
+            is Boolean -> v
+            is String -> when {
+                v.equals("true", ignoreCase = true) -> true
+                v.equals("false", ignoreCase = true) -> false
+                else -> default
+            }
+            else -> default
+        }
+
+        fun encode(value: Any?): String {
+            val sb = StringBuilder(128)
+            appendEncoded(sb, value)
+            return sb.toString()
+        }
+
+        private fun appendEncoded(sb: StringBuilder, value: Any?) {
+            when (value) {
+                null -> sb.append("null")
+                is Boolean -> sb.append(if (value) "true" else "false")
+                is Number -> sb.append(value.toString())
+                is String -> appendEscapedString(sb, value)
+                is Map<*, *> -> {
+                    sb.append('{')
+                    var first = true
+                    for ((k, v) in value) {
+                        if (!first) sb.append(',')
+                        first = false
+                        appendEscapedString(sb, k.toString())
+                        sb.append(':')
+                        appendEncoded(sb, v)
+                    }
+                    sb.append('}')
+                }
+                is List<*> -> {
+                    sb.append('[')
+                    for (i in value.indices) {
+                        if (i > 0) sb.append(',')
+                        appendEncoded(sb, value[i])
+                    }
+                    sb.append(']')
+                }
+                else -> appendEscapedString(sb, value.toString())
+            }
+        }
+
+        private fun appendEscapedString(sb: StringBuilder, s: String) {
+            sb.append('"')
+            for (ch in s) {
+                when (ch) {
+                    '"' -> sb.append("\\\"")
+                    '\\' -> sb.append("\\\\")
+                    '\b' -> sb.append("\\b")
+                    '\u000C' -> sb.append("\\f")
+                    '\n' -> sb.append("\\n")
+                    '\r' -> sb.append("\\r")
+                    '\t' -> sb.append("\\t")
+                    else -> if (ch.code < 0x20) {
+                        sb.append(String.format(Locale.US, "\\u%04x", ch.code))
+                    } else {
+                        sb.append(ch)
+                    }
+                }
+            }
+            sb.append('"')
+        }
+
+        private class Parser(raw: String) {
+            private val s: String = if (raw.isNotEmpty() && raw[0] == '\uFEFF') raw.substring(1) else raw
+            private var pos = 0
+
+            fun parseRoot(): Any? {
+                skipWs()
+                val v = parseValue(0)
+                skipWs()
+                if (pos != s.length) throw IllegalArgumentException("Unexpected trailing JSON at $pos")
+                return v
+            }
+
+            private fun parseValue(depth: Int): Any? {
+                if (depth > MAX_DEPTH) throw IllegalArgumentException("JSON nesting too deep")
+                skipWs()
+                if (pos >= s.length) throw IllegalArgumentException("Unexpected end of JSON")
+                return when (s[pos]) {
+                    '{' -> parseObject(depth + 1)
+                    '[' -> parseArray(depth + 1)
+                    '"' -> parseString()
+                    't' -> consumeLiteral("true", true)
+                    'f' -> consumeLiteral("false", false)
+                    'n' -> consumeLiteral("null", null)
+                    '-', in '0'..'9' -> parseNumber()
+                    else -> throw IllegalArgumentException("Unexpected char '${s[pos]}' at $pos")
+                }
+            }
+
+            private fun parseObject(depth: Int): Map<String, Any?> {
+                pos++ // '{'
+                val map = LinkedHashMap<String, Any?>()
+                skipWs()
+                if (pos < s.length && s[pos] == '}') {
+                    pos++
+                    return map
+                }
+                while (true) {
+                    skipWs()
+                    if (pos >= s.length || s[pos] != '"') {
+                        throw IllegalArgumentException("Expected object key at $pos")
+                    }
+                    val key = parseString()
+                    skipWs()
+                    if (pos >= s.length || s[pos] != ':') {
+                        throw IllegalArgumentException("Expected ':' at $pos")
+                    }
+                    pos++
+                    val value = parseValue(depth)
+                    map[key] = value
+                    skipWs()
+                    if (pos >= s.length) throw IllegalArgumentException("Unterminated object")
+                    when (s[pos]) {
+                        ',' -> pos++
+                        '}' -> {
+                            pos++
+                            return map
+                        }
+                        else -> throw IllegalArgumentException("Expected ',' or '}' at $pos")
+                    }
+                }
+            }
+
+            private fun parseArray(depth: Int): List<Any?> {
+                pos++ // '['
+                val list = ArrayList<Any?>()
+                skipWs()
+                if (pos < s.length && s[pos] == ']') {
+                    pos++
+                    return list
+                }
+                while (true) {
+                    list.add(parseValue(depth))
+                    skipWs()
+                    if (pos >= s.length) throw IllegalArgumentException("Unterminated array")
+                    when (s[pos]) {
+                        ',' -> pos++
+                        ']' -> {
+                            pos++
+                            return list
+                        }
+                        else -> throw IllegalArgumentException("Expected ',' or ']' at $pos")
+                    }
+                }
+            }
+
+            private fun parseString(): String {
+                pos++ // opening '"'
+                val sb = StringBuilder()
+                while (pos < s.length) {
+                    val ch = s[pos++]
+                    when {
+                        ch == '"' -> return sb.toString()
+                        ch == '\\' -> {
+                            if (pos >= s.length) throw IllegalArgumentException("Unterminated escape")
+                            when (val esc = s[pos++]) {
+                                '"' -> sb.append('"')
+                                '\\' -> sb.append('\\')
+                                '/' -> sb.append('/')
+                                'b' -> sb.append('\b')
+                                'f' -> sb.append('\u000C')
+                                'n' -> sb.append('\n')
+                                'r' -> sb.append('\r')
+                                't' -> sb.append('\t')
+                                'u' -> {
+                                    if (pos + 4 > s.length) throw IllegalArgumentException("Truncated \\u escape")
+                                    val hex = s.substring(pos, pos + 4)
+                                    val code = hex.toIntOrNull(16)
+                                        ?: throw IllegalArgumentException("Invalid \\u escape: $hex")
+                                    sb.append(code.toChar())
+                                    pos += 4
+                                }
+                                else -> throw IllegalArgumentException("Invalid escape '\\$esc'")
+                            }
+                        }
+                        ch.code < 0x20 -> throw IllegalArgumentException("Unescaped control character in string")
+                        else -> sb.append(ch)
+                    }
+                }
+                throw IllegalArgumentException("Unterminated string")
+            }
+
+            private fun parseNumber(): Number {
+                val start = pos
+                if (s[pos] == '-') pos++
+                if (pos >= s.length) throw IllegalArgumentException("Invalid number")
+                if (s[pos] == '0') {
+                    pos++
+                } else if (s[pos] in '1'..'9') {
+                    while (pos < s.length && s[pos] in '0'..'9') pos++
+                } else {
+                    throw IllegalArgumentException("Invalid number at $pos")
+                }
+                var isFloat = false
+                if (pos < s.length && s[pos] == '.') {
+                    isFloat = true
+                    pos++
+                    val fracStart = pos
+                    while (pos < s.length && s[pos] in '0'..'9') pos++
+                    if (pos == fracStart) throw IllegalArgumentException("Invalid fraction at $pos")
+                }
+                if (pos < s.length && (s[pos] == 'e' || s[pos] == 'E')) {
+                    isFloat = true
+                    pos++
+                    if (pos < s.length && (s[pos] == '+' || s[pos] == '-')) pos++
+                    val expStart = pos
+                    while (pos < s.length && s[pos] in '0'..'9') pos++
+                    if (pos == expStart) throw IllegalArgumentException("Invalid exponent at $pos")
+                }
+                val token = s.substring(start, pos)
+                return if (isFloat) {
+                    token.toDouble()
+                } else {
+                    token.toLongOrNull() ?: token.toDouble()
+                }
+            }
+
+            private fun <T> consumeLiteral(lit: String, value: T): T {
+                if (!s.startsWith(lit, pos)) throw IllegalArgumentException("Expected '$lit' at $pos")
+                pos += lit.length
+                return value
+            }
+
+            private fun skipWs() {
+                while (pos < s.length) {
+                    when (s[pos]) {
+                        ' ', '\t', '\r', '\n' -> pos++
+                        else -> return
+                    }
+                }
+            }
         }
     }
 }

@@ -55,7 +55,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         trackedDialogs.clear()
         for (dlg in copy) {
             try {
-                if (dlg.isShowing) dlg.dismiss()
+                if (!activity.isDestroyed && dlg.isShowing) dlg.dismiss()
             } catch (_: Throwable) {
             }
         }
@@ -185,11 +185,16 @@ class FloatingModifierOverlay(private val activity: Activity) {
                     }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP -> {
                     v.alpha = 0.8f
                     if (!dragging) {
                         showMainModifierDialog()
                     }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.alpha = 0.8f
+                    dragging = false
                     true
                 }
                 else -> false
@@ -231,6 +236,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
     }
 
     private fun showMainModifierDialog() {
+        if (activity.isFinishing || activity.isDestroyed) return
         val xsAct = activity as? XSystem4Activity
         xsAct?.setCtrlSkipLatched(false)
         val ctrlEnabled = GameModifierBridge.isCtrlOverlayEnabled(activity)

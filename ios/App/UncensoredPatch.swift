@@ -309,10 +309,24 @@ final class UncensoredPatchInstaller: ObservableObject {
                     expectedSize: manifest.size,
                     expectedSha256: manifest.sha256
                 )
+                let progressLock = NSLock()
+                var lastProgressEmit = Date.distantPast
+                var maxReportedBytes: Int64 = 0
                 let downloaded = try transfer.downloadVerifiedFile(release, cache: cache) { done, total in
                     let effTotal = total > 0 ? total : manifest.size
-                    let frac = effTotal > 0 ? min(1, max(0, Double(done) / Double(effTotal))) : nil
-                    let doneMB = done / 1048576
+                    let now = Date()
+                    progressLock.lock()
+                    let isFinal = effTotal > 0 && done >= effTotal
+                    let clampedDone = max(done, maxReportedBytes)
+                    guard isFinal || now.timeIntervalSince(lastProgressEmit) >= 0.08 else {
+                        progressLock.unlock()
+                        return
+                    }
+                    lastProgressEmit = now
+                    maxReportedBytes = clampedDone
+                    progressLock.unlock()
+                    let frac = effTotal > 0 ? min(1, max(0, Double(clampedDone) / Double(effTotal))) : nil
+                    let doneMB = clampedDone / 1048576
                     let totalMB = max(1, effTotal / 1048576)
                     let pct = frac.map { Int($0 * 100) } ?? 0
                     activity.update(fraction: frac, detail: "\(doneMB) / \(totalMB) MB")
@@ -330,25 +344,47 @@ final class UncensoredPatchInstaller: ObservableObject {
                 guard destOwned else {
                     throw ModError.message(hubText("目标文件已存在且不属于 AliceHub 无码补丁，已取消覆盖"))
                 }
+                var prevURLToRemove: URL?
                 if let prev, UncensoredPatchManifest.isSafeOverlayFileName(prev.fileName),
                    prev.fileName.lowercased() != manifest.fileName.lowercased() {
-                    let prevURL = try ModFiles.checked(directory, prev.fileName)
-                    if ModFiles.isFile(prevURL) {
-                        try ModFiles.removeIfPresent(prevURL)
+                    let candidate = try ModFiles.checked(directory, prev.fileName)
+                    if ModFiles.isFile(candidate) {
+                        prevURLToRemove = candidate
                     }
                 }
+                var destBackup: URL?
+                if ModFiles.isFile(dest) {
+                    let bak = directory.appendingPathComponent(".\(manifest.fileName).\(UUID().uuidString).bak")
+                    try ModFiles.files.copyItem(at: dest, to: bak)
+                    destBackup = bak
+                }
+                defer {
+                    if let destBackup { try? ModFiles.removeIfPresent(destBackup) }
+                }
                 try ModFiles.replace(downloaded, dest)
+                do {
+                    try InstalledUncensoredInfo(
+                        version: manifest.version,
+                        gameId: manifest.gameId,
+                        fileName: manifest.fileName,
+                        size: manifest.size,
+                        sha256: manifest.sha256,
+                        cgCount: manifest.cgCount,
+                        updatedAt: manifest.updatedAt,
+                        installedAtMs: Int64(Date().timeIntervalSince1970 * 1000)
+                    ).write(to: directory)
+                } catch {
+                    if let destBackup, ModFiles.exists(destBackup) {
+                        try? ModFiles.replace(destBackup, dest)
+                    } else {
+                        try? ModFiles.removeIfPresent(dest)
+                    }
+                    throw error
+                }
+                if let prevURLToRemove {
+                    try? ModFiles.removeIfPresent(prevURLToRemove)
+                }
                 try? ModFiles.removeIfPresent(downloaded.appendingPathExtension("meta"))
-                try InstalledUncensoredInfo(
-                    version: manifest.version,
-                    gameId: manifest.gameId,
-                    fileName: manifest.fileName,
-                    size: manifest.size,
-                    sha256: manifest.sha256,
-                    cgCount: manifest.cgCount,
-                    updatedAt: manifest.updatedAt,
-                    installedAtMs: Int64(Date().timeIntervalSince1970 * 1000)
-                ).write(to: directory)
             } catch let err {
                 error = err
             }

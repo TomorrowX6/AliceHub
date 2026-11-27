@@ -231,6 +231,31 @@ struct SaveManagerChecks {
         let resolvedMojibake = SaveManager.resolveAinPath(in: mojibakeDir)
         check(resolvedMojibake.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == mojibakeAin.resolvingSymlinksInPath().path)
 
+        // SaveFolder resolution preserves SaveDataDSR even when isDaiSengokuSave is false (legacy unsuffixed local save dir)
+        let legacyDsrDir = root.appendingPathComponent("LegacyDsrResolve")
+        try files.createDirectory(at: legacyDsrDir, withIntermediateDirectories: true)
+        try Data("CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n".utf8).write(to: legacyDsrDir.appendingPathComponent("system40.ini"))
+        try Data().write(to: legacyDsrDir.appendingPathComponent("DaiSengoku.ain"))
+        check(SaveManager.resolveSaveFolder(in: legacyDsrDir, bootEntry: "", isDaiSengokuSave: false) == "SaveDataDSR")
+
+        // Loose save filename check: reject arbitrary game data .dat files like ADISK.DAT, allow known save .dat files
+        check(!SaveManager.isLooseSaveFileName("ADISK.DAT"))
+        check(!SaveManager.isLooseSaveFileName("ACG.DAT"))
+        check(SaveManager.isLooseSaveFileName("ASLEEP.DAT"))
+        check(SaveManager.isLooseSaveFileName("asleep_a.dat"))
+        check(SaveManager.isLooseSaveFileName("ASLEEP_Z.DAT"))
+        check(!SaveManager.isLooseSaveFileName("asleep_1.dat"))
+        check(SaveManager.isLooseSaveFileName("MSGSKIP.DAT"))
+        check(SaveManager.isLooseSaveFileName("keyfile.dat"))
+        check(SaveManager.isLooseSaveFileName("key0104.dat"))
+        let gameRootImport = root.appendingPathComponent("GameRootImport")
+        try text("ADISK.DAT", "not-a-save", under: gameRootImport)
+        try text("SaveData/from_subdir.asd", "from-subdir", under: gameRootImport)
+        try manager.importURLs([gameRootImport], folder: true)
+        check(try read("from_subdir.asd") == "from-subdir")
+        check(!files.fileExists(atPath: manager.directory.appendingPathComponent("ADISK.DAT").path))
+        try manager.clear()
+
         let global = GlobalSaveEditor(directory: manager.directory)
         let template = URL(fileURLWithPath: CommandLine.arguments[2])
         check(try global.paths() == nil)
@@ -306,6 +331,17 @@ struct SaveManagerChecks {
         try global.unlock(using: template)
         try global.restore(.unlock)
         check(try read("GlobalSave.asd") == "ZIP global")
+
+        try global.edit(["totalClearPoint": 777]) { staged, _ in
+            (try? Data("pending-edit".utf8).write(to: URL(fileURLWithPath: staged.global))) != nil
+        }
+        let committedEditBackup = manager.directory.appendingPathComponent(GlobalSaveEditor.Backup.edit.filename)
+        let pendingEditBackup = manager.directory.appendingPathComponent(GlobalSaveEditor.Backup.edit.pendingFilename)
+        try files.moveItem(at: committedEditBackup, to: pendingEditBackup)
+        check(try global.hasBackup(.edit))
+        try global.restore(.edit)
+        check(try read("GlobalSave.asd") == "ZIP global" && !global.hasBackup(.edit))
+        check(!files.fileExists(atPath: pendingEditBackup.path))
 
         try files.removeItem(atPath: paths.global)
         try text("SaveData/CommonSystemData.sav", "only common")

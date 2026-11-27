@@ -522,6 +522,7 @@ int main(void)
     def test_picker_reopens_only_for_reported_startup_failure(self):
         launcher = "../cmake/switch/launcher.c"
         setter = extract_function(launcher, "alicehub_switch_set_launch_error")
+        exit_romfs = extract_function(launcher, "exit_romfs")
         main = extract_function(launcher, "standalone_main")
         self.run_c(r"""
 #include <assert.h>
@@ -534,6 +535,7 @@ int main(void)
 #define HUB_PATH_SIZE 512
 typedef struct { int unused; } Picker;
 static char launch_error[512];
+static bool romfs_mounted;
 static bool report_error;
 static int selections, mounts, unmounts, quits;
 static int romfsInit(void) { ++mounts; return 0; }
@@ -559,11 +561,11 @@ static bool choose_game(Picker *picker, char *game, char *target, bool *uses_dsr
     return false;
 }
 static void SDL_Quit(void) { ++quits; }
-""" + setter + r"""
+""" + exit_romfs + setter + r"""
 static int launch_game(const char *game, char *target, char *save)
 {
     (void)game; (void)target; (void)save;
-    romfsExit();
+    exit_romfs();
     if (report_error)
         alicehub_switch_set_launch_error("Bad scenario disk");
     return 1;

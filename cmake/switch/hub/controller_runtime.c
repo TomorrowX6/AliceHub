@@ -1,4 +1,7 @@
 #include "controller_runtime.h"
+#ifdef __SWITCH__
+#include "../controller.h"
+#endif
 
 #include <string.h>
 
@@ -64,11 +67,42 @@ uint32_t switch_controls_gamecontroller(SDL_GameController *controller)
 {
     if (!controller)
         return 0;
+    static const struct {
+        SDL_GameControllerButton sdl;
+        ControllerButton button;
+    } map[] = {
+        {SDL_CONTROLLER_BUTTON_DPAD_UP, CP_UP},
+        {SDL_CONTROLLER_BUTTON_DPAD_DOWN, CP_DOWN},
+        {SDL_CONTROLLER_BUTTON_DPAD_LEFT, CP_LEFT},
+        {SDL_CONTROLLER_BUTTON_DPAD_RIGHT, CP_RIGHT},
+        {SDL_CONTROLLER_BUTTON_A, CP_A},
+        {SDL_CONTROLLER_BUTTON_B, CP_B},
+        {SDL_CONTROLLER_BUTTON_X, CP_X},
+        {SDL_CONTROLLER_BUTTON_Y, CP_Y},
+        {SDL_CONTROLLER_BUTTON_LEFTSHOULDER, CP_L},
+        {SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, CP_R},
+        {SDL_CONTROLLER_BUTTON_BACK, CP_MINUS},
+        {SDL_CONTROLLER_BUTTON_START, CP_PLUS},
+        {SDL_CONTROLLER_BUTTON_LEFTSTICK, CP_LSTICK},
+        {SDL_CONTROLLER_BUTTON_RIGHTSTICK, CP_RSTICK},
+    };
+#ifdef __SWITCH__
     SDL_Joystick *joystick = SDL_GameControllerGetJoystick(controller);
+    SDL_JoystickID instance = joystick ? SDL_JoystickInstanceID(joystick) : -1;
+#endif
     uint32_t result = 0;
-    for (unsigned i = 0; i < CP_BUTTONS; ++i)
-        if (SDL_JoystickGetButton(joystick, i))
-            result |= switch_controls_joystick_button(i);
+    for (size_t i = 0; i < SDL_arraysize(map); ++i) {
+        SDL_GameControllerButton physical = map[i].sdl;
+#ifdef __SWITCH__
+        physical = alicehub_switch_face_button(instance, physical);
+#endif
+        if (SDL_GameControllerGetButton(controller, physical))
+            result |= 1u << map[i].button;
+    }
+    if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 11468)
+        result |= 1u << CP_ZL;
+    if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 11468)
+        result |= 1u << CP_ZR;
     return result;
 }
 

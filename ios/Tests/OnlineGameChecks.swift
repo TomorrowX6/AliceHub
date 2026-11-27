@@ -7,7 +7,10 @@ func alicehub_ios_finish_audio_shutdown() -> Bool { true }
 func alicehub_ios_end_game() {}
 func input_set_long_press_ctrl(_ enabled: Bool) {}
 enum RuntimeGamepad { static func prepare(for game: String, engine: GameEngine) {} }
-enum ModifierBridge { static func prepareForLaunch(gameID: String) {} }
+enum ModifierBridge {
+    static func prepareForLaunch(gameID: String) {}
+    static func clearDisplayScaleGame() {}
+}
 enum SaveSyncSession {
     static func begin(game: String, ready: @escaping () -> Void) {}
     static func end() {}

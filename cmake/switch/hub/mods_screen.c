@@ -249,7 +249,7 @@ static bool draw_progress(HubApp *app, bool close_after)
     HubItem item = {canceled ? "Canceling..." : detail, percent};
     hub_heading(app, kind_label(screen.kind), "KEEP THIS SCREEN OPEN");
     hub_list(app, 1, 0, one_item, &item);
-    hub_hints_extra(app, NULL, canceled ? NULL : "Cancel", NULL, NULL, false);
+    hub_hints_extra(app, NULL, canceled ? "Wait" : "Cancel", NULL, NULL, false);
     return true;
 }
 
@@ -379,9 +379,13 @@ static bool releases_input(HubApp *app, size_t *focus, const HubGame *game, HubI
             screen.base = (ModsRelease){0};
             screen.release = screen.catalog.rows[*focus];
             if (screen.release.patch) {
-                for (size_t i = 0; i < screen.catalog.count; ++i)
-                    if (!screen.catalog.rows[i].patch && screen.catalog.rows[i].file_id == screen.release.base_id)
+                for (size_t i = *focus + 1; i < screen.catalog.count; ++i)
+                    if (!screen.catalog.rows[i].patch &&
+                        screen.catalog.rows[i].file_id == screen.release.base_id &&
+                        !strcmp(screen.catalog.rows[i].group, screen.release.group)) {
                         screen.base = screen.catalog.rows[i];
+                        break;
+                    }
                 if (!screen.base.file_id) {
                     hub_dialog(app, "Required full release unavailable", "This patch cannot be installed by itself.");
                     return true;

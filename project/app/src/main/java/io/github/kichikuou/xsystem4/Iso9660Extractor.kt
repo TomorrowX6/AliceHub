@@ -43,8 +43,33 @@ object Iso9660Extractor {
     )
 
     fun isIsoOrMdfName(fileName: String): Boolean {
-        val lower = fileName.lowercase(Locale.ROOT)
-        return lower.endsWith(".iso") || lower.endsWith(".mdf")
+        var lower = fileName.lowercase(Locale.ROOT)
+        if (lower.endsWith(".iso") || lower.endsWith(".mdf")) return true
+        var strippedTemp = false
+        while (lower.endsWith(".part") || lower.endsWith(".tmp")) {
+            lower = lower.substringBeforeLast('.')
+            strippedTemp = true
+        }
+        if (!strippedTemp) return false
+        if (lower.endsWith(".iso") || lower.endsWith(".mdf")) return true
+        val lastDot = lower.lastIndexOf('.')
+        if (lastDot > 0) {
+            val tag = lower.substring(lastDot + 1)
+            if (tag.isNotEmpty() && tag.all { it in '0'..'9' || it in 'a'..'f' }) {
+                val base = lower.substring(0, lastDot)
+                if (base.endsWith(".iso") || base.endsWith(".mdf")) return true
+            }
+        }
+        return false
+    }
+
+    fun isIsoOrMdfFile(file: File): Boolean {
+        if (!file.isFile) return false
+        return try {
+            FileInputStream(file).use { fis -> isIsoOrMdfChannel(fis.channel) }
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun isIsoOrMdfChannel(ch: FileChannel): Boolean {
@@ -53,6 +78,60 @@ object Iso9660Extractor {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    @JvmName("addBytesChecked")
+    internal fun addBytesChecked(acc: Long, delta: Long): Long {
+        if (delta < 0L) throw IOException("Negative file size in disc image: $delta")
+        return try {
+            Math.addExact(acc, delta)
+        } catch (e: ArithmeticException) {
+            throw IOException("Total extracted size overflows 64-bit integer", e)
+        }
+    }
+
+    @JvmName("resolveSafeExtractTarget")
+    internal fun resolveSafeExtractTarget(outCanonical: File, rel: String, isDir: Boolean): File {
+        val rootPrefix = outCanonical.path.let { if (it.endsWith(File.separator)) it else it + File.separator }
+        val dest = File(outCanonical, rel).canonicalFile
+        val valid = if (isDir) {
+            dest.path.startsWith(rootPrefix) || dest == outCanonical
+        } else {
+            dest.path.startsWith(rootPrefix)
+        }
+        if (!valid) {
+            throw IOException("Illegal path in disc image: $rel")
+        }
+        return dest
+    }
+
+    @JvmName("isNoSpaceException")
+    internal fun isNoSpaceException(t: Throwable?): Boolean {
+        var cur = t
+        var depth = 0
+        while (cur != null && depth < 16) {
+            val node = cur
+            val errnoMatches = runCatching {
+                node is android.system.ErrnoException && (
+                    node.errno == android.system.OsConstants.ENOSPC ||
+                        node.errno == android.system.OsConstants.EDQUOT
+                    )
+            }.getOrDefault(false)
+            if (errnoMatches) return true
+            val msg = node.message
+            if (msg != null && (
+                    msg.contains("ENOSPC", ignoreCase = true) ||
+                        msg.contains("No space left on device", ignoreCase = true) ||
+                        msg.contains("EDQUOT", ignoreCase = true) ||
+                        msg.contains("Disk quota exceeded", ignoreCase = true)
+                    )
+            ) {
+                return true
+            }
+            cur = node.cause
+            depth++
+        }
+        return false
     }
 
     /** Fast metadata-only check to test if an ISO/MDF disc image contains a matching game directory. */
@@ -244,7 +323,11 @@ object Iso9660Extractor {
         maxBytes: Long = 256L * 1024L
     ): ByteArray? {
         if (entry.extents.isEmpty()) return null
-        val total = entry.extents.sumOf { it.second }
+        var total = 0L
+        for (ext in entry.extents) {
+            if (ext.second < 0L || ext.second > maxBytes - total) return null
+            total += ext.second
+        }
         if (total <= 0L || total > maxBytes) return null
         if (entry.extents.size == 1) {
             val (lba, len) = entry.extents[0]
@@ -299,26 +382,27 @@ object Iso9660Extractor {
         }
         if (pfd != null) {
             pfd.use {
-                val fis = FileInputStream(it.fileDescriptor)
-                val ch = fis.channel
-                val seekable = try {
-                    ch.size() >= 18L * SECTOR_DATA_SIZE && run {
-                        ch.position(16L * SECTOR_DATA_SIZE)
-                        true
+                FileInputStream(it.fileDescriptor).use { fis ->
+                    val ch = fis.channel
+                    val seekable = try {
+                        ch.size() >= 18L * SECTOR_DATA_SIZE && run {
+                            ch.position(16L * SECTOR_DATA_SIZE)
+                            true
+                        }
+                    } catch (_: Throwable) {
+                        false
                     }
-                } catch (_: Throwable) {
-                    false
-                }
-                if (seekable) {
-                    return extractChannelToDirectory(
-                        ch = ch,
-                        outDir = outDir,
-                        shouldSkip = shouldSkip,
-                        throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
-                        checkCancelled = checkCancelled,
-                        onEntryAccepted = onEntryAccepted,
-                        onProgress = onProgress
-                    )
+                    if (seekable) {
+                        return extractChannelToDirectory(
+                            ch = ch,
+                            outDir = outDir,
+                            shouldSkip = shouldSkip,
+                            throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                            checkCancelled = checkCancelled,
+                            onEntryAccepted = onEntryAccepted,
+                            onProgress = onProgress
+                        )
+                    }
                 }
             }
         }
@@ -329,24 +413,31 @@ object Iso9660Extractor {
         try {
             val input = context.contentResolver.openInputStream(uri)
                 ?: throw IOException("Cannot open disc image URI")
-            input.use { src ->
-                tempIso.outputStream().buffered().use { dst ->
-                    val buf = ByteArray(256 * 1024)
-                    var copied = 0L
-                    var lastTick = 0L
-                    while (true) {
-                        checkCancelled?.invoke()
-                        val n = src.read(buf)
-                        if (n < 0) break
-                        dst.write(buf, 0, n)
-                        copied += n
-                        val now = SystemClock.elapsedRealtime()
-                        if (onProgress != null && now - lastTick >= 200) {
-                            onProgress(copied, "${copied / (1024 * 1024)} MB")
-                            lastTick = now
+            try {
+                input.use { src ->
+                    tempIso.outputStream().buffered().use { dst ->
+                        val buf = ByteArray(256 * 1024)
+                        var copied = 0L
+                        var lastTick = 0L
+                        while (true) {
+                            checkCancelled?.invoke()
+                            val n = src.read(buf)
+                            if (n < 0) break
+                            dst.write(buf, 0, n)
+                            copied += n
+                            val now = monotonicTimeMs()
+                            if (onProgress != null && now - lastTick >= 200) {
+                                onProgress(copied, "${copied / (1024 * 1024)} MB")
+                                lastTick = now
+                            }
                         }
                     }
                 }
+            } catch (e: IOException) {
+                if (throwInstallFailureOnNoSpace && isNoSpaceException(e)) {
+                    throw GameList.InstallFailureException(R.string.import_no_space)
+                }
+                throw e
             }
             return extractFileToDirectory(
                 isoFile = tempIso,
@@ -368,6 +459,12 @@ object Iso9660Extractor {
         val rootSize: Long,
         val joliet: Boolean
     )
+
+    private fun monotonicTimeMs(): Long = try {
+        SystemClock.elapsedRealtime()
+    } catch (_: Throwable) {
+        System.nanoTime() / 1_000_000L
+    }
 
     private fun openRootDescriptor(ch: FileChannel): RootDescriptor? {
         val fileSize = ch.size()
@@ -435,7 +532,6 @@ object Iso9660Extractor {
             throw IOException("Cannot create output directory: ${outDir.path}")
         }
         val outCanonical = outDir.canonicalFile
-        val rootPrefix = outCanonical.path.let { if (it.endsWith(File.separator)) it else it + File.separator }
 
         val tasks = mutableListOf<FileExtractTask>()
         val dirQueue = ArrayDeque<Triple<String, Long, Long>>()
@@ -453,10 +549,7 @@ object Iso9660Extractor {
                 checkCancelled?.invoke()
                 val rel = if (prefix.isEmpty()) e.name else "$prefix/${e.name}"
                 if (shouldSkip(rel)) continue
-                val dest = File(outCanonical, rel).canonicalFile
-                if (!dest.path.startsWith(rootPrefix) && dest != outCanonical) {
-                    throw IOException("Illegal path in disc image: $rel")
-                }
+                val dest = resolveSafeExtractTarget(outCanonical, rel, e.isDir)
                 if (e.isDir) {
                     if (!dest.exists() && !dest.mkdirs()) {
                         throw IOException("Cannot create directory: $rel")
@@ -466,8 +559,11 @@ object Iso9660Extractor {
                         dirQueue.add(Triple(rel, clba, csize))
                     }
                 } else {
-                    val fileSize = e.extents.sumOf { it.second }
-                    totalBytes += fileSize
+                    var fileSize = 0L
+                    for (ext in e.extents) {
+                        fileSize = addBytesChecked(fileSize, ext.second)
+                    }
+                    totalBytes = addBytesChecked(totalBytes, fileSize)
                     tasks.add(FileExtractTask(rel, dest, e.extents, fileSize))
                 }
             }
@@ -500,50 +596,61 @@ object Iso9660Extractor {
             }
             onEntryAccepted?.invoke(task.target, task.relPath)
             if (onProgress != null) {
-                val nowStart = SystemClock.elapsedRealtime()
+                val nowStart = monotonicTimeMs()
                 if (nowStart - lastTick >= 150) {
                     onProgress(doneBytes, task.relPath)
                     lastTick = nowStart
                 }
             }
-            task.target.outputStream().buffered(256 * 1024).use { out ->
-                for ((extLba, extLen) in task.extents) {
-                    var remaining = extLen
-                    var curLba = extLba
-                    while (remaining > 0L) {
-                        checkCancelled?.invoke()
-                        if (desc.layout.stride == SECTOR_DATA_SIZE && desc.layout.dataOffset == 0) {
-                            val chunk = minOf(remaining, ioBuf.size.toLong()).toInt()
-                            val sectorsUsed = ((chunk + SECTOR_DATA_SIZE - 1) / SECTOR_DATA_SIZE).toLong()
-                            readFullyAt(ch, curLba * SECTOR_DATA_SIZE, ioBuf, chunk)
-                            out.write(ioBuf, 0, chunk)
-                            curLba += sectorsUsed
-                            remaining -= chunk
-                            doneBytes += chunk
-                        } else {
-                            val sectors = minOf(
-                                ((remaining + SECTOR_DATA_SIZE - 1) / SECTOR_DATA_SIZE),
-                                STREAM_BUF_SECTORS.toLong()
-                            ).toInt()
-                            for (s in 0 until sectors) {
-                                val secOff = (curLba + s) * desc.layout.stride + desc.layout.dataOffset
-                                val toWrite = minOf(remaining, SECTOR_DATA_SIZE.toLong()).toInt()
-                                readFullyAt(ch, secOff, ioBuf, toWrite)
-                                out.write(ioBuf, 0, toWrite)
-                                remaining -= toWrite
-                                doneBytes += toWrite
+            try {
+                task.target.outputStream().buffered(256 * 1024).use { out ->
+                    for ((extLba, extLen) in task.extents) {
+                        var remaining = extLen
+                        var curLba = extLba
+                        while (remaining > 0L) {
+                            checkCancelled?.invoke()
+                            if (desc.layout.stride == SECTOR_DATA_SIZE && desc.layout.dataOffset == 0) {
+                                val chunk = minOf(remaining, ioBuf.size.toLong()).toInt()
+                                val sectorsUsed = ((chunk + SECTOR_DATA_SIZE - 1) / SECTOR_DATA_SIZE).toLong()
+                                readFullyAt(ch, curLba * SECTOR_DATA_SIZE, ioBuf, chunk)
+                                out.write(ioBuf, 0, chunk)
+                                curLba += sectorsUsed
+                                remaining -= chunk
+                                doneBytes += chunk
+                            } else {
+                                val sectors = minOf(
+                                    ((remaining + SECTOR_DATA_SIZE - 1) / SECTOR_DATA_SIZE),
+                                    STREAM_BUF_SECTORS.toLong()
+                                ).toInt()
+                                for (s in 0 until sectors) {
+                                    val secOff = (curLba + s) * desc.layout.stride + desc.layout.dataOffset
+                                    val toWrite = minOf(remaining, SECTOR_DATA_SIZE.toLong()).toInt()
+                                    readFullyAt(ch, secOff, ioBuf, toWrite)
+                                    out.write(ioBuf, 0, toWrite)
+                                    remaining -= toWrite
+                                    doneBytes += toWrite
+                                }
+                                curLba += sectors
                             }
-                            curLba += sectors
-                        }
-                        if (onProgress != null) {
-                            val now = SystemClock.elapsedRealtime()
-                            if (now - lastTick >= 150) {
-                                onProgress(doneBytes, task.relPath)
-                                lastTick = now
+                            if (onProgress != null) {
+                                val now = monotonicTimeMs()
+                                if (now - lastTick >= 150) {
+                                    onProgress(doneBytes, task.relPath)
+                                    lastTick = now
+                                }
                             }
                         }
                     }
                 }
+            } catch (e: IOException) {
+                try {
+                    task.target.delete()
+                } catch (_: Throwable) {
+                }
+                if (throwInstallFailureOnNoSpace && isNoSpaceException(e)) {
+                    throw GameList.InstallFailureException(R.string.import_no_space)
+                }
+                throw e
             }
         }
         return tasks.size

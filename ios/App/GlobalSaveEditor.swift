@@ -1,10 +1,14 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 struct GlobalSaveEditor {
     enum Backup: String, CaseIterable {
         case edit, unlock
 
         var filename: String { ".global-\(rawValue).plist" }
+        var pendingFilename: String { "\(filename).pending" }
     }
 
     enum Failure: LocalizedError {
@@ -26,6 +30,11 @@ struct GlobalSaveEditor {
         let data: Data?
     }
 
+    private struct PendingBackup: Codable, Equatable {
+        let baseline: [Entry]
+        let undo: [Entry]
+    }
+
     struct Paths {
         let global: String
         let collection: String
@@ -42,6 +51,87 @@ struct GlobalSaveEditor {
 
     private func backupURL(_ kind: Backup) -> URL {
         directory.appendingPathComponent(kind.filename)
+    }
+
+    private func pendingBackupURL(_ kind: Backup) -> URL {
+        directory.appendingPathComponent(kind.pendingFilename)
+    }
+
+    private func validateEntries(_ entries: [Entry], kind: Backup) throws -> [Entry] {
+        let names = kind == .edit ? Self.editable : Self.unlockable
+        let validPaths = Set(names + names.map { Self.nested + $0 })
+        let paths = Set(entries.map(\.path))
+        guard !entries.isEmpty, paths.count == entries.count, paths.isSubset(of: validPaths) else {
+            throw Failure.invalidBackup
+        }
+        return entries
+    }
+
+    private func decodeBackupEntries(at url: URL, kind: Backup) throws -> [Entry] {
+        let data = try Data(contentsOf: url)
+        let entries = try PropertyListDecoder().decode([Entry].self, from: data)
+        return try validateEntries(entries, kind: kind)
+    }
+
+    private func decodePendingBackup(at url: URL, kind: Backup) throws -> PendingBackup {
+        let data = try Data(contentsOf: url)
+        let decoder = PropertyListDecoder()
+        if let pending = try? decoder.decode(PendingBackup.self, from: data) {
+            return PendingBackup(
+                baseline: try validateEntries(pending.baseline, kind: kind),
+                undo: try validateEntries(pending.undo, kind: kind)
+            )
+        }
+        let legacy = try validateEntries(try decoder.decode([Entry].self, from: data), kind: kind)
+        return PendingBackup(baseline: legacy, undo: legacy)
+    }
+
+    private func writeCommittedBackup(_ entries: [Entry], for kind: Backup) throws {
+        let dest = backupURL(kind)
+        _ = try exists(dest)
+        let data = try PropertyListEncoder().encode(entries)
+        try data.write(to: dest, options: .atomic)
+    }
+
+    /// Reconcile an interrupted `.pending` transaction record before exposing undo backups.
+    /// - Only discard `.pending` if decoding itself reveals corrupt/invalid backup data;
+    ///   never discard it on transient file-read errors or unreadable live paths.
+    /// - Compare live files against `pending.baseline` (exact pre-transaction live state),
+    ///   NOT the merged `pending.undo` payload: if live files still match `baseline`, the
+    ///   interrupted transaction never wrote live files, so discard `.pending` and preserve
+    ///   any prior committed undo backup intact.
+    /// - If live files differ from `baseline`, promote `pending.undo` to the committed backup
+    ///   (or return `.pending` directly if promotion fails so restore can still recover it).
+    private func activeBackupURL(_ kind: Backup) throws -> URL? {
+        guard try exists(directory, directory: true) else { return nil }
+        let pending = pendingBackupURL(kind)
+        let committed = backupURL(kind)
+        if try exists(pending) {
+            let pendingRecord: PendingBackup
+            do {
+                pendingRecord = try decodePendingBackup(at: pending, kind: kind)
+            } catch is DecodingError {
+                try? files.removeItem(at: pending)
+                return (try exists(committed)) ? committed : nil
+            } catch Failure.invalidBackup {
+                try? files.removeItem(at: pending)
+                return (try exists(committed)) ? committed : nil
+            }
+            let liveEntries = try read(pendingRecord.baseline.map(\.path), in: directory)
+            if liveEntries == pendingRecord.baseline {
+                try files.removeItem(at: pending)
+            } else {
+                do {
+                    try writeCommittedBackup(pendingRecord.undo, for: kind)
+                    try? files.removeItem(at: pending)
+                    return committed
+                } catch {
+                    return pending
+                }
+            }
+        }
+        if try exists(committed) { return committed }
+        return nil
     }
 
     private func exists(_ url: URL, directory expectedDirectory: Bool = false) throws -> Bool {
@@ -100,37 +190,49 @@ struct GlobalSaveEditor {
     }
 
     func hasBackup(_ kind: Backup) throws -> Bool {
-        try exists(directory, directory: true) && exists(backupURL(kind))
+        try activeBackupURL(kind) != nil
     }
 
     func discardBackups() throws {
-        for kind in Backup.allCases where try hasBackup(kind) {
-            try files.removeItem(at: backupURL(kind))
+        guard try exists(directory, directory: true) else { return }
+        for kind in Backup.allCases {
+            for url in [pendingBackupURL(kind), backupURL(kind)] where try exists(url) {
+                try files.removeItem(at: url)
+            }
         }
     }
 
     private func backupEntries(_ kind: Backup) throws -> [Entry] {
-        let entries = try PropertyListDecoder().decode([Entry].self, from: Data(contentsOf: backupURL(kind)))
-        let names = kind == .edit ? Self.editable : Self.unlockable
-        let validPaths = Set(names + names.map { Self.nested + $0 })
-        let paths = Set(entries.map(\.path))
-        guard !entries.isEmpty, paths.count == entries.count, paths.isSubset(of: validPaths) else {
-            throw Failure.invalidBackup
+        guard let url = try activeBackupURL(kind) else { throw Failure.invalidBackup }
+        if url == pendingBackupURL(kind) {
+            return try decodePendingBackup(at: url, kind: kind).undo
         }
-        return entries
+        return try decodeBackupEntries(at: url, kind: kind)
     }
 
-    private func saveBackup(_ kind: Backup, entries: [Entry]) throws {
+    private func stageBackup(_ kind: Backup, baseline: [Entry], undoEntries: [Entry]) throws -> (url: URL, undo: [Entry])? {
         let hadBackup = try hasBackup(kind)
-        var backup = entries
+        var undo = undoEntries
         if kind == .unlock && hadBackup {
             let previous = try backupEntries(kind)
             let known = Set(previous.map(\.path))
-            let added = entries.filter { !known.contains($0.path) }
-            if added.isEmpty { return }
-            backup = previous + added
+            let added = undoEntries.filter { !known.contains($0.path) }
+            if added.isEmpty { return nil }
+            undo = previous + added
         }
-        try PropertyListEncoder().encode(backup).write(to: backupURL(kind), options: .atomic)
+        let staged = pendingBackupURL(kind)
+        _ = try exists(staged)
+        _ = try exists(backupURL(kind))
+        let record = PendingBackup(baseline: baseline, undo: undo)
+        let data = try PropertyListEncoder().encode(record)
+        try data.write(to: staged, options: .atomic)
+        return (staged, undo)
+    }
+
+    private func commitStagedBackup(_ staged: (url: URL, undo: [Entry])?, for kind: Backup) throws {
+        guard let staged else { return }
+        try writeCommittedBackup(staged.undo, for: kind)
+        try? files.removeItem(at: staged.url)
     }
 
     private func apply(_ entries: [Entry], to root: URL) throws {
@@ -147,6 +249,18 @@ struct GlobalSaveEditor {
         }
     }
 
+    private func rollback(_ entries: [Entry]) -> Bool {
+        var succeeded = true
+        for rollbackEntry in entries.reversed() {
+            do {
+                try apply([rollbackEntry], to: directory)
+            } catch {
+                succeeded = false
+            }
+        }
+        return succeeded
+    }
+
     private func replace(_ before: [Entry], with after: [Entry]) throws {
         let oldValues = Dictionary(uniqueKeysWithValues: before.map { ($0.path, $0) })
         var applied: [Entry] = []
@@ -157,7 +271,32 @@ struct GlobalSaveEditor {
                 applied.append(old)
             }
         } catch {
-            try apply(applied.reversed(), to: directory)
+            _ = rollback(applied)
+            throw error
+        }
+    }
+
+    private func replaceAndCommit(_ before: [Entry], with after: [Entry], stagedBackup: (url: URL, undo: [Entry])?, for kind: Backup) throws {
+        let oldValues = Dictionary(uniqueKeysWithValues: before.map { ($0.path, $0) })
+        var applied: [Entry] = []
+        do {
+            for entry in after {
+                guard let old = oldValues[entry.path], entry != old else { continue }
+                try apply([entry], to: directory)
+                applied.append(old)
+            }
+        } catch {
+            if rollback(applied), let stagedBackup {
+                try? files.removeItem(at: stagedBackup.url)
+            }
+            throw error
+        }
+        do {
+            try commitStagedBackup(stagedBackup, for: kind)
+        } catch {
+            if rollback(applied), let stagedBackup {
+                try? files.removeItem(at: stagedBackup.url)
+            }
             throw error
         }
     }
@@ -179,8 +318,8 @@ struct GlobalSaveEditor {
         let staged = Dictionary(uniqueKeysWithValues: after.map { ($0.path, $0) })
         let changed = before.filter { staged[$0.path] != $0 }
         guard !changed.isEmpty else { return }
-        try saveBackup(.edit, entries: changed)
-        try replace(before, with: after)
+        let stagedBackup = try stageBackup(.edit, baseline: changed, undoEntries: changed)
+        try replaceAndCommit(before, with: after, stagedBackup: stagedBackup, for: .edit)
     }
 
     func unlock(using archive: URL?) throws {
@@ -193,15 +332,19 @@ struct GlobalSaveEditor {
         let before = try snapshot(Self.unlockable, in: directory)
         let after = before.map { Entry(path: $0.path, data: data[URL(fileURLWithPath: $0.path).lastPathComponent]) }
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
-        try saveBackup(.unlock, entries: before)
-        try replace(before, with: after)
+        let stagedBackup = try stageBackup(.unlock, baseline: before, undoEntries: before)
+        try replaceAndCommit(before, with: after, stagedBackup: stagedBackup, for: .unlock)
     }
 
     func restore(_ kind: Backup) throws {
-        guard try hasBackup(kind) else { throw Failure.invalidBackup }
-        let entries = try backupEntries(kind)
+        guard let url = try activeBackupURL(kind) else { throw Failure.invalidBackup }
+        let entries = url == pendingBackupURL(kind)
+            ? try decodePendingBackup(at: url, kind: kind).undo
+            : try decodeBackupEntries(at: url, kind: kind)
         let before = try read(entries.map(\.path), in: directory)
         try replace(before, with: entries)
-        try files.removeItem(at: backupURL(kind))
+        if try exists(url) {
+            try files.removeItem(at: url)
+        }
     }
 }

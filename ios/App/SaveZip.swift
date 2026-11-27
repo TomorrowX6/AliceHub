@@ -45,8 +45,12 @@ enum SaveZip {
         return output
     }
 
+    private static let gregorian = Calendar(identifier: .gregorian)
+    static let maxEntryDecompressedBytes = 256 * 1024 * 1024
+    static let maxTotalDecompressedBytes = 512 * 1024 * 1024
+
     private static func dos(_ date: Date) -> (UInt16, UInt16) {
-        let c = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let c = gregorian.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         return (UInt16((c.hour! << 11) | (c.minute! << 5) | (c.second! / 2)),
                 UInt16(((min(2107, max(1980, c.year!)) - 1980) << 9) | (c.month! << 5) | c.day!))
     }
@@ -54,6 +58,14 @@ enum SaveZip {
     static func write(_ entries: [Entry], to url: URL) throws {
         var out = Data(), central = Data()
         guard entries.count < 65535 else { throw Failure.unsupportedArchive }
+        var totalUncompressed = 0
+        for entry in entries {
+            guard entry.data.count <= Self.maxEntryDecompressedBytes,
+                  entry.data.count <= Self.maxTotalDecompressedBytes - totalUncompressed else {
+                throw Failure.unsupportedArchive
+            }
+            totalUncompressed += entry.data.count
+        }
         for entry in entries {
             let name = Data(entry.name.utf8), packed = try transform(entry.data)
             guard name.count <= 65535, entry.data.count < Int(UInt32.max), packed.count < Int(UInt32.max), out.count < Int(UInt32.max) else { throw Failure.unsupportedArchive }
@@ -72,7 +84,7 @@ enum SaveZip {
         out.append(central)
         out.put32(0x06054b50); out.put16(0); out.put16(0); out.put16(UInt16(entries.count)); out.put16(UInt16(entries.count))
         out.put32(UInt32(central.count)); out.put32(UInt32(offset)); out.put16(0)
-        try out.write(to: url)
+        try out.write(to: url, options: .atomic)
     }
 
     static func read(_ url: URL) throws -> [Entry] {
@@ -91,13 +103,16 @@ enum SaveZip {
         var p = try n(end + 16, 4)
         guard count < 65535, p + centralSize == end else { throw Failure.invalidArchive }
         var entries: [Entry] = []
+        var totalDecompressed = 0
         for _ in 0..<count {
             guard try n(p, 4) == 0x02014b50 else { throw Failure.invalidArchive }
             let flags = try n(p + 8, 2), method = try n(p + 10, 2)
             guard flags & 1 == 0, method == 0 || method == 8, try n(p + 34, 2) == 0 else { throw Failure.unsupportedArchive }
             let checksum = try n(p + 16, 4), packed = try n(p + 20, 4), size = try n(p + 24, 4)
             let nameSize = try n(p + 28, 2), extra = try n(p + 30, 2), comment = try n(p + 32, 2)
-            guard size <= 256 * 1024 * 1024, p + 46 + nameSize + extra + comment <= end,
+            guard size <= Self.maxEntryDecompressedBytes,
+                  size <= Self.maxTotalDecompressedBytes - totalDecompressed,
+                  p + 46 + nameSize + extra + comment <= end,
                   let name = String(data: bytes.subdata(in: p + 46..<p + 46 + nameSize), encoding: .utf8) else { throw Failure.invalidArchive }
             let local = try n(p + 42, 4)
             guard try n(local, 4) == 0x04034b50, try n(local + 8, 2) == method,
@@ -107,8 +122,9 @@ enum SaveZip {
             let compressed = bytes.subdata(in: start..<start + packed)
             let data = method == 0 ? compressed : try transform(compressed, size: size)
             guard data.count == size, crc(data) == checksum else { throw Failure.invalidArchive }
+            totalDecompressed += data.count
             let time = try n(p + 12, 2), date = try n(p + 14, 2)
-            let modified = Calendar.current.date(from: DateComponents(year: 1980 + (date >> 9), month: (date >> 5) & 15, day: date & 31, hour: time >> 11, minute: (time >> 5) & 63, second: (time & 31) * 2)) ?? Date(timeIntervalSince1970: 0)
+            let modified = gregorian.date(from: DateComponents(year: 1980 + (date >> 9), month: (date >> 5) & 15, day: date & 31, hour: time >> 11, minute: (time >> 5) & 63, second: (time & 31) * 2)) ?? Date(timeIntervalSince1970: 0)
             entries.append(Entry(name: name, data: data, modified: modified))
             p += 46 + nameSize + extra + comment
         }

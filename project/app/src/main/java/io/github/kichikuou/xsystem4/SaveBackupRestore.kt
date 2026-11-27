@@ -20,8 +20,12 @@ internal object SaveBackupRestore {
         }
         val parent = saveDir.absoluteFile.parentFile
             ?: throw IOException("Save directory has no parent")
+        if (!parent.isDirectory && !parent.mkdirs()) {
+            throw IOException("Cannot create save parent directory: $parent")
+        }
         val staging = Files.createTempDirectory(parent.toPath(), ".restore_staging_").toFile()
         var old: File? = null
+        var oldPlaceholder: File? = null
         try {
             val root = staging.canonicalFile
             var count = 0
@@ -36,8 +40,11 @@ internal object SaveBackupRestore {
                     if (dst != null && !dst.path.startsWith(root.path + File.separator)) {
                         throw IOException("Unsafe path in backup archive: ${entry.name}")
                     }
-                    if (dst != null && !dst.parentFile.isDirectory && !dst.parentFile.mkdirs()) {
-                        throw IOException("Cannot create staging directory")
+                    if (dst != null) {
+                        val dstParent = dst.parentFile
+                        if (dstParent != null && !dstParent.isDirectory && !dstParent.mkdirs()) {
+                            throw IOException("Cannot create staging directory")
+                        }
                     }
                     val crc = CRC32()
                     var written = 0L
@@ -76,6 +83,7 @@ internal object SaveBackupRestore {
                             copyStrictly(child, File(destination, child.name))
                         }
                     } else {
+                        destination.parentFile?.mkdirs()
                         source.copyTo(destination)
                     }
                 }
@@ -85,20 +93,28 @@ internal object SaveBackupRestore {
             }
             if (saveDir.exists()) {
                 val oldDir = Files.createTempDirectory(parent.toPath(), ".restore_old_").toFile()
-                if (!oldDir.delete() || !rename(saveDir, oldDir)) {
+                oldPlaceholder = oldDir
+                if (!oldDir.delete()) {
+                    throw IOException("Cannot move original saves aside")
+                }
+                oldPlaceholder = null
+                if (!rename(saveDir, oldDir)) {
                     throw IOException("Cannot move original saves aside")
                 }
                 old = oldDir
             }
             try {
                 if (!rename(staging, saveDir)) throw IOException("Cannot install restored saves")
-            } catch (failure: Exception) {
-                if (old != null) {
+            } catch (failure: Throwable) {
+                val savedOld = old
+                if (savedOld != null) {
                     try {
-                        if (!rename(old, saveDir)) {
-                            throw IOException("Original saves retained at ${old.path}; rollback failed")
+                        if (rename(savedOld, saveDir)) {
+                            old = null
+                        } else {
+                            throw IOException("Original saves retained at ${savedOld.path}; rollback failed")
                         }
-                    } catch (rollbackFailure: Exception) {
+                    } catch (rollbackFailure: Throwable) {
                         failure.addSuppressed(rollbackFailure)
                     }
                 }
@@ -111,6 +127,10 @@ internal object SaveBackupRestore {
             }
             return count
         } finally {
+            try {
+                oldPlaceholder?.deleteRecursively()
+            } catch (_: Exception) {
+            }
             try {
                 staging.deleteRecursively()
             } catch (_: Exception) {

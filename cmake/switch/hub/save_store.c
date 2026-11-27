@@ -16,8 +16,19 @@ enum { SAVE_PATH_SIZE = 1024, SAVE_TREE_DEPTH = 32 };
 typedef struct {
     const atomic_bool *cancelled;
     HubSaveResult *result;
+    char ain_path[HUB_PATH_SIZE];
     unsigned char buffer[16384], compare[16384];
 } Store;
+
+static bool is_excluded_from_pc_export(const char *name)
+{
+    const char *suffix = strrchr(name, '.');
+    if (suffix && (!strcasecmp(suffix, ".bak") || !strcasecmp(suffix, ".log") ||
+                   !strcasecmp(suffix, ".comment")))
+        return true;
+    size_t len = strlen(name);
+    return len >= 11 && !strcasecmp(name + len - 11, ".mod.absent");
+}
 
 static bool path_join(char out[SAVE_PATH_SIZE], const char *dir, const char *name)
 {
@@ -228,23 +239,27 @@ static bool copy_tree(Store *store, const char *source, const char *dest,
                 ++store->result->conflicts;
             continue;
         }
-        if (mode == COPY_PC) {
-            const char *suffix = strrchr(name, '.');
-            if (suffix && (!strcasecmp(suffix, ".bak") || !strcasecmp(suffix, ".log")))
-                continue;
-        }
-        bool convert = mode == COPY_PC && x4ss_is_container_file(src);
+        if (mode == COPY_PC && is_excluded_from_pc_export(name))
+            continue;
         errno = 0;
-        if (!(ok = convert ? x4ss_convert_to_gdss_file(src, dst) : copy_file(store, src, dst))) {
-            if (!errno)
-                errno = EIO;
-            if (convert)
+        if (mode == COPY_PC) {
+            bool was_x4ss = x4ss_is_container_file(src);
+            const char *ain = store->ain_path[0] ? store->ain_path : NULL;
+            if (!(ok = savedata_export_pc_file_with_ain(src, dst, ain))) {
+                if (!errno)
+                    errno = EIO;
                 snprintf(store->result->error, sizeof(store->result->error),
                          "Could not convert %.115s to PC format.", name);
+                break;
+            }
+            bool same = false;
+            if (was_x4ss || (same_file(store, src, dst, &same) && !same))
+                ++store->result->converted;
+        } else if (!(ok = copy_file(store, src, dst))) {
+            if (!errno)
+                errno = EIO;
             break;
         }
-        if (convert)
-            ++store->result->converted;
         ++*count;
     }
     int failure = errno;
@@ -380,9 +395,33 @@ static bool transfer(Store *store, const char *src, const char *dest, const char
     return ok;
 }
 
+static bool find_dir_icase(const char *parent, const char *candidate, char out[SAVE_PATH_SIZE])
+{
+    if (!candidate || !*candidate)
+        return false;
+    DIR *dir = opendir(parent);
+    if (!dir)
+        return false;
+    char match[HUB_NAME_SIZE] = "";
+    for (struct dirent *entry; (entry = readdir(dir)); ) {
+        if (strlen(entry->d_name) >= sizeof(match))
+            continue;
+        if (!strcmp(entry->d_name, candidate)) {
+            strcpy(match, entry->d_name);
+            break;
+        }
+        if (!*match && !strcasecmp(entry->d_name, candidate))
+            strcpy(match, entry->d_name);
+    }
+    closedir(dir);
+    mode_t kind;
+    return *match && path_join(out, parent, match) && inspect(out, &kind) && kind == S_IFDIR;
+}
+
 static bool run(Store *store, const char *root, const HubGame *game, HubSaveOp op)
 {
-    char local[HUB_PATH_SIZE], game_dir[HUB_PATH_SIZE], target[SAVE_PATH_SIZE],
+    char local[HUB_PATH_SIZE], game_dir[HUB_PATH_SIZE], game_root[HUB_PATH_SIZE],
+         save_folder[HUB_NAME_SIZE] = "SaveData", target[SAVE_PATH_SIZE],
          sync[SAVE_PATH_SIZE], backups[SAVE_PATH_SIZE];
     HubGame validated;
     if (!hub_game_init(&validated, game->engine, game->name)) {
@@ -397,6 +436,13 @@ static bool run(Store *store, const char *root, const HubGame *game, HubSaveOp o
         !path_join(backups, game_dir, "Backups") || !path_join(sync, game_dir, "Sync"))
         return false;
 
+    store->ain_path[0] = '\0';
+    if (validated.engine == HUB_XSYSTEM4 && hub_game_path(root, &validated, game_root)) {
+        hub_system4_save_folder(game_root, save_folder);
+        if (op == HUB_SAVE_EXPORT_PC)
+            hub_system4_active_script(game_root, store->ain_path);
+    }
+
     unsigned *copied = &store->result->copied;
     mode_t kind;
     switch (op) {
@@ -405,18 +451,39 @@ static bool run(Store *store, const char *root, const HubGame *game, HubSaveOp o
                ensure_dir(target) && ensure_dir(sync);
     case HUB_SAVE_IMPORT: {
         char nested[SAVE_PATH_SIZE];
-        if (!path_join(target, game_dir, "Import") || !path_join(nested, target, "SaveData") ||
-            !check_parents(nested, false) ||
-            !inspect(nested, &kind))
+        if (!path_join(target, game_dir, "Import") ||
+            !check_parents(target, false) || !inspect(target, &kind))
             return false;
-        return transfer(store, kind == S_IFDIR ? nested : target, local, backups,
+        if (kind != S_IFDIR) {
+            errno = kind ? ENOTDIR : ENOENT;
+            return false;
+        }
+        const char *candidates[] = {save_folder, "SaveData", "SaveDataCN", "SaveData_C", "SaveDataDSR"};
+        const char *src_dir = target;
+        for (size_t i = 0; i < sizeof(candidates) / sizeof(*candidates); ++i) {
+            if (find_dir_icase(target, candidates[i], nested)) {
+                src_dir = nested;
+                break;
+            }
+        }
+        return transfer(store, src_dir, local, backups,
                         COPY_PUBLIC, true, false, copied);
     }
     case HUB_SAVE_EXPORT:
-    case HUB_SAVE_EXPORT_PC:
-        return path_join(target, game_dir, op == HUB_SAVE_EXPORT_PC ? "PC_SaveData" : "SaveData") &&
+    case HUB_SAVE_EXPORT_PC: {
+        char export_dir[HUB_NAME_SIZE + 4];
+        if (op == HUB_SAVE_EXPORT_PC) {
+            if ((size_t)snprintf(export_dir, sizeof(export_dir), "PC_%s", save_folder) >= sizeof(export_dir)) {
+                errno = ENAMETOOLONG;
+                return false;
+            }
+        } else {
+            strcpy(export_dir, "SaveData");
+        }
+        return path_join(target, game_dir, export_dir) &&
                transfer(store, local, target, NULL,
                         op == HUB_SAVE_EXPORT_PC ? COPY_PC : COPY_PUBLIC, false, false, copied);
+    }
     case HUB_SAVE_BACKUP:
         return backup_path(backups, target) &&
                transfer(store, local, target, NULL, COPY_ALL, false, false, copied);

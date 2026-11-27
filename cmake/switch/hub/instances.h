@@ -12,6 +12,7 @@ typedef enum {
     HUB_INSTANCE_SAVE_DELETE_FAILED,
 } HubInstanceResult;
 
+bool hub_instance_recover(const char *root);
 bool hub_instance_suggest(const char *root, const HubGame *source, char name[HUB_NAME_SIZE]);
 HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, const char *name,
                                     bool (*cancelled)(void));

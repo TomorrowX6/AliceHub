@@ -11,6 +11,7 @@
 
 #define TREE_PATH_SIZE 769
 #define COPY_BUFFER_SIZE (256 * 1024)
+#define COPY_MAX_DEPTH 64
 
 typedef struct {
     bool (*cancelled)(void);
@@ -50,11 +51,16 @@ static bool copy_file(const char *src, const char *dst, const Copy *copy)
 
 static bool append(char *path, size_t len, const char *name)
 {
-    return (size_t)snprintf(path + len, TREE_PATH_SIZE - len, "/%s", name) < TREE_PATH_SIZE - len;
+    int n = snprintf(path + len, TREE_PATH_SIZE - len, "/%s", name);
+    return n >= 0 && (size_t)n < TREE_PATH_SIZE - len;
 }
 
-static bool walk_tree(char *src, char *dst, const Copy *copy, bool make_dir)
+static bool walk_tree(char *src, char *dst, const Copy *copy, bool make_dir, unsigned depth)
 {
+    if (depth > COPY_MAX_DEPTH) {
+        errno = ELOOP;
+        return false;
+    }
     bool copying = dst != NULL;
     if (copying && copy->cancelled && copy->cancelled())
         return false;
@@ -86,7 +92,7 @@ static bool walk_tree(char *src, char *dst, const Copy *copy, bool make_dir)
             continue;
         ok = append(src, sl, name) && (!copying || append(dst, dl, name));
         if (ok)
-            ok = walk_tree(src, dst, copy, true);
+            ok = walk_tree(src, dst, copy, true, depth + 1);
         src[sl] = '\0';
         if (copying)
             dst[dl] = '\0';
@@ -183,13 +189,16 @@ bool hub_instance_suggest(const char *root, const HubGame *source, char name[HUB
     size_t len = strlen(source->name);
     if (len > 60) {
         len = 60;
-        while (((unsigned char)source->name[len] & 0xc0) == 0x80)
+        while (len > 0 && ((unsigned char)source->name[len] & 0xc0) == 0x80)
             --len;
     }
     for (unsigned i = 1; i <= 9999; ++i) {
-        snprintf(name, HUB_NAME_SIZE, "%.*s-%u", (int)len, source->name, i);
+        if (len > 0)
+            snprintf(name, HUB_NAME_SIZE, "%.*s-%u", (int)len, source->name, i);
+        else
+            snprintf(name, HUB_NAME_SIZE, "Copy-%u", i);
         HubInstanceResult result = target_paths(root, source->engine, name, uses_dsr, games, saves);
-        if (result == HUB_INSTANCE_INVALID_NAME) {
+        if (result == HUB_INSTANCE_INVALID_NAME && len > 0) {
             snprintf(name, HUB_NAME_SIZE, "Copy-%u", i);
             result = target_paths(root, source->engine, name, uses_dsr, games, saves);
         }
@@ -197,6 +206,44 @@ bool hub_instance_suggest(const char *root, const HubGame *source, char name[HUB
             return result == HUB_INSTANCE_OK;
     }
     return false;
+}
+
+bool hub_instance_recover(const char *root)
+{
+    bool ok = true;
+    for (HubEngine engine = 0; engine < HUB_ENGINE_COUNT; ++engine) {
+        char folder[TREE_PATH_SIZE];
+        int n = snprintf(folder, sizeof(folder), "%s/%s", root, hub_engines[engine].id);
+        if (n < 0 || (size_t)n >= sizeof(folder)) {
+            ok = false;
+            continue;
+        }
+        DIR *dir = opendir(folder);
+        if (!dir) {
+            if (errno != ENOENT)
+                ok = false;
+            continue;
+        }
+        for (;;) {
+            errno = 0;
+            struct dirent *entry = readdir(dir);
+            if (!entry) {
+                if (errno)
+                    ok = false;
+                break;
+            }
+            const char *name = entry->d_name;
+            if (strncmp(name, ".hub-copy-", 10) != 0 || !name[10] ||
+                strspn(name + 10, "0123456789") != strlen(name + 10))
+                continue;
+            char stage[TREE_PATH_SIZE];
+            int sn = snprintf(stage, sizeof(stage), "%s/%s", folder, name);
+            if (sn < 0 || (size_t)sn >= sizeof(stage) || !walk_tree(stage, NULL, NULL, false, 0))
+                ok = false;
+        }
+        closedir(dir);
+    }
+    return ok;
 }
 
 static bool make_stage(const char *root, HubEngine engine, char stage[TREE_PATH_SIZE])
@@ -233,7 +280,7 @@ HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, con
         free(copy.buffer);
         return HUB_INSTANCE_COPY_FAILED;
     }
-    bool ok = walk_tree(src, stage, &copy, false);
+    bool ok = walk_tree(src, stage, &copy, false, 0);
     free(copy.buffer);
     result = HUB_INSTANCE_COPY_FAILED;
     if (ok && (!cancelled || !cancelled())) {
@@ -251,7 +298,7 @@ HubInstanceResult hub_instance_copy(const char *root, const HubGame *source, con
             result = HUB_INSTANCE_COPY_FAILED;
         }
     }
-    walk_tree(stage, NULL, NULL, false);
+    walk_tree(stage, NULL, NULL, false, 0);
     return result;
 }
 
@@ -319,12 +366,12 @@ HubInstanceResult hub_instance_delete(const char *root, const HubGame *game, boo
         !hub_game_path(root, &checked, install))
         return HUB_INSTANCE_DELETE_FAILED;
     bool mapped = !delete_saves || save_locations(root, &checked, install, saves);
-    if (!walk_tree(install, NULL, NULL, false))
+    if (!walk_tree(install, NULL, NULL, false, 0))
         return HUB_INSTANCE_DELETE_FAILED;
     if (!mapped)
         return HUB_INSTANCE_SAVE_DELETE_FAILED;
     for (size_t i = 0; i < sizeof(saves) / sizeof(*saves); ++i)
-        if (*saves[i] && ((i < 2 && !hub_save_recover(saves[i])) || !walk_tree(saves[i], NULL, NULL, false)))
+        if (*saves[i] && ((i < 2 && !hub_save_recover(saves[i])) || !walk_tree(saves[i], NULL, NULL, false, 0)))
             return HUB_INSTANCE_SAVE_DELETE_FAILED;
     return HUB_INSTANCE_OK;
 }

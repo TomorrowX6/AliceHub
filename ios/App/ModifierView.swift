@@ -36,7 +36,7 @@ struct ModifierView: View {
                 Section {
                     HubSectionHeader(title: "局内修改器", subtitle: game.map { localized($0.name) } ?? localized("当前游戏"), symbol: "slider.horizontal.3")
                 }.listRowBackground(HubTheme.surface)
-                if let gameID = ModifierBridge.displayScaleGame {
+                if !system35, let gameID = ModifierBridge.displayScaleGame {
                     Section {
                         GameDisplayScaleRows(gameID: gameID) { scale in editScale(gameID, scale) }
                     } header: { Text("显示") }

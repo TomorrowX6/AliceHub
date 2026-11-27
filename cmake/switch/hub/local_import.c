@@ -245,6 +245,8 @@ static bool markers(const char *dir, Markers *m)
 
 static bool scan_roots(const char *dir, unsigned depth, GameRoot *primary, const ImportCallbacks *cb)
 {
+    if (!dir || strlen(dir) >= HUB_PATH_SIZE)
+        return false;
     Markers m;
     if (!import_update(cb, "Looking for game data", 0, 0) || !markers(dir, &m))
         return false;
@@ -390,6 +392,7 @@ static bool disc_key(const char *name, char key[HUB_NAME_SIZE], unsigned *number
     n -= marker;
     if (n && !strchr(" _-", name[n - 1])) return false;
     while (n && strchr(" _-", name[n - 1])) --n;
+    if (n >= HUB_NAME_SIZE) return false;
     memcpy(key, name, n);
     key[n] = 0;
     return true;
@@ -399,11 +402,13 @@ static bool disc_ancestor(const char *search, const char *path, char parent[HUB_
                           char member[HUB_NAME_SIZE], char key[HUB_NAME_SIZE], unsigned *number)
 {
     size_t boundary = strlen(search), n = strlen(path);
+    if (n >= HUB_PATH_SIZE) return false;
     memcpy(parent, path, n + 1);
     while (n > boundary) {
         char *slash = strrchr(parent, '/');
         if (!slash || slash + 1 < parent + boundary) break;
         if (disc_key(slash + 1, key, number)) {
+            if (strlen(slash + 1) >= HUB_NAME_SIZE) return false;
             strcpy(member, slash + 1);
             *slash = 0;
             return true;
@@ -632,6 +637,10 @@ bool hub_local_import(const char *root, const char *source, const ImportCallback
     GameRoot primary = {0};
     HubInstallTransaction *tx = NULL;
     bool ok = false;
+    if (!source || strlen(source) >= HUB_PATH_SIZE) {
+        strcpy(error, !source ? "Choose an existing folder, ZIP or ISO on SD." : "Source path is too long.");
+        return false;
+    }
     if (lstat(source, &st) || (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode))) {
         strcpy(error, "Choose an existing folder, ZIP or ISO on SD.");
         return false;

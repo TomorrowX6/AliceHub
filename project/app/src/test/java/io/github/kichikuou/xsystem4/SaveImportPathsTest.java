@@ -560,4 +560,53 @@ public class SaveImportPathsTest {
         assertEquals(root, sourceRoot(new SaveImportPaths(game), root));
         assertEquals(saveData, sourceRoot(new SaveImportPaths(game), root, true));
     }
+
+    @Test public void system3AsleepAndMsgskipDatAreRecognizedForImportAndHiyoko2() throws IOException {
+        File sys3 = temporary.newFolder("Sys3Game");
+        touch(sys3, "ADISK.DAT");
+        touch(sys3, "ACG.DAT");
+        File archive = temporary.newFolder("sys3-archive");
+        File wrapper = new File(archive, "backup");
+        assertTrue(wrapper.mkdir());
+        touch(wrapper, "ASLEEP_A.DAT");
+        touch(wrapper, "MSGSKIP.DAT");
+        SaveImportPaths sys3Paths = new SaveImportPaths(sys3);
+        assertEquals(wrapper, sourceRoot(sys3Paths, archive, true));
+        assertEquals(wrapper, sourceRoot(sys3Paths, wrapper, false));
+
+        File hiyoko2 = temporary.newFolder("Hiyoko2");
+        touch(hiyoko2, "SA.ALD");
+        touch(hiyoko2, "PIYOD.DAT");
+        SaveImportPaths hiyokoPaths = new SaveImportPaths(hiyoko2);
+        assertEquals("msgskip.dat", hiyokoPaths.nameForImport("MSGSKIP.DAT", true));
+        assertEquals("msgskip.dat", hiyokoPaths.nameForImport("msgskip.dat", true));
+    }
+
+    @Test public void repairSjisAsGbkMojibakePreservesJis1AndRepairsMojibake() {
+        assertEquals("dat/戦闘EF.acx", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("dat/戦闘EF.acx"));
+        assertEquals("dat/戦闘EFT.acx", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("dat/戦闘EFT.acx"));
+        assertEquals("戦闘", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("戦闘"));
+        assertEquals("鷹鶚", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("鷹鶚"));
+        assertEquals("戦国ランスGA.ald", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("愴崙儔儞僗GA.ald"));
+        assertEquals("movie/スタッフ.alm", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("movie/僗僞僢僼.alm"));
+        assertEquals("ランス・クエストCG.afa", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("儔儞僗丒僋僄僗僩CG.afa"));
+        assertEquals("战国兰斯中文版/测试游戏.ain", ArchiveExtractor.INSTANCE.repairSjisAsGbkMojibake("战国兰斯中文版/测试游戏.ain"));
+    }
+
+    @Test public void resolveInstallDirBaseNameUsesCanonicalDirsForEarlyCatalogIds() throws IOException {
+        File sr = temporary.newFolder("sr-stage");
+        touch(sr, "AliceCN.ain");
+        write(new File(sr, "System40.ini"), "CodeName = \"AliceCN.ain\"\n");
+        assertEquals("SengokuRance", OnlineInstaller.INSTANCE.resolveInstallDirBaseName(sr, "SengokuRance"));
+        assertEquals("SengokuRance", OnlineInstaller.INSTANCE.resolveInstallDirBaseName(sr, ""));
+
+        File r09 = temporary.newFolder("r09-stage");
+        touch(r09, "Rance9.ain");
+        write(new File(r09, "System40.ini"), "CodeName = \"Rance9.ain\"\n");
+        assertEquals("Rance09", OnlineInstaller.INSTANCE.resolveInstallDirBaseName(r09, "Rance09"));
+        assertEquals("Rance09", OnlineInstaller.INSTANCE.resolveInstallDirBaseName(r09, ""));
+
+        assertEquals(GameCatalog.ID_SENGOKU_RANCE, GameCatalog.INSTANCE.classifyDirectory(null, "AliceCN", null, null));
+        assertEquals(GameCatalog.ID_SENGOKU_RANCE, GameCatalog.INSTANCE.classifyDirectory(null, "AliceCN-1", null, null));
+    }
 }

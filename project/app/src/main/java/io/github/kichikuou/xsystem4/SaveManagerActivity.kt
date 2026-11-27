@@ -156,7 +156,7 @@ private class SaveFileAdapter(
             "memmodeinfo.asd", "commongamedata.asd",
             "妻しぼりsys.asd", "嵢偟傏傝sys.asd", "tsumashiborisys.asd",
             "config.asd", "progress.asd", "joypad.asd",
-            "keyfile.dat", "msgskipflag.sav",
+            "keyfile.dat", "msgskip.dat", "msgskipflag.sav",
             "已读文本跳过.asd", "既読スキップ.asd",
             "共有.asd", "ｃｇモード.asd", "回想モード.asd", "音楽モード.asd", "3dsetting.asd",
             "システム共通データ.asd",
@@ -232,8 +232,11 @@ class SaveManagerActivity : ThemedActivity() {
         // dark mode must not orphan a half-done copy (or let a second one start alongside
         // it). Results go to whichever instance is current when the job ends via WeakReference.
         private val opScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        @Volatile
         private var opJob: Job? = null
+        @Volatile
         private var opProgressMessage: String? = null
+        @Volatile
         private var liveHostRef: java.lang.ref.WeakReference<SaveManagerActivity>? = null
 
         internal fun hasActiveSaveOperation(): Boolean = opJob?.isActive == true
@@ -359,13 +362,15 @@ class SaveManagerActivity : ThemedActivity() {
             )
             val result = mutableListOf<DocNode>()
             context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                val nameIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val idIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                if (idIdx < 0 || nameIdx < 0) return result
                 while (cursor.moveToNext()) {
-                    val id = cursor.getString(idIdx) ?: continue
-                    val name = cursor.getString(nameIdx) ?: continue
-                    val mime = cursor.getString(mimeIdx)
+                    if (cursor.isNull(idIdx) || cursor.isNull(nameIdx)) continue
+                    val id = cursor.getString(idIdx)?.takeIf { it.isNotEmpty() } ?: continue
+                    val name = cursor.getString(nameIdx)?.takeIf { it.isNotEmpty() } ?: continue
+                    val mime = if (mimeIdx >= 0 && !cursor.isNull(mimeIdx)) cursor.getString(mimeIdx) else null
                     val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
                     result.add(DocNode(id, name, isDir))
                 }
@@ -441,7 +446,11 @@ class SaveManagerActivity : ThemedActivity() {
             fallback: Boolean = false
         ): Boolean {
             val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.documentId)
-            val tmpFile = File(outFile.parentFile, ".imp_${System.nanoTime()}.tmp")
+            val parentDir = outFile.parentFile
+            if (parentDir != null && !parentDir.isDirectory) {
+                parentDir.mkdirs()
+            }
+            val tmpFile = File(parentDir, ".imp_${System.nanoTime()}.tmp")
             try {
                 context.contentResolver.openInputStream(docUri)?.use { input ->
                     tmpFile.outputStream().buffered().use { output -> input.copyTo(output) }
@@ -1962,6 +1971,7 @@ class SaveManagerActivity : ThemedActivity() {
 
     private fun showProgress(message: String) {
         opProgressMessage = message
+        if (isFinishing || isDestroyed) return
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (progressDialog == null) {
             progressDialog = Dialog(this).apply {
@@ -1978,11 +1988,18 @@ class SaveManagerActivity : ThemedActivity() {
 
     private fun dismissProgress() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        progressDialog?.dismiss()
+        val dlg = progressDialog
         progressDialog = null
+        if (dlg != null && !isDestroyed && dlg.isShowing) {
+            try {
+                dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     private fun showMessageDialog(title: String, message: String) {
+        if (isFinishing || isDestroyed) return
         trackDialog(
             AlertDialog.Builder(this)
                 .setTitle(title)

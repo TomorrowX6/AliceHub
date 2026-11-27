@@ -64,6 +64,8 @@ bool hub_system4_resolve(const char *dir, char target[HUB_PATH_SIZE], bool *uses
 bool hub_system4_has_daisengoku_entry(const char *dir, bool *has_dsr);
 bool hub_system4_save_key(const char *name, const char *dir, const char *target,
                           char key[HUB_PATH_SIZE]);
+bool hub_system4_save_folder(const char *dir, char folder[HUB_NAME_SIZE]);
+bool hub_system4_active_script(const char *dir, char script[HUB_PATH_SIZE]);
 bool hub_game_save_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
 bool hub_game_save_manager_path(const char *root, const HubGame *game, char path[HUB_PATH_SIZE]);
 bool hub_library_scan(HubLibrary *library, const char *root);

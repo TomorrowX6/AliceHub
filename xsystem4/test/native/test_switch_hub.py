@@ -1384,8 +1384,12 @@ int main(void)
                  "-I", str(hub), "-I", str(engine / "include"), "-I", str(libsys4 / "include"),
                  *(str(hub / name) for name in ("model.c", "save_store.c", "save_codec.c")),
                  str(fs_util),
-                 str(engine / "src/savedata.c"), str(libsys4 / "src/file.c"),
-                 str(libsys4 / "src/system.c"), "-x", "c", "-", "-lz", "-o", str(exe)],
+                 str(engine / "src/savedata.c"),
+                 *(str(libsys4 / "src" / name) for name in (
+                     "ain.c", "buffer.c", "file.c", "hashtable.c", "instructions.c",
+                     "mt19937int.c", "savefile.c", "string.c", "system.c", "utfsjis.c", "zlib.c",
+                 )),
+                 "-x", "c", "-", "-lz", "-o", str(exe)],
                 input=r"""
 #include "save_store.h"
 #include "fs_util.h"
