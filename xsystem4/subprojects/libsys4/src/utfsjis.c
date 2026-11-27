@@ -1469,6 +1469,8 @@ static bool gbk_display_pair_bounded(const uint8_t *s, const uint8_t *end)
 struct cjk_dialog_run_stats {
 	size_t common;
 	size_t extended;
+	size_t hira_count;
+	size_t kanji_count;
 	size_t max_hira;
 	size_t max_kata_run;
 	size_t kata_count;
@@ -1497,7 +1499,10 @@ static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 		bool is_hira = (u >= 0x3041 && u <= 0x3096);
 		bool is_kata = (u >= 0x30a1 && u <= 0x30fa);
 		bool is_prolonged = (u == 0x30fc);
+		if (u >= 0x4e00 && u <= 0x9fff)
+			st->kanji_count++;
 		if (is_hira) {
+			st->hira_count++;
 			cur_hira++;
 			if (cur_hira > st->max_hira)
 				st->max_hira = cur_hira;
@@ -1527,7 +1532,10 @@ static bool cjk_dialog_run_is_strong_sjis(const struct cjk_dialog_run_stats *st)
 		return true;
 	if (st->common && st->extended / 3 < st->common)
 		return false;
-	return st->max_hira >= 4 || (st->max_kata_run >= 4 && st->kata_count >= 3);
+	return st->max_hira >= 4
+		|| (st->max_kata_run >= 4 && st->kata_count >= 3)
+		|| (st->all_kata_or_prolonged && st->kata_count >= 2 && st->has_prolonged)
+		|| (!st->common && st->extended >= 5 && st->hira_count >= 2 && st->kanji_count >= 2);
 }
 
 static bool cjk_dialog_has_sjis_evidence(const uint8_t *src, const uint8_t *end)
@@ -1625,9 +1633,7 @@ char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
 			bool decode_as_sjis = st.has_sjis_only
 				|| (!token_has_gbk_text
 					&& (!st.common || st.extended / 3 >= st.common)
-					&& (cjk_dialog_run_is_strong_sjis(&st)
-						|| (st.all_kata_or_prolonged && st.kata_count >= 2 && st.has_prolonged)
-						|| st.all_sjis_punct));
+					&& (cjk_dialog_run_is_strong_sjis(&st) || st.all_sjis_punct));
 			for (const uint8_t *p = run; p < s; p += 2) {
 				int code = decode_as_sjis ? sjis_display_pair(p) : gbk_lookup(p[0], p[1]);
 				encode_utf8_bmp(code ? code : 0xfffd, &dstp);

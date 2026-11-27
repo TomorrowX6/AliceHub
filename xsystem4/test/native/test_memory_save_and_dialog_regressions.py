@@ -263,6 +263,26 @@ int main(void)
     assert(strcmp(p_esca_s2, p_esca) != 0);
     assert(strcmp(strip_session_prefix(p_esca_s2 + strlen(dir) + 1, pfx, sizeof(pfx), 2u),
         "MemoryMode_EscalayerReboot_.asd") == 0);
+
+    // 5b. Memory-save wildcard find pattern preserves '*' and round-trips decoded names cleanly
+    //     while ignoring other PIDs' memory snapshots.
+    assert(file_write(p_esca_s2, payload, 4));
+    char *find_dir = NULL, *find_pat = NULL;
+    size_t find_pfx_len = 0;
+    assert(savedir_memory_find_pattern("<memory>MemoryMode_*.asd", &find_dir, &find_pat, &find_pfx_len));
+    assert(strcmp(find_dir, dir) == 0);
+    assert(strchr(find_pat, '*') != NULL);
+    const char *s2_base = p_esca_s2 + strlen(dir) + 1;
+    assert(strncmp(s2_base, find_pat, find_pfx_len) == 0);
+    // Live other PID's snapshot must NOT match this session's prefix.
+    const char *live_base = live_other + strlen(dir) + 1;
+    assert(strncmp(live_base, find_pat, find_pfx_len) != 0);
+    char *decoded = savedir_memory_decode_name(s2_base, find_pfx_len);
+    assert(strcmp(decoded, "<memory>MemoryMode_EscalayerReboot_.asd") == 0);
+    free(decoded);
+    free(find_dir);
+    free(find_pat);
+    remove_utf8(p_esca_s2);
     free(p_esca_s2);
 
     // 6. Fallback when config.save_dir is unset still never leaks '<' or '>'.
@@ -283,6 +303,57 @@ int main(void)
 }
 """
         compile_and_run(c_code, [ROOT / "src/util.c", *LIBSYS4_CORE])
+
+    def test_switch_relaunch_sweeps_first_session_leftover(self) -> None:
+        c_code = r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "system4.h"
+#include "system4/file.h"
+#include "system4/utfsjis.h"
+#include "xsystem4.h"
+
+struct config config = { 0 };
+bool dbg_dap = false;
+void dbg_dap_log(const char *log, const char *fmt, va_list ap) { (void)log; (void)fmt; (void)ap; }
+
+int main(void)
+{
+    char tmpl[] = "/tmp/xsystem4_switch_relaunch_XXXXXX";
+    char *dir = mkdtemp(tmpl);
+    assert(dir != NULL);
+    config.save_dir = strdup(dir);
+
+    // Simulate a leftover p1.1 snapshot from an unclean Switch exit before relaunch.
+    uint8_t stale[] = "stale-switch-replay";
+    char stale_path[512];
+    snprintf(stale_path, sizeof(stale_path), "%s/%sp1.1.MemoryMode_EscalayerReboot_.asd",
+        dir, SAVEDIR_MEMORY_PREFIX);
+    assert(file_write(stale_path, stale, sizeof(stale) - 1));
+
+    char *normal_path = savedir_path("SaveData01.asd");
+    assert(file_write(normal_path, stale, 4));
+
+    // Fresh Switch launch begins session 1 (also pid=1, seq=1) and must sweep stale p1.1.
+    savedir_begin_memory_session();
+    assert(!file_exists(stale_path));
+    assert(!savedir_file_exists("<memory>MemoryMode_EscalayerReboot_.asd"));
+    assert(savedir_file_exists("SaveData01.asd"));
+
+    remove_utf8(normal_path);
+    free(normal_path);
+    free(config.save_dir);
+    rmdir(dir);
+    return 0;
+}
+"""
+        compile_and_run(c_code, [ROOT / "src/util.c", *LIBSYS4_CORE], ["-D__SWITCH__"])
 
     def test_memory_save_globals_roundtrip_via_savedata(self) -> None:
         c_code = r"""
@@ -531,6 +602,26 @@ int main(void)
         "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x83\x95\xe3\x82\xa1\xe3\x82\xa4\xe3\x83\xab "
         "\xe3\x80\x90 \xe5\x82\x91\xe5\x84\x80.asd \xe3\x80\x91 "
         "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    const uint8_t mixed_short_save[] = {
+        // セーブ 【 存档.asd 】 の保存に失敗 (short clause without ファイル/しました)
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0x81, 0x79, ' ',
+        0xb4, 0xe6, 0xb5, 0xb5, '.', 'a', 's', 'd', ' ', 0x81, 0x7a, ' ',
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73, 0x00
+    };
+    check_decode("mixed_short_save_alert", mixed_short_save, sizeof(mixed_short_save) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe3\x80\x90 \xe5\xad\x98\xe6\xa1\xa3.asd \xe3\x80\x91 "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97");
+
+    const uint8_t mixed_short_jieyi[] = {
+        // セーブ 【 傑儀.asd 】 の保存に失敗
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0x81, 0x79, ' ',
+        0x82, 0xdc, 0x83, 0x78, '.', 'a', 's', 'd', ' ', 0x81, 0x7a, ' ',
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73, 0x00
+    };
+    check_decode("mixed_short_dual_valid_gbk", mixed_short_jieyi, sizeof(mixed_short_jieyi) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe3\x80\x90 \xe5\x82\x91\xe5\x84\x80.asd \xe3\x80\x91 "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97");
 
     // 6. Bounded length without NUL terminator + empty string + NULL input.
     const uint8_t bounded[] = {

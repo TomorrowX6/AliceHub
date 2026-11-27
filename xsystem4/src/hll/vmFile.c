@@ -375,19 +375,33 @@ static bool wildcard_match(const char *pat, const char *s)
 	const char *star = strchr(pat, '*');
 	if (!star)
 		return !strcmp(pat, s);
-	return !strncmp(pat, s, star - pat) && !strcmp(star + 1, s + strlen(s) - strlen(star + 1));
+	size_t pre = (size_t)(star - pat);
+	size_t suf = strlen(star + 1);
+	size_t slen = strlen(s);
+	if (slen < pre + suf)
+		return false;
+	return !strncmp(pat, s, pre) && !strcmp(star + 1, s + slen - suf);
 }
 
 static int vmFile_Find(struct string *wild_string, struct string **fname_out, int *count)
 {
 	int found = 0;
-	char *wild_path = savedir_path(wild_string->text);
-	UDIR *dir = opendir_utf8(path_dirname(wild_path));
+	char *mem_dir = NULL;
+	char *mem_pat = NULL;
+	size_t mem_pfx_len = 0;
+	bool is_memory = savedir_memory_find_pattern(wild_string->text, &mem_dir, &mem_pat, &mem_pfx_len);
+	char *wild_path = is_memory ? NULL : savedir_path(wild_string->text);
+	UDIR *dir = opendir_utf8(is_memory ? mem_dir : path_dirname(wild_path));
 	if (dir) {
 		char *d_name;
-		const char *pattern = path_basename(wild_path);
+		const char *pattern = is_memory ? mem_pat : path_basename(wild_path);
 		for (int i = 0; !found && (d_name = readdir_utf8(dir)) != NULL; ) {
-			if (savedir_is_memory_save_path(d_name) && !savedir_is_memory_save_path(pattern)) {
+			if (is_memory) {
+				if (strncmp(d_name, mem_pat, mem_pfx_len) != 0) {
+					free(d_name);
+					continue;
+				}
+			} else if (savedir_is_memory_save_path(d_name)) {
 				free(d_name);
 				continue;
 			}
@@ -396,7 +410,13 @@ static int vmFile_Find(struct string *wild_string, struct string **fname_out, in
 				if (wildcard_match(pattern, d_name)) {
 					if (*fname_out)
 						free_string(*fname_out);
-					*fname_out = cstr_to_string(d_name);
+					if (is_memory) {
+						char *decoded = savedir_memory_decode_name(d_name, mem_pfx_len);
+						*fname_out = cstr_to_string(decoded);
+						free(decoded);
+					} else {
+						*fname_out = cstr_to_string(d_name);
+					}
 					found = 1;
 				}
 			}
@@ -405,6 +425,8 @@ static int vmFile_Find(struct string *wild_string, struct string **fname_out, in
 		}
 		closedir_utf8(dir);
 	}
+	free(mem_dir);
+	free(mem_pat);
 	free(wild_path);
 	return found;
 }

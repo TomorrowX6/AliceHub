@@ -760,11 +760,19 @@ static bool savedir_parse_memory_owner(const char *d_name, uint64_t *pid_out, ui
 
 static bool savedir_owner_is_dead(uint64_t pid, uint32_t seq, uint64_t my_pid, uint32_t my_seq)
 {
+#ifdef __SWITCH__
+	// Switch runs a single game instance at a time and always uses pid=1;
+	// at startup (before the new session writes any snapshots), any leftover
+	// .alicehub-mem.* file on the SD card is guaranteed stale.
+	(void)pid;
+	(void)seq;
+	(void)my_pid;
+	(void)my_seq;
+	return true;
+#else
 	if (pid == my_pid)
 		return seq != my_seq;
-#ifdef __SWITCH__
-	return true;
-#elif defined(_WIN32)
+#if defined(_WIN32)
 	if (pid == 0 || pid > UINT32_MAX)
 		return false;
 	HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid);
@@ -782,14 +790,18 @@ static bool savedir_owner_is_dead(uint64_t pid, uint32_t seq, uint64_t my_pid, u
 		return false;
 	return errno == ESRCH;
 #endif
+#endif
 }
 
-static char *savedir_format_memory_basename(const char *utf_rest)
+static char *savedir_format_memory_basename_opts(const char *utf_rest, bool preserve_wildcard,
+		size_t *session_prefix_len_out)
 {
 	static const char hex[] = "0123456789abcdef";
 	char pfx[64];
 	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx),
 		savedir_current_pid(), savedir_current_mem_session_seq());
+	if (session_prefix_len_out)
+		*session_prefix_len_out = pfx_len;
 	const size_t max_body = 140;
 	size_t rest_len = utf_rest ? strlen(utf_rest) : 0;
 	if (!rest_len) {
@@ -808,7 +820,8 @@ static char *savedir_format_memory_basename(const char *utf_rest)
 			|| (c >= 'a' && c <= 'z')
 			|| (c >= '0' && c <= '9')
 			|| c == '_' || c == '-'
-			|| (c == '.' && i + 1 < rest_len);
+			|| (c == '.' && i + 1 < rest_len)
+			|| (preserve_wildcard && c == '*');
 		if (safe) {
 			enc[enc_len++] = (char)c;
 		} else {
@@ -819,7 +832,7 @@ static char *savedir_format_memory_basename(const char *utf_rest)
 	}
 	enc[enc_len] = '\0';
 
-	if (enc_len <= max_body) {
+	if (preserve_wildcard || enc_len <= max_body) {
 		char *out = xmalloc(pfx_len + enc_len + 1);
 		memcpy(out, pfx, pfx_len);
 		memcpy(out + pfx_len, enc, enc_len + 1);
@@ -843,6 +856,79 @@ static char *savedir_format_memory_basename(const char *utf_rest)
 		out[pfx_len + cut + 1 + i] = hex[(h >> ((15 - i) * 4)) & 0x0f];
 	out[pfx_len + cut + 17] = '\0';
 	free(enc);
+	return out;
+}
+
+static char *savedir_format_memory_basename(const char *utf_rest)
+{
+	return savedir_format_memory_basename_opts(utf_rest, false, NULL);
+}
+
+static int savedir_hex_val(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	return -1;
+}
+
+bool savedir_memory_find_pattern(const char *path, char **dir_out, char **pattern_out,
+		size_t *session_prefix_len_out)
+{
+	if (!path || !dir_out || !pattern_out)
+		return false;
+	const char *target = path;
+	if (config.save_dir && config.save_dir[0]) {
+		const char *stripped_rel = NULL;
+		if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
+			target = stripped_rel;
+	}
+	const char *mem_rest = NULL;
+	if (!savedir_strip_memory_prefix(target, &mem_rest))
+		return false;
+	char *utf_rest = unix_path_with(mem_rest, false);
+	char *pat = savedir_format_memory_basename_opts(utf_rest, true, session_prefix_len_out);
+	free(utf_rest);
+	const char *dir = (config.save_dir && config.save_dir[0]) ? config.save_dir : ".";
+	*dir_out = xstrdup(dir);
+	*pattern_out = pat;
+	return true;
+}
+
+char *savedir_memory_decode_name(const char *d_name, size_t session_prefix_len)
+{
+	static const char tag[] = "<memory>";
+	const size_t tag_len = sizeof(tag) - 1;
+	if (!d_name || strlen(d_name) < session_prefix_len)
+		return xstrdup(tag);
+	const char *enc = d_name + session_prefix_len;
+	if (!strcmp(enc, "_empty"))
+		return xstrdup(tag);
+	size_t enc_len = strlen(enc);
+	char *utf = xmalloc(enc_len + 1);
+	size_t ulen = 0;
+	for (size_t i = 0; i < enc_len; ) {
+		int hi, lo;
+		if (enc[i] == '%' && i + 2 < enc_len
+				&& (hi = savedir_hex_val(enc[i + 1])) >= 0
+				&& (lo = savedir_hex_val(enc[i + 2])) >= 0) {
+			utf[ulen++] = (char)((hi << 4) | lo);
+			i += 3;
+		} else {
+			utf[ulen++] = enc[i++];
+		}
+	}
+	utf[ulen] = '\0';
+	char *cjk = utf2filename_cjk(utf, ulen);
+	free(utf);
+	size_t cjk_len = strlen(cjk);
+	char *out = xmalloc(tag_len + cjk_len + 1);
+	memcpy(out, tag, tag_len);
+	memcpy(out + tag_len, cjk, cjk_len + 1);
+	free(cjk);
 	return out;
 }
 
