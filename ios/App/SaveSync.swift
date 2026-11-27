@@ -274,33 +274,52 @@ final class SaveSync {
                 let markerURL = try checkedURL(markerPath, under: folder)
                 var published: (previous: Snapshot?, current: Snapshot)?
                 do {
-                    let previous: Snapshot?
-                    if let existingMarkerBytes = try existingBytes(at: markerURL) {
-                        let modified = try markerURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .distantPast
-                        previous = Snapshot(data: existingMarkerBytes, modified: modified)
-                    } else {
-                        previous = nil
-                    }
                     let rename = Rename(source: entry.path, destination: destination, hash: base.hash)
                     let marker = Snapshot(data: try JSONEncoder().encode(rename), modified: Date())
                     try files.createDirectory(at: markerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    let verifiedMarker = try checkedURL(markerPath, under: folder)
-                    guard try existingBytes(at: verifiedMarker) == previous?.data else { throw Failure.targetChanged }
-                    try marker.data.write(to: verifiedMarker, options: .atomic)
-                    try files.setAttributes([.modificationDate: marker.modified], ofItemAtPath: verifiedMarker.path)
-                    published = (previous, marker)
+                    let markerCoordinator = NSFileCoordinator()
+                    var markerError: NSError?
+                    var publishResult: Result<(previous: Snapshot?, current: Snapshot), Error> = .failure(Failure.folderUnavailable)
+                    markerCoordinator.coordinate(writingItemAt: markerURL, options: .forReplacing, error: &markerError) { coordinatedMarker in
+                        publishResult = Result {
+                            let verifiedMarker = try checkedURL(markerPath, under: folder)
+                            guard canonical(coordinatedMarker).pathComponents == canonical(verifiedMarker).pathComponents else {
+                                throw Failure.unsafePath
+                            }
+                            let previous: Snapshot?
+                            if let existingMarkerBytes = try existingBytes(at: coordinatedMarker) {
+                                let modified = try coordinatedMarker.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .distantPast
+                                previous = Snapshot(data: existingMarkerBytes, modified: modified)
+                            } else {
+                                previous = nil
+                            }
+                            try marker.data.write(to: coordinatedMarker, options: .atomic)
+                            try files.setAttributes([.modificationDate: marker.modified], ofItemAtPath: coordinatedMarker.path)
+                            return (previous, marker)
+                        }
+                    }
+                    if let markerError { throw markerError }
+                    published = try publishResult.get()
                     coordinator.item(at: sourceURL, willMoveTo: targetURL)
                     try files.moveItem(at: sourceURL, to: targetURL)
                     coordinator.item(at: sourceURL, didMoveTo: targetURL)
                 } catch {
                     if let published, let rollbackMarker = try? checkedURL(markerPath, under: folder) {
-                        if let previous = published.previous {
-                            if (try? existingBytes(at: rollbackMarker)) == published.current.data {
-                                try? previous.data.write(to: rollbackMarker, options: .atomic)
-                                try? files.setAttributes([.modificationDate: previous.modified], ofItemAtPath: rollbackMarker.path)
+                        let rollbackCoordinator = NSFileCoordinator()
+                        var rollbackError: NSError?
+                        let options: NSFileCoordinator.WritingOptions = published.previous == nil ? .forDeleting : .forReplacing
+                        rollbackCoordinator.coordinate(writingItemAt: rollbackMarker, options: options, error: &rollbackError) { coordinatedMarker in
+                            guard let verified = try? checkedURL(markerPath, under: folder),
+                                  canonical(coordinatedMarker).pathComponents == canonical(verified).pathComponents,
+                                  (try? existingBytes(at: coordinatedMarker)) == published.current.data else {
+                                return
                             }
-                        } else {
-                            try? files.removeItem(at: rollbackMarker)
+                            if let previous = published.previous {
+                                try? previous.data.write(to: coordinatedMarker, options: .atomic)
+                                try? files.setAttributes([.modificationDate: previous.modified], ofItemAtPath: coordinatedMarker.path)
+                            } else {
+                                try? files.removeItem(at: coordinatedMarker)
+                            }
                         }
                     }
                     try files.moveItem(at: localTarget, to: entry.url)

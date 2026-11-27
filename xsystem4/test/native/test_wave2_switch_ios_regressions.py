@@ -847,20 +847,22 @@ class Wave2StructuralRegressionsTest(unittest.TestCase):
 
         gse = (IOS_APP / "GlobalSaveEditor.swift").read_text(encoding="utf-8")
         self.assertIn("var pendingFilename: String", gse)
+        self.assertIn("struct PendingBackup: Codable, Equatable", gse)
         self.assertIn("pendingBackupURL(", gse)
         self.assertIn("activeBackupURL(", gse)
         self.assertIn("stageBackup(", gse)
         self.assertIn("commitStagedBackup(", gse)
         self.assertIn("replaceAndCommit(", gse)
-        # commitStagedBackup must NOT delete staged backup before rollback succeeds
+        # commitStagedBackup must write committed backup before removing staged pending file
         commit_fn = gse.split("private func commitStagedBackup(", 1)[1].split("private func apply(", 1)[0]
-        self.assertNotIn("removeItem(at: staged)", commit_fn)
+        self.assertLess(commit_fn.index("try writeCommittedBackup("), commit_fn.index("removeItem(at: staged.url)"))
         rac_fn = gse.split("private func replaceAndCommit(", 1)[1].split("func edit(", 1)[0]
         self.assertLess(rac_fn.index("try apply([entry], to: directory)"), rac_fn.index("commitStagedBackup"))
         self.assertIn("if rollback(applied), let stagedBackup", rac_fn)
         active_fn = gse.split("private func activeBackupURL(", 1)[1].split("private func exists(", 1)[0]
-        self.assertIn("liveEntries == pendingEntries", active_fn)
-        self.assertIn("rename(pending.path, committed.path)", active_fn)
+        self.assertIn("liveEntries == pendingRecord.baseline", active_fn)
+        self.assertIn("try writeCommittedBackup(pendingRecord.undo, for: kind)", active_fn)
+        self.assertIn("catch is DecodingError", active_fn)
         restore_fn = gse.split("func restore(", 1)[1]
         self.assertIn("activeBackupURL(kind)", restore_fn)
         self.assertIn("removeItem(at: url)", restore_fn)
