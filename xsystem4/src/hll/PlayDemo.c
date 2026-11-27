@@ -17,6 +17,10 @@
 #include "system4/string.h"
 #include "hll.h"
 
+/*
+ * Intentionally succeed (return 1) to gracefully skip OP/ED demo playback:
+ * returning 0 triggers blocking error popups (system.MsgBox) in Daibanchou.
+ */
 static int PlayDemo_Init(possibly_unused void *imainsystem)
 {
 	return 1;

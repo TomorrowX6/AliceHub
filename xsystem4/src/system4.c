@@ -1417,10 +1417,6 @@ static void init_mai_word_table(void)
 	free(path);
 }
 
-#if defined(__SWITCH__) || defined(ALICEHUB_IOS)
-void ini_abort_parse(void);
-#endif
-
 #ifdef __SWITCH__
 static jmp_buf switch_startup;
 
@@ -1758,9 +1754,9 @@ int xsystem4_main(int argc, char **argv)
 	sys_exit_handler = NULL;
 	ios_exit_target = NULL;
 	ini_abort_parse();
+	audio_end_session();
 	vm_end_session();
 	savedir_cleanup_memory_saves();
-	audio_end_session();
 	input_end_session();
 	gfx_fini();
 	asset_manager_fini();

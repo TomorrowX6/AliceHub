@@ -1069,19 +1069,24 @@ int main(void) {
         pos_setjmp = ios_main.index("if (setjmp(target) == 0)")
         pos_clear_exit = ios_main.index("sys_exit_handler = NULL;")
         pos_ini_abort = ios_main.index("ini_abort_parse();")
+        pos_audio_end = ios_main.index("audio_end_session();")
         pos_vm_end = ios_main.index("vm_end_session();")
         pos_input_end = ios_main.index("input_end_session();")
         pos_gfx_fini = ios_main.index("gfx_fini();")
         pos_free_ain = ios_main.index("free(resolved_ain_path);")
         self.assertLess(pos_setjmp, pos_clear_exit)
         self.assertLess(pos_clear_exit, pos_ini_abort)
-        self.assertLess(pos_ini_abort, pos_vm_end)
+        self.assertLess(pos_ini_abort, pos_audio_end)
+        self.assertLess(pos_audio_end, pos_vm_end)
         self.assertLess(pos_input_end, pos_gfx_fini)
         self.assertGreater(pos_free_ain, pos_gfx_fini)
         self.assertGreaterEqual(ios_main.count("set_utf8_release(false);"), 2)
 
         ini_src = (LIBSYS4_SRC / "ini.c").read_text(encoding="utf-8")
-        self.assertIn("defined(__SWITCH__) || defined(ALICEHUB_IOS)", ini_src)
+        ini_hdr = (LIBSYS4_INC / "system4/ini.h").read_text(encoding="utf-8")
+        self.assertIn("void ini_abort_parse(void)", ini_src)
+        self.assertNotIn("defined(__SWITCH__) || defined(ALICEHUB_IOS)", ini_src)
+        self.assertIn("void ini_abort_parse(void);", ini_hdr)
 
         vm_src = (ROOT / "src/vm.c").read_text(encoding="utf-8")
         self.assertIn("page_end_session();", vm_src)
@@ -1129,6 +1134,243 @@ int main(void) {
         cur_game_fn = mod_src[mod_src.index("const char *modifier_api_current_game(void)"):mod_src.index("char *modifier_api_get_live_state_json")]
         self.assertIn("if (!vm_is_ready())", cur_game_fn)
         self.assertNotIn("#ifdef __SWITCH__", cur_game_fn)
+
+    def test_chr_loader_owned_audio_blob_ini_abort_parse_and_dialog(self):
+        # 1. ChrLoader audio blob must own a copied buffer that survives chr_loader_init
+        #    cache replacement and ChrLoader_ModuleFini teardown.
+        wav_bytes = make_pcm_wav(32)
+        chr_harness = r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
+#include "system4.h"
+#include "system4/archive.h"
+#include "system4/cg.h"
+#include "system4/file.h"
+#include "system4/little_endian.h"
+#include "system4/mt19937int.h"
+#include "system4/string.h"
+#include "audio.h"
+#include "sact.h"
+#include "xsystem4.h"
+
+static const char *g_gamedir = NULL;
+static struct archive_data *g_prepared_dfile = NULL;
+
+char *gamedir_path(const char *path) { return path_join(g_gamedir, path); }
+struct sact_sprite *sact_get_sprite(int sp) { (void)sp; return NULL; }
+void sprite_set_cg(struct sact_sprite *sp, struct cg *cg) { (void)sp; (void)cg; }
+struct cg *cg_load_buffer(uint8_t *data, size_t size) { (void)data; (void)size; return NULL; }
+void cg_free(struct cg *cg) { (void)cg; }
+int wav_prepare_from_archive_data(int id, int metadata_no, struct archive_data *dfile) {
+    (void)id; (void)metadata_no;
+    g_prepared_dfile = dfile;
+    return dfile != NULL;
+}
+
+#include "hll/ChrLoader.c"
+
+int main(int argc, char **argv) {
+    assert(argc == 3);
+    g_gamedir = argv[1];
+    size_t wav_sz = 0;
+    uint8_t *wav_orig = file_read(argv[2], &wav_sz);
+    assert(wav_orig && wav_sz > 44);
+
+    // Build encrypted Enmy .chr file at <gamedir>/CHR/1.chr
+    char *chr_dir = path_join(g_gamedir, "CHR");
+    assert(mkdir(chr_dir, 0755) == 0);
+    size_t snd_off = 164;
+    size_t chr_sz = snd_off + wav_sz;
+    uint8_t *chr_raw = xcalloc(1, chr_sz);
+    memcpy(chr_raw, "CHR\0Enmy", 8);
+    LittleEndian_putDW(chr_raw, 8, 44);
+    LittleEndian_putDW(chr_raw, 36, (uint32_t)snd_off);
+    LittleEndian_putDW(chr_raw, 40, (uint32_t)wav_sz);
+    memcpy(chr_raw + snd_off, wav_orig, wav_sz);
+    mt19937_xorcode(chr_raw + 4, chr_sz - 4, 12753);
+
+    char *chr_path = path_join(chr_dir, "1.chr");
+    FILE *fp = fopen(chr_path, "wb");
+    assert(fp);
+    assert(fwrite(chr_raw, 1, chr_sz, fp) == chr_sz);
+    fclose(fp);
+    free(chr_raw);
+    free(chr_path);
+    free(chr_dir);
+
+    chr_loader_init("CHR");
+    int handle = chr_loader_get_blob_handle(1, 4);
+    assert(handle != 0);
+    size_t raw_sz = 0;
+    uint8_t *raw_blob = chr_loader_get_blob(handle, &raw_sz);
+    assert(raw_blob && raw_sz == wav_sz);
+
+    struct archive_data *d1 = chr_loader_get_blob_as_archive_data(handle);
+    struct archive_data *d2 = chr_loader_get_blob_as_archive_data(handle);
+    assert(d1 && d2 && d1->data && d2->data);
+    assert(d1->size == wav_sz && d2->size == wav_sz);
+    assert(d1->data != raw_blob && d2->data != raw_blob && d1->data != d2->data);
+    assert(memcmp(d1->data, wav_orig, wav_sz) == 0);
+
+    // Replace cache via chr_loader_init -> frees old chr_table buffers; d1/d2 must survive!
+    chr_loader_init("CHR");
+    assert(memcmp(d1->data, wav_orig, wav_sz) == 0);
+    assert(memcmp(d2->data, wav_orig, wav_sz) == 0);
+
+    // Also test ChrLoader_LoadWavFile handoff surviving ChrLoader_ModuleFini
+    assert(ChrLoader_LoadWavFile(0, 1));
+    assert(g_prepared_dfile != NULL && g_prepared_dfile->size == wav_sz);
+    ChrLoader_ModuleFini();
+    assert(memcmp(d1->data, wav_orig, wav_sz) == 0);
+    assert(memcmp(d2->data, wav_orig, wav_sz) == 0);
+    assert(memcmp(g_prepared_dfile->data, wav_orig, wav_sz) == 0);
+
+    archive_free_data(d1);
+    archive_free_data(d2);
+    archive_free_data(g_prepared_dfile);
+    free(wav_orig);
+    puts("OK");
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            gd = Path(td) / "game"
+            gd.mkdir()
+            wav_path = Path(td) / "voice.wav"
+            wav_path.write_bytes(wav_bytes)
+            out = compile_and_run(
+                chr_harness,
+                extra_sources=[*LIBSYS4_CORE],
+                extra_flags=["-lz", "-lm"],
+                run_args=[str(gd), str(wav_path)],
+                pkgs=("sdl2", "cglm"),
+            )
+            self.assertEqual(out.strip(), "OK")
+
+        # 2. ini_abort_parse must be compiled & exported unconditionally without ALICEHUB_IOS or __SWITCH__
+        cc = shutil.which("cc") or shutil.which("gcc")
+        flex = shutil.which("flex")
+        bison = shutil.which("bison")
+        assert cc and flex and bison
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            tab_c = tmp / "ini_parser.tab.c"
+            tab_h = tmp / "ini_parser.tab.h"
+            lex_c = tmp / "ini_lexer.yy.c"
+            ini_o = tmp / "ini.o"
+            subprocess.run(
+                [bison, str(LIBSYS4_SRC / "ini_parser.y"), f"--defines={tab_h}", f"--output={tab_c}"],
+                check=True,
+            )
+            subprocess.run(
+                [flex, "-o", str(lex_c), str(LIBSYS4_SRC / "ini_lexer.l")],
+                check=True,
+            )
+            # Compile ini.c WITHOUT -DALICEHUB_IOS or -D__SWITCH__
+            subprocess.run(
+                [
+                    cc, "-std=gnu11", "-O2", "-Wall", "-Wextra",
+                    "-D_DEFAULT_SOURCE",
+                    f"-I{LIBSYS4_INC}", f"-I{LIBSYS4_SRC}", f"-I{tmp}",
+                    "-c", str(LIBSYS4_SRC / "ini.c"), "-o", str(ini_o),
+                ],
+                check=True,
+            )
+            nm_out = subprocess.check_output(["nm", "-g", "--defined-only", str(ini_o)], text=True)
+            syms = {line.split()[-1] for line in nm_out.splitlines() if line.strip()}
+            self.assertTrue("ini_abort_parse" in syms or "_ini_abort_parse" in syms, f"Missing ini_abort_parse in {syms}")
+
+            ini_harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include "system4/ini.h"
+
+int main(void) {
+    ini_abort_parse();
+    puts("OK");
+    return 0;
+}
+"""
+            out = compile_and_run(
+                ini_harness,
+                extra_sources=[*LIBSYS4_CORE, tab_c, lex_c],
+                extra_flags=[f"-I{LIBSYS4_SRC}", f"-I{tmp}", str(ini_o), "-lz", "-lm"],
+                pkgs=(),
+            )
+            self.assertEqual(out.strip(), "OK")
+
+        # 3. Dialog_InputMsg preserves default / initializes NULL / truncates safely and returns 1;
+        #    Dialog_InputNum and Dialog_MenuMsg clamp safely and return 0.
+        dlg_harness = r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <SDL.h>
+
+#include "system4.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "hll.h"
+
+#include "hll/vmDialog.c"
+
+int main(void) {
+    sys4_set_text_gbk(false);
+
+    // NULL *msg is initialized to empty string and returns 1 (never freezes dungeonsdolls)
+    struct string *s = NULL;
+    assert(Dialog_InputMsg(NULL, 8, &s) == 1);
+    assert(s != NULL && s->size == 0 && strcmp(s->text, "") == 0);
+    free_string(s);
+
+    // CoW default "マスター" (8 SJIS bytes) with max_len=8 stays intact
+    const char sjis_master[] = "\x83\x7d\x83\x58\x83\x5e\x81\x5b";
+    struct string *lit = make_string(sjis_master, 8);
+    lit->cow = true;
+    struct string *name = string_ref(lit);
+    assert(Dialog_InputMsg(NULL, 8, &name) == 1);
+    assert(name->size == 8 && memcmp(name->text, sjis_master, 8) == 0);
+
+    // Odd max_len=5 truncates cleanly at 4-byte SJIS boundary without mutating CoW literal
+    assert(Dialog_InputMsg(NULL, 5, &name) == 1);
+    assert(name != lit);
+    assert(name->size == 4 && memcmp(name->text, sjis_master, 4) == 0);
+    assert(lit->size == 8 && memcmp(lit->text, sjis_master, 8) == 0);
+    free_string(name);
+    free_string(lit);
+
+    // Dialog_InputNum clamps into [min, max] and returns 0
+    int v = 0;
+    assert(Dialog_InputNum(NULL, 1, 50, &v) == 0);
+    assert(v == 1);
+    v = 999;
+    assert(Dialog_InputNum(NULL, 1, 50, &v) == 0);
+    assert(v == 50);
+    assert(Dialog_InputNum(NULL, 1, 50, NULL) == 0);
+
+    // Dialog_MenuMsg clamps negative selection and returns 0
+    int sel = -5;
+    assert(Dialog_MenuMsg(NULL, NULL, &sel) == 0);
+    assert(sel == 0);
+    assert(Dialog_MenuMsg(NULL, NULL, NULL) == 0);
+
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(
+            dlg_harness,
+            extra_sources=[*LIBSYS4_CORE],
+            extra_flags=[*pkg_flags("sdl2", mode="--cflags"), *pkg_flags("sdl2", mode="--libs"), "-lz", "-lm"],
+            pkgs=(),
+        )
+        self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":

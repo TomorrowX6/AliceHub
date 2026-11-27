@@ -58,22 +58,58 @@ static int Dialog_MsgBox(struct string *title, struct string *msg, possibly_unus
 	return vmDialog_MsgBox(title, msg, icon, default_button);
 }
 
-static int Dialog_InputNum(possibly_unused struct string *title, possibly_unused int min_val,
-		possibly_unused int max_val, possibly_unused int *num)
+/*
+ * xsystem4 has no blocking modal numeric/menu/text input dialogs (only
+ * SDL_ShowMessageBox for alerts and non-blocking IME for InputString/Parts).
+ */
+static int Dialog_InputNum(possibly_unused struct string *title, int min_val,
+		int max_val, int *num)
 {
-	return 1;
+	if (num && min_val <= max_val) {
+		if (*num < min_val)
+			*num = min_val;
+		else if (*num > max_val)
+			*num = max_val;
+	}
+	return 0;
 }
 
-static int Dialog_InputMsg(possibly_unused struct string *title, possibly_unused int max_len,
-		possibly_unused struct string **msg)
+/*
+ * Preserve the caller's pre-filled default name (guaranteeing *msg is non-NULL
+ * and bounded by max_len on a multibyte character boundary) and return 1:
+ * returning 0 causes a 100% CPU infinite hang in Dungeons & Dolls
+ * (`while (!Dialog.InputMsg("あなたの名前は？", 8, name)) {}`).
+ */
+static int Dialog_InputMsg(possibly_unused struct string *title, int max_len,
+		struct string **msg)
 {
+	if (msg) {
+		if (!*msg) {
+			*msg = make_string("", 0);
+		} else if (max_len > 0 && (*msg)->size > max_len) {
+			const char *text = (*msg)->text;
+			int size = (*msg)->size;
+			int len = 0;
+			while (len < size) {
+				int step = (SJIS_2BYTE((uint8_t)text[len]) && len + 1 < size) ? 2 : 1;
+				if (len + step > max_len)
+					break;
+				len += step;
+			}
+			struct string *truncated = make_string(text, len);
+			free_string(*msg);
+			*msg = truncated;
+		}
+	}
 	return 1;
 }
 
 static int Dialog_MenuMsg(possibly_unused struct string *title, possibly_unused struct page **items,
-		possibly_unused int *num)
+		int *num)
 {
-	return 1;
+	if (num && *num < 0)
+		*num = 0;
+	return 0;
 }
 
 static int Dialog_LoadFile(possibly_unused struct string *title, possibly_unused struct string **file,

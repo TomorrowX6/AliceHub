@@ -229,7 +229,13 @@ void *chr_loader_get_blob(int blob_handle, size_t *size)
 	return data + offset;
 }
 
-static void chr_archive_free_data(struct archive_data *data) { /* no-op */ }
+static void chr_archive_free_data(struct archive_data *data)
+{
+	if (!data)
+		return;
+	free(data->data);
+	free(data);
+}
 
 static struct archive_ops chr_archive_ops = {
 	.free_data = chr_archive_free_data
@@ -244,9 +250,15 @@ struct archive_data *chr_loader_get_blob_as_archive_data(int blob_handle)
 	if (!data)
 		return NULL;
 
+	// Copy the blob so audio channels own their buffer independently of
+	// ChrLoader's cached .chr table across chr_loader_init / ModuleFini.
+	uint8_t *copy = xmalloc(size);
+	if (size > 0)
+		memcpy(copy, data, size);
+
 	struct archive_data *dfile = xcalloc(1, sizeof(struct archive_data));
 	dfile->size = size;
-	dfile->data = data;
+	dfile->data = copy;
 	dfile->archive = &chr_archive;
 	return dfile;
 }
