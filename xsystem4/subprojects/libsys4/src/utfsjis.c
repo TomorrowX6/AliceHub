@@ -1470,7 +1470,8 @@ struct cjk_dialog_run_stats {
 	size_t common;
 	size_t extended;
 	bool has_sjis_only;
-	bool all_sjis_punct;
+	bool has_sjis_punct;
+	bool all_sjis_punct_or_space;
 };
 
 static bool cjk_dialog_is_sjis_punct_pair(const uint8_t *p)
@@ -1506,11 +1507,50 @@ static bool cjk_dialog_is_sjis_punct_pair(const uint8_t *p)
 	}
 }
 
+static bool cjk_dialog_is_sjis_hw_kana_run(const uint8_t *s, const uint8_t *end)
+{
+	size_t len = (size_t)(end - s);
+	if (!len)
+		return false;
+	// Odd-length 0xA1..0xDF runs cannot be valid GBK double-byte sequences.
+	if (len & 1u)
+		return true;
+	// Any pair unmapped in GBK cannot be valid GBK text.
+	for (size_t i = 0; i < len; i += 2) {
+		if (!gbk_lookup(s[i], s[i + 1]))
+			return true;
+	}
+	// Even-length 0xA1..0xDF runs overlap GB2312 (e.g. 中文/系统); only match
+	// explicit CP932 half-width katakana system words inside a CP932 dialog.
+	static const struct {
+		const uint8_t bytes[6];
+		uint8_t len;
+	} hw_words[] = {
+		{ { 0xcc, 0xa7, 0xb2, 0xd9 }, 4 },                   // ﾌｧｲﾙ
+		{ { 0xbe, 0xb0, 0xcc, 0xde }, 4 },                   // ｾｰﾌﾞ
+		{ { 0xdb, 0xb0, 0xc4, 0xde }, 4 },                   // ﾛｰﾄﾞ
+		{ { 0xc3, 0xde, 0xb0, 0xc0 }, 4 },                   // ﾃﾞｰﾀ
+		{ { 0xbc, 0xbd, 0xc3, 0xd1 }, 4 },                   // ｼｽﾃﾑ
+		{ { 0xd2, 0xaf, 0xbe, 0xb0, 0xbc, 0xde }, 6 },       // ﾒｯｾｰｼﾞ
+		{ { 0xc0, 0xb2, 0xc4, 0xd9 }, 4 },                   // ﾀｲﾄﾙ
+	};
+	for (size_t i = 0; i < sizeof(hw_words) / sizeof(hw_words[0]); i++) {
+		size_t wlen = hw_words[i].len;
+		if (wlen > len)
+			continue;
+		for (size_t off = 0; off <= len - wlen; off++) {
+			if (!memcmp(s + off, hw_words[i].bytes, wlen))
+				return true;
+		}
+	}
+	return false;
+}
+
 static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 		struct cjk_dialog_run_stats *st)
 {
 	memset(st, 0, sizeof(*st));
-	st->all_sjis_punct = (run < end);
+	st->all_sjis_punct_or_space = (run < end);
 	for (const uint8_t *p = run; p < end; p += 2) {
 		if (!gbk_lookup(p[0], p[1]))
 			st->has_sjis_only = true;
@@ -1518,8 +1558,10 @@ static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 			st->common++;
 		else
 			st->extended++;
-		if (!cjk_dialog_is_sjis_punct_pair(p))
-			st->all_sjis_punct = false;
+		if (cjk_dialog_is_sjis_punct_pair(p))
+			st->has_sjis_punct = true;
+		else if (!(p[0] == 0x81 && p[1] == 0x40))
+			st->all_sjis_punct_or_space = false;
 	}
 }
 
@@ -1633,6 +1675,21 @@ char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
 	uint8_t *dstp = dst;
 	const uint8_t *s = src;
 	while (s < end) {
+		if (*s >= 0xa1 && *s <= 0xdf) {
+			const uint8_t *na_end = s;
+			bool all_hw = true;
+			while (na_end < end && *na_end >= 0x80) {
+				if (*na_end < 0xa1 || *na_end > 0xdf)
+					all_hw = false;
+				na_end++;
+			}
+			if (all_hw && cjk_dialog_is_sjis_hw_kana_run(s, na_end)) {
+				for (const uint8_t *p = s; p < na_end; p++)
+					encode_utf8_bmp(0xff60 + (*p - 0xa0), &dstp);
+				s = na_end;
+				continue;
+			}
+		}
 		if (!gbk_display_pair_bounded(s, end)) {
 			if (*s <= 0x7f)
 				*dstp++ = *s;
@@ -1668,7 +1725,8 @@ char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
 			cjk_dialog_scan_sjis_run(run, s, &st);
 			bool decode_as_sjis = st.has_sjis_only
 				|| (!token_has_gbk_text
-					&& (cjk_dialog_run_is_strong_sjis(run, s, &st) || st.all_sjis_punct));
+					&& (cjk_dialog_run_is_strong_sjis(run, s, &st)
+						|| (st.all_sjis_punct_or_space && st.has_sjis_punct)));
 			for (const uint8_t *p = run; p < s; p += 2) {
 				int code = decode_as_sjis ? sjis_display_pair(p) : gbk_lookup(p[0], p[1]);
 				encode_utf8_bmp(code ? code : 0xfffd, &dstp);

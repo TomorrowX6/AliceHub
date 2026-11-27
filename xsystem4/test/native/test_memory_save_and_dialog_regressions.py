@@ -757,6 +757,43 @@ int main(void)
     check_decode("mixed_8140_gbk_preserved", mixed_8140_gbk, sizeof(mixed_8140_gbk) - 1,
         "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe4\xb8\x82.asd");
 
+    const uint8_t indented_bracket_cp932[] = {
+        // セーブファイル\n　【 slot01.asd 】\nの保存に失敗しました (81 40 + 81 79 -> 　【)
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b, 0x0a,
+        0x81, 0x40, 0x81, 0x79, ' ', 's', 'l', 'o', 't', '0', '1', '.', 'a', 's', 'd', ' ', 0x81, 0x7a, 0x0a,
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8,
+        0x94, 0x73, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("indented_bracket_cp932", indented_bracket_cp932, sizeof(indented_bracket_cp932) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x83\x95\xe3\x82\xa1\xe3\x82\xa4\xe3\x83\xab\n"
+        "\xe3\x80\x80\xe3\x80\x90 slot01.asd \xe3\x80\x91\n"
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    const uint8_t mixed_hw_file[] = {
+        // セーブ ﾌｧｲﾙ
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0xcc, 0xa7, 0xb2, 0xd9, 0x00
+    };
+    check_decode("mixed_hw_kana_file", mixed_hw_file, sizeof(mixed_hw_file) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xef\xbe\x8c\xef\xbd\xa7\xef\xbd\xb2\xef\xbe\x99");
+
+    const uint8_t mixed_hw_err[] = {
+        // セーブ ｴﾗｰ (odd-length half-width katakana)
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0xb4, 0xd7, 0xb0, 0x00
+    };
+    check_decode("mixed_hw_kana_odd_err", mixed_hw_err, sizeof(mixed_hw_err) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xef\xbd\xb4\xef\xbe\x97\xef\xbd\xb0");
+
+    const uint8_t mixed_gb2312_in_hw_range[] = {
+        // セーブ 【 中文.asd 】 の保存に失敗 (中文 = d6 d0 ce c4 is all 0xA1..0xDF but MUST stay 中文)
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0x81, 0x79, ' ',
+        0xd6, 0xd0, 0xce, 0xc4, '.', 'a', 's', 'd', ' ', 0x81, 0x7a, ' ',
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73, 0x00
+    };
+    check_decode("mixed_gb2312_zhongwen_preserved", mixed_gb2312_in_hw_range,
+        sizeof(mixed_gb2312_in_hw_range) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe3\x80\x90 \xe4\xb8\xad\xe6\x96\x87.asd \xe3\x80\x91 "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97");
+
     // 6. Bounded length without NUL terminator + empty string + NULL input.
     const uint8_t bounded[] = {
         0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b,
