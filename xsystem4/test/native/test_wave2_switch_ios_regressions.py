@@ -825,12 +825,15 @@ class Wave2StructuralRegressionsTest(unittest.TestCase):
         self.assertIn("ModFiles.walk(directory)", can_restore)
         self.assertIn("originalURL(forVanillaBackup:", can_restore)
 
-        # S2-13: SaveZip cumulative cap, atomic write, Gregorian calendar
+        # S2-13: SaveZip cumulative cap (both read & write), atomic write, Gregorian calendar
         save_zip = (IOS_APP / "SaveZip.swift").read_text(encoding="utf-8")
         self.assertNotIn("Calendar.current", save_zip)
         self.assertIn("Calendar(identifier: .gregorian)", save_zip)
         self.assertIn("maxTotalDecompressedBytes = 512 * 1024 * 1024", save_zip)
         self.assertIn("size <= Self.maxTotalDecompressedBytes - totalDecompressed", save_zip)
+        write_fn = save_zip.split("static func write(", 1)[1].split("static func read(", 1)[0]
+        self.assertIn("entry.data.count <= Self.maxEntryDecompressedBytes", write_fn)
+        self.assertIn("entry.data.count <= Self.maxTotalDecompressedBytes - totalUncompressed", write_fn)
         self.assertIn("try out.write(to: url, options: .atomic)", save_zip)
 
         # S2-14: BackgroundActivity + GlobalSaveEditor
@@ -843,19 +846,31 @@ class Wave2StructuralRegressionsTest(unittest.TestCase):
         self.assertIn("lock.lock()", end_legacy)
 
         gse = (IOS_APP / "GlobalSaveEditor.swift").read_text(encoding="utf-8")
+        self.assertIn("var pendingFilename: String", gse)
+        self.assertIn("pendingBackupURL(", gse)
+        self.assertIn("activeBackupURL(", gse)
         self.assertIn("stageBackup(", gse)
         self.assertIn("commitStagedBackup(", gse)
-        self.assertIn("try? apply([rollbackEntry], to: directory)", gse)
-        edit_fn = gse.split("func edit(", 1)[1].split("func unlock(", 1)[0]
-        self.assertLess(edit_fn.index("try replace(before, with: after)"), edit_fn.index("commitStagedBackup"))
+        self.assertIn("replaceAndCommit(", gse)
+        # commitStagedBackup must NOT delete staged backup before rollback succeeds
+        commit_fn = gse.split("private func commitStagedBackup(", 1)[1].split("private func apply(", 1)[0]
+        self.assertNotIn("removeItem(at: staged)", commit_fn)
+        rac_fn = gse.split("private func replaceAndCommit(", 1)[1].split("func edit(", 1)[0]
+        self.assertLess(rac_fn.index("try apply([entry], to: directory)"), rac_fn.index("commitStagedBackup"))
+        self.assertIn("if rollback(applied), let stagedBackup", rac_fn)
+        restore_fn = gse.split("func restore(", 1)[1]
+        self.assertIn("pendingBackupURL(kind)", restore_fn)
 
         # S2-15: Iso9660Extractor overflow checks
         iso = (IOS_APP / "Iso9660Extractor.swift").read_text(encoding="utf-8")
         self.assertGreaterEqual(iso.count("addingReportingOverflow"), 2)
         self.assertIn("guard !overflow else { throw ArchiveError.invalidImage }", iso)
 
-        # S2-16: SaveManager case-only rename on APFS
+        # S2-16: SaveManager case-only rename on APFS, backup size pre-check, pending backup invalidation
         save_mgr = (IOS_APP / "SaveManager.swift").read_text(encoding="utf-8")
+        backup_fn = save_mgr.split("@discardableResult func backup()", 1)[1].split("private func safePath(", 1)[0]
+        self.assertIn("SaveZip.maxTotalDecompressedBytes - totalSize", backup_fn)
+        self.assertIn("$0.pendingFilename == child.lastPathComponent", save_mgr)
         rename_mgr = save_mgr.split("func rename(", 1)[1].split("func delete(", 1)[0]
         self.assertIn(".fileResourceIdentifierKey", rename_mgr)
         self.assertIn("sourceID.isEqual(targetID)", rename_mgr)

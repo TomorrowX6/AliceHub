@@ -149,6 +149,98 @@ final class SaveManager {
         }.joined(separator: separator)
     }
 
+    private static func readBoundedIniData(_ url: URL) -> Data? {
+        let limit = 256 * 1024
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: limit + 1), data.count <= limit else { return nil }
+        return data
+    }
+
+    private static func extractCodeNames(from iniURL: URL) -> [String] {
+        guard let data = readBoundedIniData(iniURL) else { return [] }
+        let gbkEncoding = String.Encoding(
+            rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GBK_95.rawValue))
+        )
+        let codeNamePattern = #"(?m)^[\t ]*CodeName[\t ]*=[\t ]*"([^"\r\n]+)""#
+        var names: [String] = []
+        for decoded in [
+            String(data: data, encoding: .utf8),
+            String(data: data, encoding: .shiftJIS),
+            String(data: data, encoding: gbkEncoding),
+        ].compactMap({ $0 }) {
+            let text = decoded.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
+            guard let range = text.range(of: codeNamePattern, options: .regularExpression),
+                  let firstQuote = text[range].firstIndex(of: "\"") else { continue }
+            let code = String(text[text.index(after: firstQuote)..<range.upperBound].dropLast())
+            if !code.isEmpty && !names.contains(code) {
+                names.append(code)
+            }
+        }
+        return names
+    }
+
+    private static func extractSaveFolderRaw(from iniURL: URL) -> String? {
+        guard let data = readBoundedIniData(iniURL),
+              let rawText = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+            return nil
+        }
+        let text = rawText.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
+        var found: String? = nil
+        for rawLine in text.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") { continue }
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
+            if key.caseInsensitiveCompare("SaveFolder") != .orderedSame { continue }
+            var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            if value.hasPrefix("\"") {
+                let rest = value.dropFirst()
+                if let close = rest.firstIndex(of: "\"") {
+                    value = String(rest[..<close])
+                } else {
+                    value = String(rest)
+                }
+            } else {
+                for marker in [";", "#", "//"] {
+                    if let range = value.range(of: marker) {
+                        value = String(value[..<range.lowerBound])
+                    }
+                }
+                value = value.trimmingCharacters(in: .whitespaces)
+            }
+            found = value
+        }
+        return found
+    }
+
+    private static func resolveConfiguredScript(_ codeName: String, in gameDirectory: URL) -> URL? {
+        let fm = FileManager.default
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
+        let path = codeName.replacingOccurrences(of: "\\", with: "/")
+        let components = path.split(separator: "/").filter { $0 != "." }
+        guard !path.hasPrefix("/"), !path.contains("\0"), !components.isEmpty,
+              !(components.first?.contains(":") ?? false), !components.contains(".."),
+              let leafLower = components.last?.lowercased(),
+              (leafLower.hasSuffix(".ain") && leafLower != "system39.ain") ||
+                (leafLower.hasSuffix(".chs") && leafLower != "alicestart.chs") else { return nil }
+        var directory = gameDirectory
+        for (index, component) in components.enumerated() {
+            let leaf = String(component)
+            let repairedLeaf = SaveManager.repairSjisAsGbkMojibake(leaf)
+            guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys)),
+                  let match = children.first(where: { $0.lastPathComponent == leaf }) ??
+                    children.first(where: { $0.lastPathComponent.caseInsensitiveCompare(leaf) == .orderedSame }) ??
+                    children.first(where: { SaveManager.repairSjisAsGbkMojibake($0.lastPathComponent).caseInsensitiveCompare(repairedLeaf) == .orderedSame }),
+                  let values = try? match.resourceValues(forKeys: keys),
+                  values.isSymbolicLink != true else { return nil }
+            if index == components.count - 1 { return values.isRegularFile == true ? match : nil }
+            guard values.isDirectory == true else { return nil }
+            directory = match
+        }
+        return nil
+    }
+
     static func resolveAinPath(in gameDirectory: URL, bootEntry: String = "", isDaiSengokuSave: Bool = false) -> String? {
         let fm = FileManager.default
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
@@ -163,10 +255,6 @@ final class SaveManager {
         }
         let hasChsTable = regularFiles.contains { $0.lastPathComponent.lowercased() == "chs.tbl" }
         let hasHaruCnAin = regularFiles.contains { $0.lastPathComponent.lowercased() == "haru_c.ain" }
-        let gbkEncoding = String.Encoding(
-            rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GBK_95.rawValue))
-        )
-        let codeNamePattern = #"(?m)^[\t ]*CodeName[\t ]*=[\t ]*"([^"\r\n]+)""#
 
         func isCandidateIni(_ url: URL) -> Bool {
             let lower = url.lastPathComponent.lowercased()
@@ -180,94 +268,8 @@ final class SaveManager {
                 (hasChsTable && lower.hasSuffix(".chs") && lower != "alicestart.chs")
         }
 
-        func readBoundedIniData(_ url: URL) -> Data? {
-            let limit = 256 * 1024
-            guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-            defer { try? handle.close() }
-            guard let data = try? handle.read(upToCount: limit + 1), data.count <= limit else { return nil }
-            return data
-        }
-
-        func extractCodeNames(from iniURL: URL) -> [String] {
-            guard let data = readBoundedIniData(iniURL) else { return [] }
-            var names: [String] = []
-            for decoded in [
-                String(data: data, encoding: .utf8),
-                String(data: data, encoding: .shiftJIS),
-                String(data: data, encoding: gbkEncoding),
-            ].compactMap({ $0 }) {
-                let text = decoded.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
-                guard let range = text.range(of: codeNamePattern, options: .regularExpression),
-                      let firstQuote = text[range].firstIndex(of: "\"") else { continue }
-                let code = String(text[text.index(after: firstQuote)..<range.upperBound].dropLast())
-                if !code.isEmpty && !names.contains(code) {
-                    names.append(code)
-                }
-            }
-            return names
-        }
-
-        func extractSaveFolder(from iniURL: URL) -> String? {
-            guard let data = readBoundedIniData(iniURL),
-                  let rawText = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
-                return nil
-            }
-            let text = rawText.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
-            var found: String? = nil
-            for rawLine in text.split(whereSeparator: \.isNewline) {
-                let line = rawLine.trimmingCharacters(in: .whitespaces)
-                if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") { continue }
-                guard let eq = line.firstIndex(of: "=") else { continue }
-                let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-                if key.caseInsensitiveCompare("SaveFolder") != .orderedSame { continue }
-                var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-                if value.hasPrefix("\"") {
-                    let rest = value.dropFirst()
-                    if let close = rest.firstIndex(of: "\"") {
-                        value = String(rest[..<close])
-                    } else {
-                        value = String(rest)
-                    }
-                } else {
-                    for marker in [";", "#", "//"] {
-                        if let range = value.range(of: marker) {
-                            value = String(value[..<range.lowerBound])
-                        }
-                    }
-                    value = value.trimmingCharacters(in: .whitespaces)
-                }
-                found = value
-            }
-            return found
-        }
-
         func iniUsesDaiSengokuSaveFolder(_ iniURL: URL) -> Bool {
-            extractSaveFolder(from: iniURL)?.caseInsensitiveCompare("SaveDataDSR") == .orderedSame
-        }
-
-        func resolveConfiguredScript(_ codeName: String) -> URL? {
-            let path = codeName.replacingOccurrences(of: "\\", with: "/")
-            let components = path.split(separator: "/").filter { $0 != "." }
-            guard !path.hasPrefix("/"), !path.contains("\0"), !components.isEmpty,
-                  !(components.first?.contains(":") ?? false), !components.contains(".."),
-                  let leafLower = components.last?.lowercased(),
-                  (leafLower.hasSuffix(".ain") && leafLower != "system39.ain") ||
-                    (leafLower.hasSuffix(".chs") && leafLower != "alicestart.chs") else { return nil }
-            var directory = gameDirectory
-            for (index, component) in components.enumerated() {
-                let leaf = String(component)
-                let repairedLeaf = SaveManager.repairSjisAsGbkMojibake(leaf)
-                guard let children = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys)),
-                      let match = children.first(where: { $0.lastPathComponent == leaf }) ??
-                        children.first(where: { $0.lastPathComponent.caseInsensitiveCompare(leaf) == .orderedSame }) ??
-                        children.first(where: { SaveManager.repairSjisAsGbkMojibake($0.lastPathComponent).caseInsensitiveCompare(repairedLeaf) == .orderedSame }),
-                      let values = try? match.resourceValues(forKeys: keys),
-                      values.isSymbolicLink != true else { return nil }
-                if index == components.count - 1 { return values.isRegularFile == true ? match : nil }
-                guard values.isDirectory == true else { return nil }
-                directory = match
-            }
-            return nil
+            extractSaveFolderRaw(from: iniURL)?.caseInsensitiveCompare("SaveDataDSR") == .orderedSame
         }
 
         if !bootEntry.isEmpty,
@@ -275,7 +277,7 @@ final class SaveManager {
             if isScriptFile(chosen) { return chosen.path }
             if isCandidateIni(chosen) {
                 for code in extractCodeNames(from: chosen) {
-                    if let script = resolveConfiguredScript(code) { return script.path }
+                    if let script = resolveConfiguredScript(code, in: gameDirectory) { return script.path }
                 }
             }
         }
@@ -284,7 +286,7 @@ final class SaveManager {
         if isDaiSengokuSave {
             for ini in candidateInis where iniUsesDaiSengokuSaveFolder(ini) {
                 for code in extractCodeNames(from: ini) {
-                    if let script = resolveConfiguredScript(code) { return script.path }
+                    if let script = resolveConfiguredScript(code, in: gameDirectory) { return script.path }
                 }
             }
         }
@@ -309,7 +311,7 @@ final class SaveManager {
                 continue
             }
             for code in extractCodeNames(from: ini) {
-                if let script = resolveConfiguredScript(code) { return script.path }
+                if let script = resolveConfiguredScript(code, in: gameDirectory) { return script.path }
             }
         }
         if sawDsrIni && !isDaiSengokuSave,
@@ -353,40 +355,7 @@ final class SaveManager {
         }
 
         func extractSaveFolder(from iniURL: URL) -> String? {
-            let limit = 256 * 1024
-            guard let handle = try? FileHandle(forReadingFrom: iniURL) else { return nil }
-            defer { try? handle.close() }
-            guard let data = try? handle.read(upToCount: limit + 1), data.count <= limit,
-                  let rawText = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
-                return nil
-            }
-            let text = rawText.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
-            var found: String? = nil
-            for rawLine in text.split(whereSeparator: \.isNewline) {
-                let line = rawLine.trimmingCharacters(in: .whitespaces)
-                if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") { continue }
-                guard let eq = line.firstIndex(of: "=") else { continue }
-                let key = line[..<eq].trimmingCharacters(in: .whitespaces)
-                if key.caseInsensitiveCompare("SaveFolder") != .orderedSame { continue }
-                var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-                if value.hasPrefix("\"") {
-                    let rest = value.dropFirst()
-                    if let close = rest.firstIndex(of: "\"") {
-                        value = String(rest[..<close])
-                    } else {
-                        value = String(rest)
-                    }
-                } else {
-                    for marker in [";", "#", "//"] {
-                        if let range = value.range(of: marker) {
-                            value = String(value[..<range.lowerBound])
-                        }
-                    }
-                    value = value.trimmingCharacters(in: .whitespaces)
-                }
-                found = value
-            }
-            return sanitizeSaveFolder(found)
+            sanitizeSaveFolder(extractSaveFolderRaw(from: iniURL))
         }
 
         if !bootEntry.isEmpty,
@@ -410,21 +379,41 @@ final class SaveManager {
             candidateInis.first { $0.lastPathComponent == name }
                 ?? candidateInis.first { $0.lastPathComponent.caseInsensitiveCompare(name) == .orderedSame }
         }
-        var prioritizedInis: [URL] = []
-        if hasHaruCnAin, let ini = findIni("AliceStart2.ini") { prioritizedInis.append(ini) }
-        if hasChsTable, let ini = findIni("AliceStart.CHS") { prioritizedInis.append(ini) }
+        var standardInis: [URL] = []
+        if hasHaruCnAin, let ini = findIni("AliceStart2.ini") { standardInis.append(ini) }
+        if hasChsTable, let ini = findIni("AliceStart.CHS") { standardInis.append(ini) }
         for name in ["System40.ini", "AliceStart.ini", "AliceStart2.ini", "AliceStart.CHS"] {
-            if let ini = findIni(name), !prioritizedInis.contains(ini) { prioritizedInis.append(ini) }
+            if let ini = findIni(name), !standardInis.contains(ini) { standardInis.append(ini) }
         }
-        for ini in candidateInis where !prioritizedInis.contains(ini) {
-            prioritizedInis.append(ini)
+        if let primaryStandard = standardInis.first {
+            return extractSaveFolder(from: primaryStandard) ?? "SaveData"
         }
-        for ini in prioritizedInis {
-            let folder = extractSaveFolder(from: ini)
-            if folder?.caseInsensitiveCompare("SaveDataDSR") == .orderedSame { continue }
-            return folder ?? "SaveData"
+        if let configuredIni = candidateInis.first(where: { ini in
+            extractCodeNames(from: ini).contains { resolveConfiguredScript($0, in: gameDirectory) != nil }
+        }) {
+            return extractSaveFolder(from: configuredIni) ?? "SaveData"
         }
         return "SaveData"
+    }
+
+    static func isLooseSaveFileName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        let ext = (lower as NSString).pathExtension
+        if ["asd", "sav", "rsm", "vsf", "msgskip"].contains(ext) {
+            return true
+        }
+        guard ext == "dat" else { return false }
+        if ["asleep.dat", "msgskip.dat", "keyfile.dat", "key0104.dat"].contains(lower) {
+            return true
+        }
+        if lower.hasPrefix("asleep_"), lower.hasSuffix(".dat") {
+            let middle = lower.dropFirst("asleep_".count).dropLast(".dat".count)
+            let scalars = middle.unicodeScalars
+            if scalars.count == 1, let scalar = scalars.first, scalar.value >= 0x61 && scalar.value <= 0x7A {
+                return true
+            }
+        }
+        return false
     }
 
     private func children(_ url: URL) throws -> [URL] {
@@ -466,6 +455,15 @@ final class SaveManager {
     @discardableResult func backup() throws -> URL? {
         let entries = try list()
         guard !entries.isEmpty else { return nil }
+        var totalSize = 0
+        for entry in entries {
+            guard entry.size >= 0,
+                  entry.size <= SaveZip.maxEntryDecompressedBytes,
+                  entry.size <= SaveZip.maxTotalDecompressedBytes - totalSize else {
+                throw SaveZip.Failure.unsupportedArchive
+            }
+            totalSize += entry.size
+        }
         try files.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
         var destination = backupDirectory.appendingPathComponent("SaveData_\(stamp()).zip")
         while files.fileExists(atPath: destination.path) {
@@ -523,7 +521,9 @@ final class SaveManager {
         if existed {
             func preserveHidden(_ source: URL, _ destination: URL) throws {
                 for child in try children(source) {
-                    if source == directory && GlobalSaveEditor.Backup.allCases.contains(where: { $0.filename == child.lastPathComponent }) {
+                    if source == directory && GlobalSaveEditor.Backup.allCases.contains(where: {
+                        $0.filename == child.lastPathComponent || $0.pendingFilename == child.lastPathComponent
+                    }) {
                         continue
                     }
                     let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
@@ -588,7 +588,10 @@ final class SaveManager {
             let entries: [SaveZip.Entry]
             if folder {
                 let direct = try children(url)
-                let hasSaves = direct.contains { ["asd", "sav", "rsm", "vsf", "msgskip", "dat"].contains($0.pathExtension.lowercased()) && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+                let hasSaves = direct.contains {
+                    Self.isLooseSaveFileName($0.lastPathComponent) &&
+                        (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                }
                 let root: URL
                 if hasSaves {
                     root = url

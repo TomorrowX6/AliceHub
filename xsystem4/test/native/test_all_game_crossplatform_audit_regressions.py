@@ -412,100 +412,147 @@ int main(void)
     assert(!mkdir("xsystem4/games", 0700));
     assert(!mkdir("xsystem4/saves", 0700));
 
-    // 1. Single-entry default game with SaveFolder = "SaveDataCN" stays at saves/<baseName>
+    // 1. Single-entry default game with SaveFolder = "SaveDataCN" preserves existing
+    //    .launch-entries/<name>/<fnv1a64> save key (never strands pre-update saves)
     assert(!mkdir("xsystem4/games/EvenicleRance", 0700));
     put_text("xsystem4/games/EvenicleRance/AliceStart.ini",
              "CodeName = \"EvenicleRance.ain\"\nSaveFolder = \"SaveDataCN\"\n");
     put_text("xsystem4/games/EvenicleRance/EvenicleRance.ain", "");
     HubGame evr;
     assert(hub_game_init(&evr, HUB_XSYSTEM4, "EvenicleRance"));
-    char save_path[HUB_PATH_SIZE], folder[HUB_NAME_SIZE], script[HUB_PATH_SIZE];
-    assert(hub_game_save_path(".", &evr, save_path));
-    assert(!strcmp(save_path, "./xsystem4/saves/EvenicleRance"));
+    char save_path[HUB_PATH_SIZE], mgr_path[HUB_PATH_SIZE], folder[HUB_NAME_SIZE], script[HUB_PATH_SIZE];
+    char evr_save_path[HUB_PATH_SIZE], evr_mgr_path[HUB_PATH_SIZE];
+    assert(hub_game_save_path(".", &evr, evr_save_path));
+    assert(strstr(evr_save_path, "./xsystem4/saves/.launch-entries/EvenicleRance/") == evr_save_path);
+    assert(hub_game_save_manager_path(".", &evr, evr_mgr_path));
+    assert(strstr(evr_mgr_path, "./save-manager/xsystem4/.launch-entries/EvenicleRance/") == evr_mgr_path);
     assert(hub_system4_save_folder("xsystem4/games/EvenicleRance", folder));
     assert(!strcmp(folder, "SaveDataCN"));
     assert(hub_system4_active_script("xsystem4/games/EvenicleRance", script));
     assert(!strcmp(script, "xsystem4/games/EvenicleRance/EvenicleRance.ain"));
 
     // 2. Haruurare with haru_c.ain + AliceStart2.ini (SaveFolder = "SaveData_C")
+    //    vs System40.ini (SaveFolder = "SaveData") vs CustomMod.ini (SaveFolder = "SaveDataMod"):
+    //    all three MUST have distinct save keys and NEVER collide!
     assert(!mkdir("xsystem4/games/Haruurare", 0700));
     put_text("xsystem4/games/Haruurare/System40.ini",
              "CodeName = \"haru.ain\"\nSaveFolder = \"SaveData\"\n");
     put_text("xsystem4/games/Haruurare/AliceStart2.ini",
              "CodeName = \"haru_c.ain\"\nSaveFolder = \"SaveData_C\"\n");
+    put_text("xsystem4/games/Haruurare/CustomMod.ini",
+             "CodeName = \"haru_c.ain\"\nSaveFolder = \"SaveDataMod\"\n");
     put_text("xsystem4/games/Haruurare/haru.ain", "");
     put_text("xsystem4/games/Haruurare/haru_c.ain", "");
     HubGame haru;
     assert(hub_game_init(&haru, HUB_XSYSTEM4, "Haruurare"));
-    assert(hub_game_save_path(".", &haru, save_path));
-    assert(!strcmp(save_path, "./xsystem4/saves/Haruurare"));
+    char haru_c_save[HUB_PATH_SIZE], haru_c_mgr[HUB_PATH_SIZE], haru_jp_save[HUB_PATH_SIZE], haru_mod_save[HUB_PATH_SIZE];
+    assert(hub_game_save_path(".", &haru, haru_c_save));
+    assert(strstr(haru_c_save, "./xsystem4/saves/.launch-entries/Haruurare/") == haru_c_save);
+    assert(hub_game_save_manager_path(".", &haru, haru_c_mgr));
     assert(hub_system4_save_folder("xsystem4/games/Haruurare", folder));
     assert(!strcmp(folder, "SaveData_C"));
     assert(hub_system4_active_script("xsystem4/games/Haruurare", script));
     assert(!strcmp(script, "xsystem4/games/Haruurare/haru_c.ain"));
 
-    // Non-default boot entry with a DIFFERENT SaveFolder STILL isolates into .launch-entries
-    put_text("xsystem4/games/Haruurare/CustomMod.ini",
-             "CodeName = \"haru_c.ain\"\nSaveFolder = \"SaveDataMod\"\n");
+    // Selecting System40.ini (SaveData) gets base key ./xsystem4/saves/Haruurare, distinct from SaveData_C!
+    assert(hub_game_boot_set("xsystem4/games/Haruurare", "System40.ini"));
+    assert(hub_game_save_path(".", &haru, haru_jp_save));
+    assert(!strcmp(haru_jp_save, "./xsystem4/saves/Haruurare"));
+    assert(strcmp(haru_jp_save, haru_c_save) != 0);
+    assert(hub_system4_save_folder("xsystem4/games/Haruurare", folder));
+    assert(!strcmp(folder, "SaveData"));
+    assert(hub_system4_active_script("xsystem4/games/Haruurare", script));
+    assert(!strcmp(script, "xsystem4/games/Haruurare/haru.ain"));
+
+    // Selecting CustomMod.ini (SaveDataMod) gets a distinct .launch-entries hash key!
     assert(hub_game_boot_set("xsystem4/games/Haruurare", "CustomMod.ini"));
-    assert(hub_game_save_path(".", &haru, save_path));
-    assert(strstr(save_path, "/saves/.launch-entries/Haruurare/") != NULL);
+    assert(hub_game_save_path(".", &haru, haru_mod_save));
+    assert(strstr(haru_mod_save, "./xsystem4/saves/.launch-entries/Haruurare/") == haru_mod_save);
+    assert(strcmp(haru_mod_save, haru_c_save) != 0);
+    assert(strcmp(haru_mod_save, haru_jp_save) != 0);
     assert(hub_game_boot_set("xsystem4/games/Haruurare", ""));
     assert(hub_game_save_path(".", &haru, save_path));
-    assert(!strcmp(save_path, "./xsystem4/saves/Haruurare"));
+    assert(!strcmp(save_path, haru_c_save));
 
-    // 3. HUB_SAVE_IMPORT unwraps Import/SaveDataCN & Import/SaveData_C (and SaveDataDSR)
+    // 3. HUB_SAVE_IMPORT unwraps Import/SaveDataCN & Import/SaveData_C into exact save_path
     atomic_bool cancelled = false;
     HubSaveResult res;
+    char p[HUB_PATH_SIZE];
     assert(hub_save_run(".", &evr, HUB_SAVE_PREPARE, &cancelled, &res));
-    assert(!mkdir("save-manager/xsystem4/EvenicleRance/Import/SaveDataCN", 0700));
-    put_text("save-manager/xsystem4/EvenicleRance/Import/SaveDataCN/slot01.asd", "cn-save");
+    snprintf(p, sizeof(p), "%s/Import/SaveDataCN", evr_mgr_path);
+    assert(!mkdir(p, 0700));
+    snprintf(p, sizeof(p), "%s/Import/SaveDataCN/slot01.asd", evr_mgr_path);
+    put_text(p, "cn-save");
     assert(hub_save_run(".", &evr, HUB_SAVE_IMPORT, &cancelled, &res) && res.copied == 1);
-    expect_text("xsystem4/saves/EvenicleRance/slot01.asd", "cn-save");
+    snprintf(p, sizeof(p), "%s/slot01.asd", evr_save_path);
+    expect_text(p, "cn-save");
 
     assert(hub_save_run(".", &haru, HUB_SAVE_PREPARE, &cancelled, &res));
-    assert(!mkdir("save-manager/xsystem4/Haruurare/Import/SaveData_C", 0700));
-    put_text("save-manager/xsystem4/Haruurare/Import/SaveData_C/slot02.asd", "c-save");
+    snprintf(p, sizeof(p), "%s/Import/SaveData_C", haru_c_mgr);
+    assert(!mkdir(p, 0700));
+    snprintf(p, sizeof(p), "%s/Import/SaveData_C/slot02.asd", haru_c_mgr);
+    put_text(p, "c-save");
     assert(hub_save_run(".", &haru, HUB_SAVE_IMPORT, &cancelled, &res) && res.copied == 1);
-    expect_text("xsystem4/saves/Haruurare/slot02.asd", "c-save");
+    snprintf(p, sizeof(p), "%s/slot02.asd", haru_c_save);
+    expect_text(p, "c-save");
+
+    // Verify HUB_SAVE_EXPORT_PC writes PC_SaveData_C for Haruurare too
+    assert(hub_save_run(".", &haru, HUB_SAVE_EXPORT_PC, &cancelled, &res) && res.copied == 1);
+    snprintf(p, sizeof(p), "%s/PC_SaveData_C/slot02.asd", haru_c_mgr);
+    expect_text(p, "c-save");
 
     // 4. HUB_SAVE_EXPORT_PC uses savedata_export_pc_file_with_ain, folds .comment into gsave,
     //    decrypts encrypted RSM v7+, excludes .bak/.log/.comment/.mod.absent, and writes PC_<SaveFolder>!
     struct gsave *gs = gsave_create(7, "test", 1, "slot");
-    FILE *gfp = fopen("xsystem4/saves/EvenicleRance/gsave01.asd", "wb");
+    snprintf(p, sizeof(p), "%s/gsave01.asd", evr_save_path);
+    FILE *gfp = fopen(p, "wb");
     assert(gfp && gsave_write(gs, gfp, false, 1) == SAVEFILE_SUCCESS && !fclose(gfp));
     gsave_free(gs);
-    put_text("xsystem4/saves/EvenicleRance/gsave01.asd.comment", "Folded Comment");
-    put_text("xsystem4/saves/EvenicleRance/GlobalSave.asd.mod.absent", "");
-    put_text("xsystem4/saves/EvenicleRance/old.bak", "bak");
-    put_text("xsystem4/saves/EvenicleRance/debug.log", "log");
+    snprintf(p, sizeof(p), "%s/gsave01.asd.comment", evr_save_path);
+    put_text(p, "Folded Comment");
+    snprintf(p, sizeof(p), "%s/GlobalSave.asd.mod.absent", evr_save_path);
+    put_text(p, "");
+    snprintf(p, sizeof(p), "%s/old.bak", evr_save_path);
+    put_text(p, "bak");
+    snprintf(p, sizeof(p), "%s/debug.log", evr_save_path);
+    put_text(p, "log");
 
     // Encrypted RSM v7 resume save -> must be decrypted on PC export
     uint8_t rsm_payload[16] = {'R','S','M',0, 7,0,0,0, 1,2,3,4,5,6,7,8};
     struct savefile rsm_sf = { .buf = rsm_payload, .len = sizeof(rsm_payload), .encrypted = true, .compression_level = 1 };
-    FILE *rfp = fopen("xsystem4/saves/EvenicleRance/resume.rsm", "wb");
+    snprintf(p, sizeof(p), "%s/resume.rsm", evr_save_path);
+    FILE *rfp = fopen(p, "wb");
     assert(rfp && savefile_write(&rsm_sf, rfp) == SAVEFILE_SUCCESS && !fclose(rfp));
 
     assert(hub_save_run(".", &evr, HUB_SAVE_EXPORT_PC, &cancelled, &res));
     // slot01.asd (plain copy), gsave01.asd (comment folded -> converted), resume.rsm (decrypted -> converted)
     assert(res.copied == 3);
     assert(res.converted == 2);
-    expect_text("save-manager/xsystem4/EvenicleRance/PC_SaveDataCN/slot01.asd", "cn-save");
-    assert(access("save-manager/xsystem4/EvenicleRance/PC_SaveDataCN/gsave01.asd.comment", F_OK) != 0);
-    assert(access("save-manager/xsystem4/EvenicleRance/PC_SaveDataCN/GlobalSave.asd.mod.absent", F_OK) != 0);
-    assert(access("save-manager/xsystem4/EvenicleRance/PC_SaveDataCN/old.bak", F_OK) != 0);
-    assert(access("save-manager/xsystem4/EvenicleRance/PC_SaveDataCN/debug.log", F_OK) != 0);
+    snprintf(p, sizeof(p), "%s/PC_SaveDataCN/slot01.asd", evr_mgr_path);
+    expect_text(p, "cn-save");
+    snprintf(p, sizeof(p), "%s/PC_SaveDataCN/gsave01.asd.comment", evr_mgr_path);
+    assert(access(p, F_OK) != 0);
+    snprintf(p, sizeof(p), "%s/PC_SaveDataCN/GlobalSave.asd.mod.absent", evr_mgr_path);
+    assert(access(p, F_OK) != 0);
+    snprintf(p, sizeof(p), "%s/PC_SaveDataCN/old.bak", evr_mgr_path);
+    assert(access(p, F_OK) != 0);
+    snprintf(p, sizeof(p), "%s/PC_SaveDataCN/debug.log", evr_mgr_path);
+    assert(access(p, F_OK) != 0);
 
     // Verify exported gsave01.asd now embeds the folded comment and resume.rsm is unencrypted!
     enum savefile_error err = SAVEFILE_SUCCESS;
-    struct savefile *out_rsm = savefile_read("save-manager/xsystem4/EvenicleRance/PC_SaveDataCN/resume.rsm", &err);
+    snprintf(p, sizeof(p), "%s/PC_SaveDataCN/resume.rsm", evr_mgr_path);
+    struct savefile *out_rsm = savefile_read(p, &err);
     assert(out_rsm && !out_rsm->encrypted);
     savefile_free(out_rsm);
 
-    struct gsave *out_gs = gsave_read("save-manager/xsystem4/EvenicleRance/PC_SaveDataCN/gsave01.asd", &err);
+    snprintf(p, sizeof(p), "%s/PC_SaveDataCN/gsave01.asd", evr_mgr_path);
+    struct gsave *out_gs = gsave_read(p, &err);
     assert(out_gs && out_gs->nr_comments > 0 && out_gs->comments[0] &&
            strstr(out_gs->comments[0]->text, "Folded Comment") != NULL);
     gsave_free(out_gs);
+
+    (void)mgr_path;
 
     return 0;
 }
@@ -522,9 +569,18 @@ int main(void)
         self.assertIn("static func resolveSaveFolder(", sm)
         for name in ("SaveData", "SaveDataDSR", "SaveDataCN", "SaveData_C"):
             self.assertIn(f'"{name}"', sm)
-        for ext in ('"asd"', '"sav"', '"rsm"', '"vsf"', '"msgskip"', '"dat"'):
+        for ext in ('"asd"', '"sav"', '"rsm"', '"vsf"', '"msgskip"'):
             self.assertIn(ext, sm)
+        # Only known save .dat filenames (never arbitrary ADISK.DAT) are treated as loose saves
+        self.assertIn("static func isLooseSaveFileName(", sm)
+        self.assertNotIn('["asd", "sav", "rsm", "vsf", "msgskip", "dat"]', sm)
+        for known_dat in ('"asleep.dat"', '"msgskip.dat"', '"keyfile.dat"', '"key0104.dat"', '"asleep_"'):
+            self.assertIn(known_dat, sm)
+        # resolveSaveFolder must NOT suppress SaveDataDSR when the launched INI specifies it
+        resolve_fn = sm.split("static func resolveSaveFolder(", 1)[1].split("static func isLooseSaveFileName(", 1)[0]
+        self.assertNotIn('if folder?.caseInsensitiveCompare("SaveDataDSR") == .orderedSame { continue }', resolve_fn)
         self.assertIn('let wrapper = pc ? saveFolder : "SaveData"', sm)
+        self.assertIn("GameLibrary.launchInfo(game.url, bootEntry: configured)", smv)
         self.assertIn("SaveManager.resolveSaveFolder(", smv)
         self.assertIn("saveFolder: saveFolderName", smv)
 

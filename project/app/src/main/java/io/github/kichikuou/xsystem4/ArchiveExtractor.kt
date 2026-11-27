@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.os.StatFs
 import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import java.io.File
 import java.io.FileInputStream
@@ -353,14 +355,19 @@ object ArchiveExtractor {
 
             if (directPfd != null) {
                 val isIso = try {
-                    val ch = FileInputStream(directPfd.fileDescriptor).channel
-                    val detected = Iso9660Extractor.isIsoOrMdfChannel(ch)
-                    if (!detected) {
-                        try { ch.position(0L) } catch (_: Throwable) {}
+                    ParcelFileDescriptor.dup(directPfd.fileDescriptor).use { dup ->
+                        FileInputStream(dup.fileDescriptor).use { fis ->
+                            Iso9660Extractor.isIsoOrMdfChannel(fis.channel)
+                        }
                     }
-                    detected
                 } catch (_: Throwable) {
                     false
+                }
+                if (!isIso) {
+                    try {
+                        Os.lseek(directPfd.fileDescriptor, 0L, OsConstants.SEEK_SET)
+                    } catch (_: Throwable) {
+                    }
                 }
                 if (isIso) {
                     directPfd.close()

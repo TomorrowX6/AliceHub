@@ -382,26 +382,27 @@ object Iso9660Extractor {
         }
         if (pfd != null) {
             pfd.use {
-                val fis = FileInputStream(it.fileDescriptor)
-                val ch = fis.channel
-                val seekable = try {
-                    ch.size() >= 18L * SECTOR_DATA_SIZE && run {
-                        ch.position(16L * SECTOR_DATA_SIZE)
-                        true
+                FileInputStream(it.fileDescriptor).use { fis ->
+                    val ch = fis.channel
+                    val seekable = try {
+                        ch.size() >= 18L * SECTOR_DATA_SIZE && run {
+                            ch.position(16L * SECTOR_DATA_SIZE)
+                            true
+                        }
+                    } catch (_: Throwable) {
+                        false
                     }
-                } catch (_: Throwable) {
-                    false
-                }
-                if (seekable) {
-                    return extractChannelToDirectory(
-                        ch = ch,
-                        outDir = outDir,
-                        shouldSkip = shouldSkip,
-                        throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
-                        checkCancelled = checkCancelled,
-                        onEntryAccepted = onEntryAccepted,
-                        onProgress = onProgress
-                    )
+                    if (seekable) {
+                        return extractChannelToDirectory(
+                            ch = ch,
+                            outDir = outDir,
+                            shouldSkip = shouldSkip,
+                            throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                            checkCancelled = checkCancelled,
+                            onEntryAccepted = onEntryAccepted,
+                            onProgress = onProgress
+                        )
+                    }
                 }
             }
         }

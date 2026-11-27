@@ -14,18 +14,24 @@ struct SaveManagerView: View {
     @State private var confirmation: SaveConfirmation?
     @State private var naming: SaveNaming?
 
-    private var ainPath: String? {
-        guard game.engine == .system4 else { return nil }
-        let bootEntry = UserDefaults.standard.string(forKey: "hub.system4BootEntry." + game.id) ?? ""
-        let isDsr = saveDirectoryName.hasSuffix(GameLibrary.daiSengokuSaveDirSuffix)
-        return SaveManager.resolveAinPath(in: game.url, bootEntry: bootEntry, isDaiSengokuSave: isDsr)
+    private var resolvedBootEntry: String {
+        guard game.engine == .system4 else { return "" }
+        let configured = UserDefaults.standard.string(forKey: "hub.system4BootEntry." + game.id) ?? ""
+        guard let info = try? GameLibrary.launchInfo(game.url, bootEntry: configured) else { return configured }
+        return info.target.standardizedFileURL.path == game.url.standardizedFileURL.path ? "" : info.target.lastPathComponent
     }
 
     private var saveFolderName: String {
         guard game.engine == .system4 else { return "SaveData" }
-        let bootEntry = UserDefaults.standard.string(forKey: "hub.system4BootEntry." + game.id) ?? ""
         let isDsr = saveDirectoryName.hasSuffix(GameLibrary.daiSengokuSaveDirSuffix)
-        return SaveManager.resolveSaveFolder(in: game.url, bootEntry: bootEntry, isDaiSengokuSave: isDsr)
+        return SaveManager.resolveSaveFolder(in: game.url, bootEntry: resolvedBootEntry, isDaiSengokuSave: isDsr)
+    }
+
+    private var ainPath: String? {
+        guard game.engine == .system4 else { return nil }
+        let isDsr = saveDirectoryName.hasSuffix(GameLibrary.daiSengokuSaveDirSuffix) ||
+            saveFolderName.caseInsensitiveCompare("SaveDataDSR") == .orderedSame
+        return SaveManager.resolveAinPath(in: game.url, bootEntry: resolvedBootEntry, isDaiSengokuSave: isDsr)
     }
 
     private var manager: SaveManager {

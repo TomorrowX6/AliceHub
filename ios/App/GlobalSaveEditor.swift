@@ -8,6 +8,7 @@ struct GlobalSaveEditor {
         case edit, unlock
 
         var filename: String { ".global-\(rawValue).plist" }
+        var pendingFilename: String { "\(filename).pending" }
     }
 
     enum Failure: LocalizedError {
@@ -45,6 +46,19 @@ struct GlobalSaveEditor {
 
     private func backupURL(_ kind: Backup) -> URL {
         directory.appendingPathComponent(kind.filename)
+    }
+
+    private func pendingBackupURL(_ kind: Backup) -> URL {
+        directory.appendingPathComponent(kind.pendingFilename)
+    }
+
+    private func activeBackupURL(_ kind: Backup) throws -> URL? {
+        guard try exists(directory, directory: true) else { return nil }
+        let pending = pendingBackupURL(kind)
+        if try exists(pending) { return pending }
+        let committed = backupURL(kind)
+        if try exists(committed) { return committed }
+        return nil
     }
 
     private func exists(_ url: URL, directory expectedDirectory: Bool = false) throws -> Bool {
@@ -103,17 +117,21 @@ struct GlobalSaveEditor {
     }
 
     func hasBackup(_ kind: Backup) throws -> Bool {
-        try exists(directory, directory: true) && exists(backupURL(kind))
+        try activeBackupURL(kind) != nil
     }
 
     func discardBackups() throws {
-        for kind in Backup.allCases where try hasBackup(kind) {
-            try files.removeItem(at: backupURL(kind))
+        guard try exists(directory, directory: true) else { return }
+        for kind in Backup.allCases {
+            for url in [pendingBackupURL(kind), backupURL(kind)] where try exists(url) {
+                try files.removeItem(at: url)
+            }
         }
     }
 
     private func backupEntries(_ kind: Backup) throws -> [Entry] {
-        let entries = try PropertyListDecoder().decode([Entry].self, from: Data(contentsOf: backupURL(kind)))
+        guard let url = try activeBackupURL(kind) else { throw Failure.invalidBackup }
+        let entries = try PropertyListDecoder().decode([Entry].self, from: Data(contentsOf: url))
         let names = kind == .edit ? Self.editable : Self.unlockable
         let validPaths = Set(names + names.map { Self.nested + $0 })
         let paths = Set(entries.map(\.path))
@@ -133,8 +151,10 @@ struct GlobalSaveEditor {
             if added.isEmpty { return nil }
             backup = previous + added
         }
+        let staged = pendingBackupURL(kind)
+        _ = try exists(staged)
+        _ = try exists(backupURL(kind))
         let data = try PropertyListEncoder().encode(backup)
-        let staged = directory.appendingPathComponent(".\(kind.rawValue)-\(UUID().uuidString).plist.tmp")
         try data.write(to: staged, options: .atomic)
         return staged
     }
@@ -143,7 +163,6 @@ struct GlobalSaveEditor {
         guard let staged else { return }
         let dest = backupURL(kind)
         if rename(staged.path, dest.path) != 0 {
-            try? files.removeItem(at: staged)
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
     }
@@ -162,6 +181,18 @@ struct GlobalSaveEditor {
         }
     }
 
+    private func rollback(_ entries: [Entry]) -> Bool {
+        var succeeded = true
+        for rollbackEntry in entries.reversed() {
+            do {
+                try apply([rollbackEntry], to: directory)
+            } catch {
+                succeeded = false
+            }
+        }
+        return succeeded
+    }
+
     private func replace(_ before: [Entry], with after: [Entry]) throws {
         let oldValues = Dictionary(uniqueKeysWithValues: before.map { ($0.path, $0) })
         var applied: [Entry] = []
@@ -172,8 +203,31 @@ struct GlobalSaveEditor {
                 applied.append(old)
             }
         } catch {
-            for rollbackEntry in applied.reversed() {
-                try? apply([rollbackEntry], to: directory)
+            _ = rollback(applied)
+            throw error
+        }
+    }
+
+    private func replaceAndCommit(_ before: [Entry], with after: [Entry], stagedBackup: URL?, for kind: Backup) throws {
+        let oldValues = Dictionary(uniqueKeysWithValues: before.map { ($0.path, $0) })
+        var applied: [Entry] = []
+        do {
+            for entry in after {
+                guard let old = oldValues[entry.path], entry != old else { continue }
+                try apply([entry], to: directory)
+                applied.append(old)
+            }
+        } catch {
+            if rollback(applied), let stagedBackup {
+                try? files.removeItem(at: stagedBackup)
+            }
+            throw error
+        }
+        do {
+            try commitStagedBackup(stagedBackup, for: kind)
+        } catch {
+            if rollback(applied), let stagedBackup {
+                try? files.removeItem(at: stagedBackup)
             }
             throw error
         }
@@ -197,9 +251,7 @@ struct GlobalSaveEditor {
         let changed = before.filter { staged[$0.path] != $0 }
         guard !changed.isEmpty else { return }
         let stagedBackup = try stageBackup(.edit, entries: changed)
-        defer { if let stagedBackup { try? files.removeItem(at: stagedBackup) } }
-        try replace(before, with: after)
-        try commitStagedBackup(stagedBackup, for: .edit)
+        try replaceAndCommit(before, with: after, stagedBackup: stagedBackup, for: .edit)
     }
 
     func unlock(using archive: URL?) throws {
@@ -213,9 +265,7 @@ struct GlobalSaveEditor {
         let after = before.map { Entry(path: $0.path, data: data[URL(fileURLWithPath: $0.path).lastPathComponent]) }
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
         let stagedBackup = try stageBackup(.unlock, entries: before)
-        defer { if let stagedBackup { try? files.removeItem(at: stagedBackup) } }
-        try replace(before, with: after)
-        try commitStagedBackup(stagedBackup, for: .unlock)
+        try replaceAndCommit(before, with: after, stagedBackup: stagedBackup, for: .unlock)
     }
 
     func restore(_ kind: Backup) throws {
@@ -223,6 +273,8 @@ struct GlobalSaveEditor {
         let entries = try backupEntries(kind)
         let before = try read(entries.map(\.path), in: directory)
         try replace(before, with: entries)
-        try files.removeItem(at: backupURL(kind))
+        for url in [pendingBackupURL(kind), backupURL(kind)] where try exists(url) {
+            try files.removeItem(at: url)
+        }
     }
 }

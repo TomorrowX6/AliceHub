@@ -445,31 +445,6 @@ static const char *path_leaf(const char *path)
     return slash ? slash + 1 : path;
 }
 
-static char *default_save_folder(const char *dir)
-{
-    char ini[HUB_PATH_SIZE];
-    if (default_ini(dir, ini))
-        return ini_value(ini, "SaveFolder", false);
-    DIR *d = opendir(dir);
-    if (!d)
-        return NULL;
-    char best[HUB_NAME_SIZE] = "";
-    char path[HUB_PATH_SIZE], script[HUB_PATH_SIZE];
-    for (struct dirent *e; (e = readdir(d)); ) {
-        const char *name = e->d_name;
-        if (!boot_leaf(name) || !config_name(name) ||
-            !boot_path(path, dir, name) || !boot_regular(path) ||
-            !hub_system4_configured_script(dir, name, script))
-            continue;
-        if (!*best || strcmp(name, best) < 0)
-            strcpy(best, name);
-    }
-    closedir(d);
-    if (!*best || !boot_path(ini, dir, best))
-        return NULL;
-    return ini_value(ini, "SaveFolder", false);
-}
-
 bool hub_system4_save_key(const char *name, const char *dir, const char *target,
                           char key[HUB_PATH_SIZE])
 {
@@ -484,16 +459,10 @@ bool hub_system4_save_key(const char *name, const char *dir, const char *target,
     } else if (!folder || !strcasecmp(folder, "SaveData")) {
         length = snprintf(key, HUB_PATH_SIZE, "%s", name);
     } else {
-        char *def_folder = default_save_folder(dir);
-        if (def_folder && !strcasecmp(folder, def_folder)) {
-            length = snprintf(key, HUB_PATH_SIZE, "%s", name);
-        } else {
-            uint64_t hash = UINT64_C(14695981039346656037);
-            for (const unsigned char *p = (const unsigned char *)folder; *p; ++p)
-                hash = (hash ^ *p) * UINT64_C(1099511628211);
-            length = snprintf(key, HUB_PATH_SIZE, HUB_ENTRY_SAVES "/%s/%016" PRIx64, name, hash);
-        }
-        free(def_folder);
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (const unsigned char *p = (const unsigned char *)folder; *p; ++p)
+            hash = (hash ^ *p) * UINT64_C(1099511628211);
+        length = snprintf(key, HUB_PATH_SIZE, HUB_ENTRY_SAVES "/%s/%016" PRIx64, name, hash);
     }
     free(folder);
     return (size_t)length < HUB_PATH_SIZE;

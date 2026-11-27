@@ -46,7 +46,8 @@ enum SaveZip {
     }
 
     private static let gregorian = Calendar(identifier: .gregorian)
-    private static let maxTotalDecompressedBytes = 512 * 1024 * 1024
+    static let maxEntryDecompressedBytes = 256 * 1024 * 1024
+    static let maxTotalDecompressedBytes = 512 * 1024 * 1024
 
     private static func dos(_ date: Date) -> (UInt16, UInt16) {
         let c = gregorian.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
@@ -57,6 +58,14 @@ enum SaveZip {
     static func write(_ entries: [Entry], to url: URL) throws {
         var out = Data(), central = Data()
         guard entries.count < 65535 else { throw Failure.unsupportedArchive }
+        var totalUncompressed = 0
+        for entry in entries {
+            guard entry.data.count <= Self.maxEntryDecompressedBytes,
+                  entry.data.count <= Self.maxTotalDecompressedBytes - totalUncompressed else {
+                throw Failure.unsupportedArchive
+            }
+            totalUncompressed += entry.data.count
+        }
         for entry in entries {
             let name = Data(entry.name.utf8), packed = try transform(entry.data)
             guard name.count <= 65535, entry.data.count < Int(UInt32.max), packed.count < Int(UInt32.max), out.count < Int(UInt32.max) else { throw Failure.unsupportedArchive }
@@ -101,7 +110,7 @@ enum SaveZip {
             guard flags & 1 == 0, method == 0 || method == 8, try n(p + 34, 2) == 0 else { throw Failure.unsupportedArchive }
             let checksum = try n(p + 16, 4), packed = try n(p + 20, 4), size = try n(p + 24, 4)
             let nameSize = try n(p + 28, 2), extra = try n(p + 30, 2), comment = try n(p + 32, 2)
-            guard size <= 256 * 1024 * 1024,
+            guard size <= Self.maxEntryDecompressedBytes,
                   size <= Self.maxTotalDecompressedBytes - totalDecompressed,
                   p + 46 + nameSize + extra + comment <= end,
                   let name = String(data: bytes.subdata(in: p + 46..<p + 46 + nameSize), encoding: .utf8) else { throw Failure.invalidArchive }

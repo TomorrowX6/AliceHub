@@ -522,6 +522,34 @@ public class Wave2StabilitySecurityTest {
     }
 
     @Test
+    public void segmentCompletionRequiresDurableSyncedDoneAndStagingIdentityIsV2() throws Exception {
+        // SegmentProgress.isComplete must check durable syncedDone, never unsynced done
+        OnlineInstaller.SegmentProgress unsynced = new OnlineInstaller.SegmentProgress(0L, 1023L, 1024L, 0L);
+        assertEquals(1024L, unsynced.getLength());
+        assertFalse("Unsynced segment must NOT report isComplete even when done == length", unsynced.isComplete());
+
+        unsynced.setSyncedDone(1023L);
+        assertFalse("Partially synced segment must NOT report isComplete", unsynced.isComplete());
+
+        unsynced.setSyncedDone(1024L);
+        assertTrue("Fully synced segment must report isComplete", unsynced.isComplete());
+
+        // Default constructor syncs syncedDone = done for resumed/already-durable segments
+        OnlineInstaller.SegmentProgress resumed = new OnlineInstaller.SegmentProgress(0L, 511L, 512L, 512L);
+        assertTrue(resumed.isComplete());
+
+        // Staging identity must be bumped to v2 so pre-update v1 staging dirs with legacy <name>.part files reset cleanly
+        String sha = sha256(new byte[]{1, 2, 3});
+        OnlineInstaller.ManifestEntry entry = new OnlineInstaller.ManifestEntry("game.bin", "game.bin", 3L, sha, false);
+        OnlineInstaller.OnlineManifest manifest = new OnlineInstaller.OnlineManifest(
+                "Game", "Game", 3L, Collections.singletonList(entry));
+        String legacyV1Payload = "v1\nhttps://cdn/g\nGame\ngame.bin\tgame.bin\t3\t" + sha + "\tfalse\n";
+        String legacyV1Identity = sha256(legacyV1Payload.getBytes(StandardCharsets.UTF_8));
+        String currentIdentity = OnlineInstaller.INSTANCE.computeBaseStagingIdentity("https://cdn/g", manifest);
+        assertNotEquals("Staging identity must differ from legacy v1 hash", legacyV1Identity, currentIdentity);
+    }
+
+    @Test
     public void installAbortHandleClearsWorkerInterruptUnderSameLock() throws Exception {
         InstallAbortHandle handle = new InstallAbortHandle();
         CountDownLatch registered = new CountDownLatch(1);

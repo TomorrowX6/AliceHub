@@ -583,7 +583,7 @@ object OnlineInstaller {
         @Volatile var syncedDone: Long = done
     ) {
         val length: Long get() = end - start + 1L
-        val isComplete: Boolean get() = done >= length
+        val isComplete: Boolean get() = syncedDone >= length
     }
 
     private data class SavedMeta(
@@ -1853,7 +1853,7 @@ object OnlineInstaller {
     }
 
     fun computeBaseStagingIdentity(cleanBaseUrl: String, manifest: OnlineManifest): String {
-        val sb = StringBuilder("v1\n")
+        val sb = StringBuilder("v2\n")
         sb.append(cleanBaseUrl).append('\n')
         sb.append(manifest.baseName).append('\n')
         for (e in manifest.entries) {
@@ -3744,12 +3744,24 @@ object OnlineInstaller {
                                 persistMeta(true)
                             }
                         }
-                    } finally {
-                        try {
-                            raf.fd.sync()
-                            seg.syncedDone = seg.done
-                        } catch (_: Throwable) {
+                        // Normal completion/EOF path: propagate final fsync failure so unsynced bytes are never treated as durable/complete.
+                        raf.fd.sync()
+                        seg.syncedDone = seg.done
+                    } catch (t: Throwable) {
+                        // On cancellation or prior read/write/sync error: preserve the original exception and never advance syncedDone past durable bytes.
+                        if (t !is java.io.SyncFailedException) {
+                            try {
+                                raf.fd.sync()
+                                seg.syncedDone = seg.done
+                            } catch (_: Throwable) {
+                            }
                         }
+                        val unsynced = (seg.done - seg.syncedDone).coerceAtLeast(0L)
+                        if (unsynced > 0L) {
+                            seg.done = seg.syncedDone
+                            fileDoneBytes.addAndGet(-unsynced)
+                        }
+                        throw t
                     }
                 }
                 completedNormally = true
