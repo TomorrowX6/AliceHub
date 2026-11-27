@@ -1523,8 +1523,8 @@ static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *en
 		size_t plen = phrases[i].len;
 		if (plen > run_len)
 			continue;
-		for (const uint8_t *p = run; p + plen <= end; p += 2) {
-			if (!memcmp(p, phrases[i].bytes, plen))
+		for (size_t off = 0; off <= run_len - plen; off += 2) {
+			if (!memcmp(run + off, phrases[i].bytes, plen))
 				return true;
 		}
 	}
