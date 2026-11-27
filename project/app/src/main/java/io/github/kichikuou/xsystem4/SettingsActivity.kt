@@ -160,7 +160,9 @@ class SettingsActivity : ThemedActivity() {
     override fun onResume() {
         super.onResume()
         refreshSettingsUi()
-        SharedStorageMigration.attach(this, ::refreshStorageLabel)
+        if (!SharedStorageMigration.attach(this, ::refreshStorageLabel)) {
+            SharedStorageMigration.showPendingFailureNotice(this)
+        }
     }
 
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grantResults: IntArray) {

@@ -406,10 +406,13 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
         internal fun showStorageMigration(activity: Activity, retry: Boolean = false, onComplete: () -> Unit): Boolean {
             if (SharedStorageMigration.attach(activity, onComplete)) return true
-            if (!AppStorage.needsPublicStoragePreparation(activity, retry) ||
-                savedGameList?.canRelocateStorage() == false || SaveManagerActivity.hasActiveSaveOperation() ||
+            if (savedGameList?.canRelocateStorage() == false || SaveManagerActivity.hasActiveSaveOperation() ||
                 GameCatalog.isGameProcessRunning(activity)
             ) return false
+            if (!AppStorage.needsPublicStoragePreparation(activity, retry)) {
+                SharedStorageMigration.showPendingFailureNotice(activity)
+                return false
+            }
 
             SharedStorageMigration.start(activity, retry, onFinished = {
                 savedGameList?.close()

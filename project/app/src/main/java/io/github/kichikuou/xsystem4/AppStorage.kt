@@ -14,6 +14,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.util.Base64
@@ -33,6 +34,7 @@ object AppStorage {
     private const val MIGRATION_NOTICE_KEY = "migration_notice_shown"
     private const val MIGRATION_STAGING_KEY = "active_staging"
     private const val MIGRATION_STAGING_PREFIX = ".alicehub-migration-"
+    private val publicDirectories = listOf(GAMES, SAVES, SAVE_BACKUPS)
 
     fun hasPermission(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager(Environment.getExternalStorageDirectory())
@@ -122,10 +124,16 @@ object AppStorage {
         return moved?.takeIf { File(it).isDirectory } ?: path
     }
 
-    fun resolveSavePath(context: Context, path: String): String {
-        val from = File(context.filesDir, SAVES).toPath()
+    @JvmOverloads
+    fun resolveSavePath(context: Context, path: String, forLaunch: Boolean = false): String {
         val candidate = File(path).toPath().normalize()
-        if (!candidate.startsWith(from) || candidate == from) return path
+        val privateSaves = File(context.filesDir, SAVES).toPath()
+        val sharedSaves = File(sharedStorageDirectory(), SAVES).toPath()
+        val from = when {
+            candidate != privateSaves && candidate.startsWith(privateSaves) -> privateSaves
+            forLaunch && candidate != sharedSaves && candidate.startsWith(sharedSaves) -> sharedSaves
+            else -> return path
+        }
         val suffix = from.relativize(candidate)
         val saveName = suffix.getName(0).toString()
         val resolved = saveDir(context, saveName).toPath()
@@ -158,14 +166,13 @@ object AppStorage {
         return false
     }
 
-    private fun publicLayout(root: File): String = listOf(GAMES, SAVES, SAVE_BACKUPS).joinToString(",") { name ->
-        val dir = File(root, name)
-        when {
-            dir.isDirectory && dir.canWrite() -> "directory"
-            dir.isDirectory -> "read-only"
-            exists(dir) -> "blocked"
-            else -> "missing"
-        }
+    private fun publicLayout(root: File): String = publicDirectories.joinToString(",") { directoryLayout(File(root, it)) }
+
+    private fun directoryLayout(dir: File): String = when {
+        dir.isDirectory && dir.canWrite() -> "directory"
+        dir.isDirectory -> "read-only"
+        exists(dir) -> "blocked"
+        else -> "missing"
     }
 
     private fun migrationEntries(root: File): List<File>? =
@@ -190,7 +197,13 @@ object AppStorage {
                     if (children == null) add("unreadable") else children.sortedBy { it.name }.forEach(::visit)
                     add("end")
                 }
-                file.isFile -> add("file:${file.length()}:${file.lastModified()}")
+                file.isFile -> {
+                    val attributes = runCatching {
+                        Files.readAttributes(file.toPath(), "unix:size,lastModifiedTime,ctime,ino", LinkOption.NOFOLLOW_LINKS)
+                    }.getOrNull()
+                    if (attributes == null) add("file:${file.length()}:${file.lastModified()}")
+                    else add("file:${attributes["size"]}:${attributes["lastModifiedTime"]}:${attributes["ctime"]}:${attributes["ino"]}")
+                }
                 else -> add(if (exists(file)) "other" else "absent")
             }
         }
@@ -209,6 +222,14 @@ object AppStorage {
         return true
     }
 
+    fun hasPendingPublicStorageFailureNotice(context: Context): Boolean {
+        val root = publicRoot(context) ?: return false
+        val paths = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
+        return paths.getString(MIGRATION_ROOT_KEY, null) == root.absolutePath &&
+            paths.getBoolean(MIGRATION_INCOMPLETE_KEY, false) &&
+            !paths.getBoolean(MIGRATION_NOTICE_KEY, false)
+    }
+
     data class MigrationProgress(val itemName: String, val percent: Int)
 
     @JvmOverloads
@@ -221,11 +242,12 @@ object AppStorage {
         val games = File(shared, GAMES)
         val backup = File(shared, SAVE_BACKUPS)
         val saves = File(shared, SAVES)
-        var complete = (games.isDirectory || games.mkdirs()) && games.canWrite()
         val paths = context.getSharedPreferences(PATH_PREFS, Context.MODE_PRIVATE)
+        val previousLayout = publicDirectories.zip(paths.getString(MIGRATION_LAYOUT_KEY, null)?.split(',').orEmpty()).toMap()
         val previousRetained = if (!retry && paths.getString(MIGRATION_ROOT_KEY, null) == shared.absolutePath &&
-            paths.getString(MIGRATION_LAYOUT_KEY, null) == publicLayout(shared)
+            paths.getString(MIGRATION_ATTEMPTED_STAGING_KEY, null) == paths.getString(MIGRATION_STAGING_KEY, null)
         ) paths.getStringSet(MIGRATION_RETAINED_KEY, emptySet()).orEmpty() else emptySet()
+        var complete = (games.isDirectory || games.mkdirs()) && games.canWrite()
         val retained = mutableSetOf<String>()
         fun recordAttempt(): Boolean {
             val saved = paths.edit().putString(MIGRATION_ROOT_KEY, shared.absolutePath)
@@ -252,6 +274,7 @@ object AppStorage {
         }
         val entriesToMove = mutableListOf<Pair<File, File>>()
         fun queueRoot(source: File, target: File) {
+            val canSkip = previousRetained.isNotEmpty() && previousLayout[target.name] == directoryLayout(target)
             val targetReady = (target.isDirectory || target.mkdirs()) && target.canWrite()
             if (!targetReady) complete = false
             val entries = migrationEntries(source)
@@ -262,8 +285,8 @@ object AppStorage {
             for (entry in entries) {
                 val destination = File(target, entry.name)
                 val blocked = !targetReady || !stagingReady
-                val key = if (blocked || previousRetained.isNotEmpty()) retainedKey(entry) else null
-                if (key != null && (blocked || key in previousRetained)) {
+                val key = if (blocked || canSkip) retainedKey(entry) else null
+                if (key != null && (blocked || (canSkip && key in previousRetained))) {
                     retained.add(key)
                     complete = false
                 } else {
@@ -324,16 +347,14 @@ object AppStorage {
                 report((processed / total * 0.99).coerceAtMost(0.99))
             }
         }
-        if (source.isDirectory && isEmptyDirectory(destination)) {
-            Files.deleteIfExists(destination.toPath())
-        }
-        val alreadyCopied = exists(destination)
+        val replaceEmptyDirectory = source.isDirectory && isEmptyDirectory(destination)
+        val alreadyCopied = !replaceEmptyDirectory && exists(destination)
         if (alreadyCopied && !sameContents(source, destination, byteProgress(1))) return false
         if (!alreadyCopied) {
             val sameFileStore = runCatching {
                 Files.getFileStore(source.toPath()) == Files.getFileStore(destination.parentFile!!.toPath())
             }.getOrDefault(false)
-            if (sameFileStore) {
+            if (!replaceEmptyDirectory && sameFileStore) {
                 try {
                     Files.move(source.toPath(), destination.toPath())
                     return true
@@ -347,7 +368,11 @@ object AppStorage {
                 val countBytes = byteProgress(2)
                 copyEntry(source, copied, countBytes)
                 if (!sameContents(source, copied, countBytes)) return false
-                Files.move(copied.toPath(), destination.toPath())
+                if (replaceEmptyDirectory) {
+                    Files.move(copied.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                } else {
+                    Files.move(copied.toPath(), destination.toPath())
+                }
             } finally {
                 deleteStaging(staging)
                 if (paths != null) forgetStaging(paths)
