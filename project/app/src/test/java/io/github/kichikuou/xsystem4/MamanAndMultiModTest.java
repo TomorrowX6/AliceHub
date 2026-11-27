@@ -527,6 +527,19 @@ public class MamanAndMultiModTest {
                 GameCatalog.ID_OKUSAMANTR,
                 GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", okusamaSave, "太太的恢复术 夺爱")
         );
+        // Neutrally named Okusama backup folders (including substrings like "ControlBackup") are
+        // ambiguous between Jun and NTR and must appear in both Okusama pickers, but never in other games.
+        assertTrue(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMAJUN, null, "WeekendBackup", okusamaSave, null));
+        assertTrue(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMANTR, null, "WeekendBackup", okusamaSave, null));
+        assertTrue(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMAJUN, null, "ControlBackup", okusamaSave, null));
+        assertTrue(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMANTR, null, "ControlBackup", okusamaSave, null));
+        assertFalse(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_DOHNA_DOHNA, null, "WeekendBackup", okusamaSave, null));
+        assertFalse(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_EVENICLE2, null, "WeekendBackup", okusamaSave, null));
+        // Edition-hinted Okusama folders remain isolated to their own edition picker.
+        assertTrue(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMAJUN, null, "OkusamaJun", okusamaSave, null));
+        assertFalse(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMANTR, null, "OkusamaJun", okusamaSave, null));
+        assertTrue(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMANTR, null, "OkusamaNtr", okusamaSave, null));
+        assertFalse(GameCatalog.INSTANCE.matchesScopedSaveDirectory(GameCatalog.ID_OKUSAMAJUN, null, "OkusamaNtr", okusamaSave, null));
 
         // GlobalSave.asd must still win as Rance 10 if present alongside other files.
         File r10Guard = makeDir("R10GuardSave", "GlobalSave.asd", "MemModeInfo.asd");

@@ -45,9 +45,9 @@ internal class SaveScreenLoader(private val scope: CoroutineScope) {
     }
 }
 
-internal data class SaveTargets(val all: List<SaveTarget>, val selected: SaveTarget)
+data class SaveTargets(val all: List<SaveTarget>, val selected: SaveTarget)
 
-internal fun discoverSaveTargets(
+fun discoverSaveTargets(
     activity: Activity,
     scopedGameId: String?,
     preferredDirName: String?,
@@ -98,13 +98,14 @@ internal fun discoverSaveTargets(
             val iter = found.entries.iterator()
             while (iter.hasNext()) {
                 val entry = iter.next().value
-                val classified = GameCatalog.classifyDirectory(
+                val matchesScope = GameCatalog.matchesScopedSaveDirectory(
+                    scopedGameId = gid,
                     gameDir = entry.externalGameDir,
                     dirName = entry.dirName,
                     saveDir = entry.saveDir,
                     displayName = entry.displayName
                 )
-                if (classified != gid && entry.dirName != resolvedPreferredDirName && entry.dirName != preferredDirName) {
+                if (!matchesScope && entry.dirName != resolvedPreferredDirName && entry.dirName != preferredDirName) {
                     iter.remove()
                 }
             }
