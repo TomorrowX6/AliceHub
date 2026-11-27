@@ -9,9 +9,11 @@ Run: python3 xsystem4/test/native/test_parts_render_regressions.py
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_vm_reign_regressions import compile_and_run
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -388,8 +390,10 @@ class PartsRenderingTests(unittest.TestCase):
         code = r'''
 #include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
 enum { GL_ONE, GL_ZERO };
 enum { PARTS_CP_DRAW_CUT_CG, PARTS_CP_ALPHA_BLEND_CUT_CG };
+typedef struct { uint8_t r, g, b, a; } SDL_Color;
 typedef struct { int handle, w, h; float alpha; } Texture;
 struct parts_construction_process { struct { Texture texture; } common; };
 struct parts_cp_cut_cg { int cg_name, dx, dy, dw, dh, sx, sy, sw, sh; };
@@ -401,8 +405,15 @@ static bool game_okusama;
 static Texture source = {1, 64, 220, 1.0f};
 static bool source_alpha_enabled;
 static float under_alpha;
+static int blank_inits, rgba_inits;
 static Texture *cproc_get_cached_texture(int name) { return name ? &source : 0; }
 static void gfx_init_texture_blank(Texture *dst, int w, int h) {
+    blank_inits++;
+    *dst = (Texture){2, w, h, 0};
+}
+static void gfx_init_texture_rgba(Texture *dst, int w, int h, SDL_Color c) {
+    assert(c.r == 0 && c.g == 0 && c.b == 0 && c.a == 0);
+    rgba_inits++;
     *dst = (Texture){2, w, h, 0};
 }
 static void gfx_copy_with_alpha_map(Texture *dst, int dx, int dy, Texture *src,
@@ -434,19 +445,22 @@ static void gfx_copy_stretch_blend_amap(Texture *dst, int dx, int dy, int dw, in
             'src/parts/construction.c', 'build_draw_cut_cg'
         ) + r'''
 int main(void) {
-    struct parts_construction_process cproc = { .common.texture.handle = 1 };
+    struct parts_construction_process cproc = { .common.texture = { .handle = 1, .w = 64, .h = 220 } };
     struct parts_cp_op cmd = { PARTS_CP_ALPHA_BLEND_CUT_CG, {1, 2, 3, 32, 110, 4, 5, 0, 0} };
     assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0);
     game_okusama = true;
     cmd.type = PARTS_CP_DRAW_CUT_CG;
     assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0);
     cmd.type = PARTS_CP_ALPHA_BLEND_CUT_CG;
-    assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 1);
+    assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 1 && blank_inits == 1 && rgba_inits == 0);
     source.alpha = 0.5f;
     cproc.common.texture.alpha = 0;
     assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0.5f);
     cproc.common.texture.alpha = 0.5f;
     assert(build_draw_cut_cg(&cproc, &cmd) && cproc.common.texture.alpha == 0.75f);
+    // Out-of-bounds target region must zero-initialize under texture via gfx_init_texture_rgba.
+    cproc.common.texture.w = 10;
+    assert(build_draw_cut_cg(&cproc, &cmd) && rgba_inits == 1);
     assert(!source_alpha_enabled);
 }
 '''
@@ -633,6 +647,7 @@ static bool mouse_focus, keyboard_focus, kbd_ctrl_down;
 static atomic_bool touch_ctrl_skip;
 static bool kbd_key_state[256], sdl_mouse_down[8], key_state[256];
 static bool multi_touch_active, two_finger_tap_candidate, two_finger_scrolled, synthetic_mouse_warped;
+static int touch_press_id = 0;
 static int cleared_touch_fingers = 0;
 static int restored, foreground, swaps, traces, recovered, backup_released;
 static bool next_recover_result = false;
@@ -653,6 +668,7 @@ static bool gfx_release_context_backup_if_ready(void) {
 static void mixer_set_app_backgrounded(bool v) { (void)v; }
 static void mixer_set_window_focus(bool v) { (void)v; }
 static void clear_active_touch_fingers(void) { cleared_touch_fingers++; }
+static void release_long_touch_ctrl(void) {}
 static void reset_gamepad_transient_state(void) {}
 static void reset_movie_hold_state(void) {}
 ''' + '\n'.join([
@@ -755,6 +771,7 @@ static Uint32 fake_ticks = 0;
 static int bg_calls = 0, fg_calls = 0, restore_calls = 0;
 static bool kbd_ctrl_down, kbd_key_state[256], sdl_mouse_down[8], key_state[256];
 static bool multi_touch_active, two_finger_tap_candidate, two_finger_scrolled, synthetic_mouse_warped;
+static int touch_press_id = 0;
 static int cleared_touch_fingers = 0;
 static atomic_bool touch_ctrl_skip = false;
 static bool s_android_in_background = false;
@@ -789,6 +806,7 @@ static void gfx_android_on_foreground(void) { s_android_in_background = false; f
 static void gfx_restore_window(void) { restore_calls++; }
 static void gfx_trace_resume(const char *p) { (void)p; }
 static void clear_active_touch_fingers(void) { cleared_touch_fingers++; }
+static void release_long_touch_ctrl(void) {}
 static void reset_gamepad_transient_state(void) {}
 static void reset_movie_hold_state(void) {}
 static void mixer_set_app_backgrounded(bool v) { (void)v; }
@@ -1063,7 +1081,7 @@ struct pol_mesh { char *name; uint32_t material; };
 struct pol { uint32_t nr_materials; struct pol_material_group *materials; uint32_t nr_meshes; struct pol_mesh **meshes; };
 struct mesh { char *name; GLuint vao, attr_buffer, index_buffer; int nr_vertices, nr_indices, material; };
 struct material { int nr_color_maps; GLuint *color_maps; GLuint specular_map, alpha_map, light_map, normal_map, blend_texture; };
-struct model { char *path; int nr_meshes; struct mesh *meshes; int nr_materials; struct material *materials; uint8_t sphere_color[4]; };
+struct model { char *path; int nr_meshes; struct mesh *meshes; int nr_materials; struct material *materials; int nr_bones; uint8_t sphere_color[4]; };
 struct billboard_texture { GLuint texture; bool has_alpha; };
 struct pae_object { struct model *model; };
 struct pae { char *path; struct hash_table *textures; int nr_objects; struct pae_object *objects; };
@@ -1073,24 +1091,29 @@ struct s3de { char *path; struct hash_table *textures; int nr_objects; struct s3
 struct s3de_tex_reset_ctx { struct s3de *s3de; struct archive *aar; };
 struct RE_back_cg { int no; struct string *name; Texture texture; };
 struct RE_renderer { int dummy; };
-struct RE_instance { struct model *model; mat3x4 *bone_transforms; GLuint bone_transforms_ubo; struct RE_instance *shadow_volume_instance; };
+struct RE_instance { struct model *model; mat3x4 *bone_transforms; GLuint bone_transforms_texture; bool bones_dirty; struct RE_instance *shadow_volume_instance; };
 struct RE_plugin {
     enum RE_plugin_version version; struct archive *aar; struct hash_table *model_cache; struct hash_table *effect_cache;
     struct RE_instance **instances; int nr_instances;
     struct RE_back_cg back_cg[RE_NR_BACK_CGS]; struct RE_renderer *renderer;
 };
-enum { GL_UNIFORM_BUFFER = 1, GL_DYNAMIC_DRAW, GL_TEXTURE_2D, GL_RGBA, GL_UNSIGNED_BYTE };
+enum {
+    GL_UNIFORM_BUFFER = 1, GL_DYNAMIC_DRAW, GL_TEXTURE_2D, GL_TEXTURE0,
+    GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T,
+    GL_TEXTURE_BASE_LEVEL, GL_TEXTURE_MAX_LEVEL, GL_NEAREST, GL_CLAMP_TO_EDGE,
+    GL_RGBA, GL_RGBA32F, GL_UNSIGNED_BYTE, GL_FLOAT
+};
 static GLuint next_id = 2000;
 static int gl_delete_calls = 0;
 static int billboard_path_reloads = 0, back_cg_no_reloads = 0, back_cg_name_reloads = 0;
 static int pol_mat_reloads = 0, pol_mesh_resets = 0;
 static void *xmalloc(size_t n) { return malloc(n ? n : 1); }
-static void glGenBuffers(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
-static void glBindBuffer(GLenum t, GLuint b) { (void)t; (void)b; }
-static void glBufferData(GLenum t, GLsizeiptr s, const void *d, GLenum u) { (void)t; (void)s; (void)d; (void)u; }
 static void glGenTextures(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
+static void glActiveTexture(GLenum t) { (void)t; }
 static void glBindTexture(GLenum t, GLuint tx) { (void)t; (void)tx; }
+static void glTexParameteri(GLenum t, GLenum p, GLint v) { (void)t; (void)p; (void)v; }
 static void glTexImage2D(GLenum t, GLint l, GLint ifmt, GLsizei w, GLsizei h, GLint b, GLenum fmt, GLenum tp, const void *px) { (void)t; (void)l; (void)ifmt; (void)w; (void)h; (void)b; (void)fmt; (void)tp; (void)px; }
+static void glTexSubImage2D(GLenum t, GLint l, GLint x, GLint y, GLsizei w, GLsizei h, GLenum fmt, GLenum tp, const void *px) { (void)t; (void)l; (void)x; (void)y; (void)w; (void)h; (void)fmt; (void)tp; (void)px; }
 static void ht_foreach(struct hash_table *ht, void(*fun)(struct ht_slot*, void*), void *data) {
     for (int i = 0; i < ht->count; i++) fun(&ht->slots[i], data);
 }
@@ -1133,7 +1156,8 @@ static void reset_pol_mesh_gl(struct model *m, struct pol_mesh *pm, uint32_t gi,
             function('src/3d/particle.c', 'void pae_reset_gl'),
             function('src/3d/s3de.c', 'static void reset_s3de_texture_cb'),
             function('src/3d/s3de.c', 'void s3de_reset_gl'),
-            function('src/3d/reign.c', 'static void init_instance_bone_ubo'),
+            function('src/3d/reign.c', 'static void init_bone_transforms_identity'),
+            function('src/3d/reign.c', 'static void init_instance_bone_texture'),
             function('src/3d/reign.c', 'static void reset_cached_model_cb'),
             function('src/3d/reign.c', 'static void reset_cached_effect_cb'),
             function('src/3d/reign.c', 'static void reset_instance_gl'),
@@ -1159,7 +1183,7 @@ int main(void) {
 
     mat3x4 bone_buf;
     struct RE_instance shvol = { .model = &sphere };
-    struct RE_instance inst = { .bone_transforms = &bone_buf, .bone_transforms_ubo = 92, .shadow_volume_instance = &shvol };
+    struct RE_instance inst = { .bone_transforms = &bone_buf, .bone_transforms_texture = 92, .shadow_volume_instance = &shvol };
     struct RE_instance *inst_arr[1] = { &inst };
     struct hash_table model_ht = { .slots = { { .key = "m0", .value = &sphere }, { .key = "m1", .value = &pol_model } }, .count = 2 };
     struct hash_table effect_ht = { .slots = { { .key = "e", .value = &pae } }, .count = 1 };
@@ -1177,7 +1201,7 @@ int main(void) {
     assert(sphere_mat.color_maps && sphere_mat.color_maps[0] >= 2000);
     assert(pol_mat_reloads == 1 && pol_mesh_resets == 1);
     assert(pol_mesh.vao >= 2000 && pol_mesh.attr_buffer >= 2000 && pol_mat.color_maps && pol_mat.color_maps[0] >= 2000);
-    assert(inst.bone_transforms_ubo >= 2000);
+    assert(inst.bone_transforms_texture >= 2000);
     assert(pae_bt.texture >= 2000);
     assert(billboard_path_reloads == 1 && back_cg_no_reloads == 1 && back_cg_name_reloads == 1);
 
@@ -1329,7 +1353,7 @@ int main(void) {
 
     def test_save_flags_have_version_gate(self):
         save = (ROOT / 'src/parts/save.c').read_text()
-        self.assertIn('#define CURRENT_SAVE_VERSION 33', save)
+        self.assertIn('#define CURRENT_SAVE_VERSION 35', save)
         for axis in ('lr', 'tb'):
             self.assertIn(f'iarray_write(w, parts->reverse_{axis});', save)
             self.assertIn(f'parts->reverse_{axis} = version >= 32 ? !!iarray_read(r) : false;', save)

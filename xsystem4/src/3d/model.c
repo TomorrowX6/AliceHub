@@ -608,7 +608,7 @@ static struct pol *load_pol_with_opr(struct archive *aar, const char *path)
 		opr_load(opr_file->data, opr_file->size, pol);
 		archive_free_data(opr_file);
 	}
-	struct archive_data *txtex_file = RE_get_aar_entry(aar, path, basename, ".txtex.ex");
+	struct archive_data *txtex_file = RE_archive_find_txtex(aar, path);
 	if (txtex_file) {
 		txtex_opr_load(txtex_file->data, txtex_file->size, pol);
 		archive_free_data(txtex_file);
@@ -621,8 +621,15 @@ static void init_sphere_material_gl(struct material *material, const uint8_t col
 	material->color_maps = xmalloc(sizeof(GLuint));
 	material->nr_color_maps = 1;
 	glGenTextures(1, material->color_maps);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, material->color_maps[0]);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, color);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
@@ -672,8 +679,7 @@ struct model *model_load(struct archive *aar, const char *path, enum RE_plugin_v
 	if (!pol)
 		return NULL;
 
-	const char *basename = strrchr(path, '\\');
-	basename = basename ? basename + 1 : path;
+	const char *basename = RE_path_basename(path);
 
 	// Load .amt file, if any
 	struct amt *amt = NULL;
@@ -992,8 +998,7 @@ static struct mot *mot_load(const char *name, struct model *model, struct archiv
 			mot->mpr = mpr_load(mpr_file->data, mpr_file->size, model);
 			archive_free_data(mpr_file);
 		} else {
-			const char *mb = RE_path_basename(model->path);
-			struct archive_data *txtex_file = RE_get_aar_entry(aar, model->path, mb, ".txtex.ex");
+			struct archive_data *txtex_file = RE_archive_find_txtex(aar, model->path);
 			if (txtex_file) {
 				mot->mpr = mpr_load_txtex(txtex_file->data, txtex_file->size, model, name);
 				archive_free_data(txtex_file);

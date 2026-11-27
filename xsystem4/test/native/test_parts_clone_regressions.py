@@ -41,7 +41,7 @@ FIXTURE = r'''
 #include "parts.h"
 #include "parts/parts_internal.h"
 #include "hll/iarray.h"
-#define CURRENT_SAVE_VERSION 33
+#define CURRENT_SAVE_VERSION 35
 #define MIN_SINGLE_PART_SAVE_VERSION 32
 #define PARTS_SAVED_FONTS (PARTS_NR_STATES + 1)
 struct numeral_font_map { int source, target; };
@@ -119,7 +119,11 @@ struct string *iarray_read_string(struct iarray_reader *r) {
     return make_string(s,n);
 }
 void iarray_write_string_or_null(struct iarray_writer *w,struct string *s) { iarray_write_string(w,s); }
-struct string *iarray_read_string_or_null(struct iarray_reader *r) { return iarray_read_string(r); }
+struct string *iarray_read_string_or_null(struct iarray_reader *r) {
+    struct string *s = iarray_read_string(r);
+    if (!s->size) { free_string(s); return NULL; }
+    return s;
+}
 void iarray_write_color(struct iarray_writer *w,SDL_Color *c) {
     iarray_write(w,c->r); iarray_write(w,c->g); iarray_write(w,c->b); iarray_write(w,c->a);
 }
@@ -173,6 +177,8 @@ static void parts_update_global_pos(struct parts *p,SDL_FPoint pos) {
 void parts_numeral_font_init(struct parts_numeral_font *f) {
     for(int i=0;i<12;i++) { f->cg[i].w=f->width[i]; f->cg[i].h=16; }
 }
+int parts_load_numeral_font_separate_string(struct string *cg_name) { (void)cg_name; return -1; }
+int parts_load_numeral_font_combined_by_name(struct string *cg_name, int w[12]) { (void)cg_name; (void)w; return -1; }
 struct text_style parts_get_effective_text_style(const struct text_style *ts) { return *ts; }
 float gfx_size_char(struct text_style *ts,const char *s) { (void)ts; (void)s; return 8; }
 char *utf2sjis(const char *s,size_t n) { return strndup(s,n); }

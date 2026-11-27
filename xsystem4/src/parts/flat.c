@@ -1670,6 +1670,7 @@ bool PE_GoFramePartsFlat(int parts_no, int frame_no, int state)
 		f->needs_advance = true;
 	} else {
 		// Forward seek: defer to next update.
+		f->root_state->stopped = false;
 		f->pending_seek_delta = frame_no - current;
 	}
 	f->elapsed = 0;

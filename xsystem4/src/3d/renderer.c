@@ -15,6 +15,7 @@
  */
 
 #include <limits.h>
+#include <math.h>
 #include <cglm/cglm.h>
 
 #include "system4.h"
@@ -125,8 +126,9 @@ static void bind_bone_texture(GLuint texture)
 
 static void init_shadow_renderer(struct shadow_renderer *sr, enum RE_plugin_version version)
 {
-	GLint orig_fbo;
-	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &orig_fbo);
+	GLint orig_draw_fbo = 0, orig_read_fbo = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &orig_draw_fbo);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &orig_read_fbo);
 
 	sr->program = load_shader("shaders/reign_shadow.v.glsl", "shaders/reign_shadow.f.glsl", version);
 	sr->local_transform = glGetUniformLocation(sr->program, "local_transform");
@@ -135,18 +137,25 @@ static void init_shadow_renderer(struct shadow_renderer *sr, enum RE_plugin_vers
 
 	glGenFramebuffers(1, &sr->fbo);
 	glGenTextures(1, &sr->texture);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, sr->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
 	glBindFramebuffer(GL_FRAMEBUFFER, sr->fbo);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, sr->texture, 0);
-	glDrawBuffers(0, NULL);
+	GLenum none = GL_NONE;
+	glDrawBuffers(1, &none);
 	glReadBuffer(GL_NONE);
 
-	glBindFramebuffer(GL_FRAMEBUFFER, orig_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)orig_draw_fbo);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)orig_read_fbo);
 }
 
 static void destroy_shadow_renderer(struct shadow_renderer *sr)
@@ -310,6 +319,7 @@ GLuint RE_create_texture_from_cg(struct cg *cg, GLint wrap, bool *has_alpha_out)
 {
 	GLuint texture;
 	glGenTextures(1, &texture);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -403,7 +413,7 @@ void RE_renderer_set_viewport_size(struct RE_renderer *r, int width, int height)
 	r->viewport_width = width;
 	r->viewport_height = height;
 	glBindRenderbuffer(GL_RENDERBUFFER, r->depth_buffer);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
 	glBindRenderbuffer(GL_RENDERBUFFER, 0);
 }
 
@@ -1192,10 +1202,29 @@ static bool calc_shadow_light_transform(struct RE_plugin *plugin, mat4 dest)
 		struct RE_instance *inst = plugin->instances[i];
 		if (!inst || !inst->draw || !inst->make_shadow || !inst->model)
 			continue;
+		vec4 sphere;
+		if (inst->bounding_sphere[3] > 0.0f && isfinite(inst->bounding_sphere[3])) {
+			glm_vec4_copy(inst->bounding_sphere, sphere);
+		} else {
+			vec3 aabb[2];
+			memcpy(aabb, inst->model->aabb, sizeof(aabb));
+			if (aabb[0][0] > aabb[1][0] || aabb[0][1] > aabb[1][1] || aabb[0][2] > aabb[1][2])
+				continue;
+			if (inst->local_transform_needs_update)
+				RE_instance_update_local_transform(inst);
+			glm_aabb_transform(aabb, inst->local_transform, aabb);
+			vec3 center;
+			glm_aabb_center(aabb, center);
+			float r = glm_aabb_radius(aabb);
+			if (r <= 0.0f || !isfinite(r))
+				continue;
+			glm_vec3_copy(center, sphere);
+			sphere[3] = r;
+		}
 		if (bounding_sphere[3] > 0.0f)
-			merge_spheres(inst->bounding_sphere, bounding_sphere, bounding_sphere);
+			merge_spheres(sphere, bounding_sphere, bounding_sphere);
 		else
-			glm_vec4_copy(inst->bounding_sphere, bounding_sphere);
+			glm_vec4_copy(sphere, bounding_sphere);
 	}
 
 	float radius = bounding_sphere[3] * 1.2f;  // Add some padding.
@@ -1219,12 +1248,14 @@ static void render_shadow_map(struct RE_plugin *plugin, mat4 light_space_transfo
 	}
 
 	struct RE_renderer *r = plugin->renderer;
-	GLint orig_fbo, orig_viewport[4];
-	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &orig_fbo);
+	GLint orig_draw_fbo = 0, orig_read_fbo = 0, orig_viewport[4];
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &orig_draw_fbo);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &orig_read_fbo);
 	glGetIntegerv(GL_VIEWPORT, orig_viewport);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, r->shadow.fbo);
 	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+	glDepthMask(GL_TRUE);
 	glClear(GL_DEPTH_BUFFER_BIT);
 	glUseProgram(r->shadow.program);
 
@@ -1238,7 +1269,7 @@ static void render_shadow_map(struct RE_plugin *plugin, mat4 light_space_transfo
 		if (!inst || !inst->draw || !inst->make_shadow || !inst->model)
 			continue;
 		struct model *model = inst->model;
-		if (model->nr_bones > 0) {
+		if (inst->type == RE_ITYPE_SKINNED && model->nr_bones > 0 && inst->motion) {
 			glUniform1i(r->shadow.has_bones, GL_TRUE);
 			bind_bone_texture(inst->bone_transforms_texture);
 		} else {
@@ -1250,13 +1281,18 @@ static void render_shadow_map(struct RE_plugin *plugin, mat4 light_space_transfo
 			if ((mesh->flags & MESH_NOMAKESHADOW) || mesh->hidden || RE_instance_is_mesh_hidden(inst, j))
 				continue;
 			glBindVertexArray(mesh->vao);
-			glDrawArrays(GL_TRIANGLES, 0, mesh->nr_vertices);
+			if (mesh->nr_indices > 0)
+				glDrawElements(GL_TRIANGLES, mesh->nr_indices, GL_UNSIGNED_SHORT, NULL);
+			else
+				glDrawArrays(GL_TRIANGLES, 0, mesh->nr_vertices);
 		}
 		glBindVertexArray(0);
 	}
 
 	glDisable(GL_DEPTH_TEST);
-	glBindFramebuffer(GL_FRAMEBUFFER, orig_fbo);
+	glUseProgram(0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)orig_draw_fbo);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)orig_read_fbo);
 	glViewport(orig_viewport[0], orig_viewport[1], orig_viewport[2], orig_viewport[3]);
 }
 
@@ -1286,7 +1322,7 @@ static void render_outlines(struct RE_plugin *plugin, mat4 view_transform)
 		if (!inst || !inst->draw || !inst->draw_edge || !inst->model)
 			continue;
 		struct model *model = inst->model;
-		if (model->nr_bones > 0) {
+		if (inst->type == RE_ITYPE_SKINNED && model->nr_bones > 0 && inst->motion) {
 			glUniform1i(or->has_bones, GL_TRUE);
 			bind_bone_texture(inst->bone_transforms_texture);
 		} else {
@@ -1303,7 +1339,10 @@ static void render_outlines(struct RE_plugin *plugin, mat4 view_transform)
 				glUniform1f(or->outline_thickness, mesh->outline_thickness);
 			}
 			glBindVertexArray(mesh->vao);
-			glDrawArrays(GL_TRIANGLES, 0, mesh->nr_vertices);
+			if (mesh->nr_indices > 0)
+				glDrawElements(GL_TRIANGLES, mesh->nr_indices, GL_UNSIGNED_SHORT, NULL);
+			else
+				glDrawArrays(GL_TRIANGLES, 0, mesh->nr_vertices);
 		}
 		glBindVertexArray(0);
 	}
@@ -1346,7 +1385,10 @@ static void setup_hemisphere_light(struct RE_plugin *plugin)
 	vec3 hemi_dir = {
 		-lp[SEAL_LP_HEMI_VEC], -lp[SEAL_LP_HEMI_VEC + 1], lp[SEAL_LP_HEMI_VEC + 2]
 	};
-	glm_vec3_normalize(hemi_dir);
+	if (glm_vec3_norm2(hemi_dir) > 1e-12f)
+		glm_vec3_normalize(hemi_dir);
+	else
+		glm_vec3_copy((vec3){ 0.0f, 1.0f, 0.0f }, hemi_dir);
 	glUniform3fv(r->hemi_light_dir, 1, hemi_dir);
 	glUniform3fv(r->hemi_sky_color, 1, &lp[SEAL_LP_HEMI_SKY_COLOR]);
 	glUniform3fv(r->hemi_mid_color, 1, &lp[SEAL_LP_HEMI_MID_COLOR]);
@@ -1452,12 +1494,37 @@ void RE_update_model(struct RE_plugin *plugin)
 	r->last_frame_timestamp = timestamp;
 }
 
+static void reset_default_vertex_attribs(void)
+{
+	glVertexAttrib3f(VATTR_NORMAL, 0.0f, 0.0f, 1.0f);
+	glVertexAttrib2f(VATTR_UV, 0.0f, 0.0f);
+	glVertexAttribI4i(VATTR_BONE_INDEX, -1, -1, -1, -1);
+	glVertexAttrib4f(VATTR_BONE_WEIGHT, 0.0f, 0.0f, 0.0f, 0.0f);
+	glVertexAttrib2f(VATTR_LIGHT_UV, 0.0f, 0.0f);
+	glVertexAttrib4f(VATTR_COLOR, 1.0f, 1.0f, 1.0f, 1.0f);
+	glVertexAttrib4f(VATTR_TANGENT, 1.0f, 0.0f, 0.0f, 1.0f);
+	glVertexAttrib1f(VATTR_BLEND_WEIGHT, 0.0f);
+	glVertexAttrib2f(VATTR_BLEND_UV, 0.0f, 0.0f);
+}
+
 void RE_render(struct sact_sprite *sp)
 {
 	struct RE_plugin *plugin = (struct RE_plugin *)sp->plugin;
 	struct RE_renderer *r = plugin->renderer;
 	if (!r || plugin->suspended)
 		return;
+
+	reset_default_vertex_attribs();
+
+	for (int i = 0; i < plugin->nr_instances; i++) {
+		struct RE_instance *inst = plugin->instances[i];
+		if (!inst)
+			continue;
+		if (inst->local_transform_needs_update)
+			RE_instance_update_local_transform(inst);
+		if (inst->type == RE_ITYPE_SKINNED && inst->motion && inst->bones_dirty)
+			RE_instance_sync_bones(inst);
+	}
 
 	sprite_dirty(sp);
 	struct texture *texture = sprite_get_texture(sp);
@@ -1481,6 +1548,7 @@ void RE_render(struct sact_sprite *sp)
 	for (int i = 0; i < RE_NR_BACK_CGS; i++)
 		render_back_cg(texture, &plugin->back_cg[i], r);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	reset_default_vertex_attribs();
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
@@ -1565,29 +1633,47 @@ struct height_detector {
 
 struct height_detector *RE_renderer_create_height_detector(struct RE_renderer *r, struct model *model)
 {
-	struct height_detector *hd = xcalloc(1, sizeof(struct height_detector));
+	if (!r || !model)
+		return NULL;
 	vec3 aabb[2];
 	memcpy(aabb, model->aabb, sizeof(aabb));
+	if (aabb[0][0] > aabb[1][0] || aabb[0][1] > aabb[1][1] || aabb[0][2] > aabb[1][2])
+		return NULL;
+
+	struct height_detector *hd = xcalloc(1, sizeof(struct height_detector));
 	// Add some Y padding.
-	aabb[0][1] -= 1.0;
-	aabb[1][1] += 1.0;
+	aabb[0][1] -= 1.0f;
+	aabb[1][1] += 1.0f;
 	memcpy(hd->aabb, aabb, sizeof(aabb));
 
 	// Set up an orthographic projection matrix looking down the instance from
 	// right above.
 	mat4 view_matrix, proj_matrix;
 	glm_mat4_identity(view_matrix);
-	glm_rotate_x(view_matrix, glm_rad(90.0), view_matrix);
+	glm_rotate_x(view_matrix, glm_rad(90.0f), view_matrix);
 	glm_aabb_transform(aabb, view_matrix, aabb);
 	glm_ortho_aabb(aabb, proj_matrix);
 
-	GLint orig_fbo, orig_viewport[4];
-	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &orig_fbo);
+	GLint orig_draw_fbo = 0, orig_read_fbo = 0, orig_viewport[4];
+	GLint orig_active_tex = GL_TEXTURE0, orig_program = 0, orig_depth_func = GL_LESS;
+	GLboolean orig_cull = glIsEnabled(GL_CULL_FACE);
+	GLboolean orig_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	GLboolean orig_blend = glIsEnabled(GL_BLEND);
+	GLboolean orig_depth_test = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean orig_depth_mask = GL_TRUE;
+	GLboolean orig_color_mask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &orig_draw_fbo);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &orig_read_fbo);
 	glGetIntegerv(GL_VIEWPORT, orig_viewport);
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &orig_active_tex);
+	glGetIntegerv(GL_CURRENT_PROGRAM, &orig_program);
+	glGetIntegerv(GL_DEPTH_FUNC, &orig_depth_func);
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &orig_depth_mask);
+	glGetBooleanv(GL_COLOR_WRITEMASK, orig_color_mask);
 
-	// Since OpenGL ES does not allow reading from depth textures, create a
-	// color texture and render depth values into it.
-	GLuint color_texture;
+	// Since OpenGL ES does not allow reading from depth textures, create an
+	// unsigned integer color texture and render quantized depth values into it.
+	GLuint color_texture = 0;
 	glGenTextures(1, &color_texture);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, color_texture);
@@ -1596,6 +1682,9 @@ struct height_detector *RE_renderer_create_height_detector(struct RE_renderer *r
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, r->shadow.fbo);
 	GLenum draw_buffers[1] = { GL_COLOR_ATTACHMENT0 };
@@ -1603,7 +1692,23 @@ struct height_detector *RE_renderer_create_height_detector(struct RE_renderer *r
 	glReadBuffer(GL_COLOR_ATTACHMENT0);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_texture, 0);
 
+	GLenum fbo_status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	if (fbo_status != GL_FRAMEBUFFER_COMPLETE) {
+		WARNING("Incomplete height detector framebuffer: 0x%x", fbo_status);
+		free(hd);
+		hd = NULL;
+		goto restore;
+	}
+
 	glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
+	glDepthFunc(GL_LESS);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
 	GLuint zero[4] = { 0, 0, 0, 0 };
 	glClearBufferuiv(GL_COLOR, 0, zero);
 	glClear(GL_DEPTH_BUFFER_BIT);
@@ -1612,31 +1717,51 @@ struct height_detector *RE_renderer_create_height_detector(struct RE_renderer *r
 	glUniformMatrix4fv(r->shadow.view_transform, 1, GL_FALSE, proj_matrix[0]);
 	glUniform1i(r->shadow.has_bones, GL_FALSE);
 
-	glEnable(GL_DEPTH_TEST);
-
 	// Render the model.
 	for (int i = 0; i < model->nr_meshes; i++) {
 		struct mesh *mesh = &model->meshes[i];
+		if ((mesh->flags & MESH_NO_HEIGHT_DETECTION) || mesh->hidden)
+			continue;
 		glBindVertexArray(mesh->vao);
-		glDrawArrays(GL_TRIANGLES, 0, mesh->nr_vertices);
+		if (mesh->nr_indices > 0)
+			glDrawElements(GL_TRIANGLES, mesh->nr_indices, GL_UNSIGNED_SHORT, NULL);
+		else
+			glDrawArrays(GL_TRIANGLES, 0, mesh->nr_vertices);
 	}
 	glBindVertexArray(0);
 	glFinish();
 
-	hd->buf = xmalloc(SHADOW_WIDTH * SHADOW_HEIGHT * sizeof(GLushort));
-	glReadPixels(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT, GL_RED_INTEGER, GL_UNSIGNED_SHORT, hd->buf);
+	// OpenGL ES 3.0.6 Table 4.5 only guarantees (GL_RGBA_INTEGER, GL_UNSIGNED_INT)
+	// for unsigned-integer color buffer readback; unpack the R channel to uint16.
+	size_t nr_pixels = (size_t)SHADOW_WIDTH * SHADOW_HEIGHT;
+	hd->buf = xcalloc(nr_pixels, sizeof(GLushort));
+	GLuint *rgba_buf = xcalloc(nr_pixels * 4, sizeof(GLuint));
+	glReadPixels(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT, GL_RGBA_INTEGER, GL_UNSIGNED_INT, rgba_buf);
+	for (size_t i = 0; i < nr_pixels; i++)
+		hd->buf[i] = (GLushort)rgba_buf[i * 4];
+	free(rgba_buf);
 
-	glDisable(GL_DEPTH_TEST);
-	glUseProgram(0);
-	glDrawBuffers(0, NULL);
+restore:
+	if (orig_cull) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+	if (orig_scissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+	if (orig_blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+	if (orig_depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+	glDepthMask(orig_depth_mask);
+	glDepthFunc((GLenum)orig_depth_func);
+	glColorMask(orig_color_mask[0], orig_color_mask[1], orig_color_mask[2], orig_color_mask[3]);
+	glUseProgram((GLuint)orig_program);
+	GLenum none = GL_NONE;
+	glDrawBuffers(1, &none);
 	glReadBuffer(GL_NONE);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
-	glBindFramebuffer(GL_FRAMEBUFFER, orig_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)orig_draw_fbo);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)orig_read_fbo);
 	glViewport(orig_viewport[0], orig_viewport[1], orig_viewport[2], orig_viewport[3]);
 
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glDeleteTextures(1, &color_texture);
-	glActiveTexture(GL_TEXTURE0);
+	glActiveTexture((GLenum)orig_active_tex);
 	return hd;
 }
 

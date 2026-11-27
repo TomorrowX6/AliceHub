@@ -20,6 +20,46 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+LIBSYS4_HACKS_SRCS = [
+    ROOT / "src/hacks.c",
+    ROOT / "src/escalayer_reboot_cn_ui.c",
+    ROOT / "subprojects/libsys4/src/ain.c",
+    ROOT / "subprojects/libsys4/src/buffer.c",
+    ROOT / "subprojects/libsys4/src/file.c",
+    ROOT / "subprojects/libsys4/src/hashtable.c",
+    ROOT / "subprojects/libsys4/src/instructions.c",
+    ROOT / "subprojects/libsys4/src/mt19937int.c",
+    ROOT / "subprojects/libsys4/src/string.c",
+    ROOT / "subprojects/libsys4/src/system.c",
+    ROOT / "subprojects/libsys4/src/utfsjis.c",
+    ROOT / "subprojects/libsys4/src/zlib.c",
+]
+
+
+def compile_and_run_with_sources(c_source: str, extra_sources: list[Path], extra_libs: list[str], args: list[str] | None = None) -> str:
+    sdl_cflags = subprocess.check_output(["pkg-config", "--cflags", "sdl2"], text=True).split()
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "test.c"
+        exe = Path(tmp) / "test_bin"
+        src.write_text(c_source, encoding="utf-8")
+        subprocess.run(
+            [
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror=implicit-function-declaration",
+                "-Wno-unused-parameter", "-Wno-sign-compare", "-Wno-type-limits", "-O2",
+                "-D_DEFAULT_SOURCE", "-DUSE_GLES",
+                f"-I{ROOT / 'include'}",
+                f"-I{ROOT / 'src'}",
+                f"-I{ROOT / 'subprojects/libsys4/include'}",
+                *sdl_cflags,
+                str(src),
+                *[str(p) for p in extra_sources],
+                *extra_libs,
+                "-o", str(exe),
+            ],
+            check=True,
+        )
+        res = subprocess.run([str(exe), *(args or [])], check=True, capture_output=True, text=True)
+        return res.stdout
 
 
 def extract_function(rel_path: str, name: str) -> str:
@@ -85,6 +125,11 @@ static struct ain_function funcs[] = {{
     {{ "VECTOR3D@SetLength" }},
     {{ "VECTOR2D@SetLength" }},
     {{ "fxyz_t@Normalize" }},
+    {{ "VECTOR2D@Rotate" }},
+    {{ "CASVector3D@Normalize" }},
+    {{ "CASVector2D@Normalize" }},
+    {{ "CASVector3D@SetLength" }},
+    {{ "CASVector2D@SetLength" }},
 }};
 static struct ain program = {{
     .nr_functions = (int)(sizeof(funcs) / sizeof(funcs[0])),
@@ -147,10 +192,20 @@ int main(void)
     assert(divide(3.0f, 5.0f, 1, 2) == 0.6f);
     assert(isinf(divide(1.0f, 0.0f, 1, 2)));
 
-    // SetLength and fxyz_t@Normalize (F_DIVA) keep 0/=0 finite
+    // SetLength, Rotate, CASVector*, and fxyz_t@Normalize keep 0/0 finite
     assert(divide_assign(0.0f, 0.0f, 3, 2) == 0.0f);
     assert(divide_assign(0.0f, 0.0f, 4, 2) == 0.0f);
     assert(divide_assign(0.0f, 0.0f, 5, 2) == 0.0f);
+    assert(divide_assign(0.0f, 0.0f, 6, 2) == 0.0f);
+    assert(divide(0.0f, 0.0f, 6, 2) == 0.0f);
+    assert(divide_assign(3.0f, 5.0f, 6, 2) == 0.6f);
+    assert(isinf(divide_assign(1.0f, 0.0f, 6, 2)));
+    for (int fno = 7; fno <= 10; fno++) {{
+        assert(divide(0.0f, 0.0f, fno, 2) == 0.0f);
+        assert(divide_assign(0.0f, 0.0f, fno, 2) == 0.0f);
+        assert(divide(3.0f, 5.0f, fno, 2) == 0.6f);
+        assert(isinf(divide(1.0f, 0.0f, fno, 2)));
+    }}
     assert(divide_assign(3.0f, 5.0f, 3, 2) == 0.6f);
     assert(isinf(divide_assign(1.0f, 0.0f, 3, 2)));
 
@@ -485,10 +540,7 @@ int main(void) {{
         compile_and_run(c_code)
 
     def test_rance6_hacks_and_gbk_detection(self) -> None:
-        fn_r6 = extract_function("src/hacks.c", "apply_rance6_hacks")
-        fn_gbk_str = extract_function("src/hacks.c", "ain_has_gbk_string")
-        fn_r03_str = extract_function("src/hacks.c", "ain_has_gbk_r03_strings")
-        fn_hacks = extract_function("src/hacks.c", "apply_game_specific_hacks")
+        fn_cfg_utf8 = extract_function("src/system4.c", "config_init_with_utf8_codename")
         fn_cfg = extract_function("src/system4.c", "config_init")
         c_code = f"""
 #include <assert.h>
@@ -497,99 +549,27 @@ int main(void) {{
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include "system4.h"
+#include "xsystem4.h"
+#include "system4/ain.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
 
-struct string {{
-    char *text;
-}};
+void apply_game_specific_hacks(struct ain *ain);
 
-struct ain {{
-    int version;
-    int nr_strings;
-    struct string **strings;
-    const char *const *funcs;
-    const char *const *globals;
-    const char *const *structs;
-    const char *const *libs;
-}};
+struct config config;
+bool message_layout_init_rance03(struct ain *ain) {{ (void)ain; return false; }}
 
-struct config {{
-    char *game_name;
-    char *ain_filename;
-    char *save_dir;
-    char *home_dir;
-    int view_width;
-    int view_height;
-}} config;
-
-bool game_daibanchou_en = false;
-bool game_rance01 = false;
-bool game_rance02 = false;
-bool game_rance02_mg = false;
-bool game_rance6 = false;
-bool game_rance6_mg = false;
-bool game_rance7_mg = false;
-bool game_sengokurance = false;
-bool game_rance8 = false;
-bool game_rance8_mg = false;
-bool game_rance9 = false;
-bool game_rance10 = false;
-bool game_dohnadohna = false;
-bool game_evenicle = false;
-bool game_evenicle2 = false;
-bool game_rance03 = false;
-bool game_dungeons_and_dolls = false;
-bool game_escalayer_reboot = false;
-bool game_galzoo = false;
-bool game_ixseal = false;
-bool game_tsumashibori = false;
-
-static bool sys4_text_is_gbk = false;
 static bool gbk_at_get_save_path = false;
-static void sys4_set_text_gbk(bool enabled) {{ sys4_text_is_gbk = enabled; }}
-static char *xstrdup(const char *s) {{
-    if (!s) s = "";
-    size_t n = strlen(s) + 1;
-    char *p = malloc(n);
-    memcpy(p, s, n);
-    return p;
-}}
 static char *get_xsystem4_home(void) {{ return xstrdup("/tmp/xsys4_home"); }}
-static char *get_save_path(const char *dir) {{
+static bool is_directory(const char *path) {{ (void)path; return false; }}
+static char *get_save_path(const char *dir, const char *utf8_override) {{
+    (void)utf8_override;
     gbk_at_get_save_path = sys4_text_is_gbk;
     return xstrdup(dir ? dir : "SaveData");
 }}
-static char *sjis2utf(const char *s, size_t len) {{
-    (void)len;
-    if (!s) return xstrdup("");
-    if (!strcmp(s, "\\x83\\x89\\x83\\x93\\x83\\x58\\x82\\x55")) return xstrdup("ランス６");
-    return xstrdup(s);
-}}
 
-static int list_find(const char *const *list, const char *name) {{
-    if (!list || !name) return -1;
-    for (int i = 0; list[i]; i++) {{
-        if (!strcmp(list[i], name)) return i;
-    }}
-    return -1;
-}}
-static int ain_get_function(struct ain *ain, const char *name) {{ return list_find(ain->funcs, name); }}
-static int ain_get_global(struct ain *ain, const char *name) {{ return list_find(ain->globals, name); }}
-static int ain_get_struct(struct ain *ain, const char *name) {{ return list_find(ain->structs, name); }}
-static int ain_get_library(struct ain *ain, const char *name) {{ return list_find(ain->libs, name); }}
-
-static void apply_daibanchou_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance02_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance9_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_card_caption_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_effect_sound_paths(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_skill_cooldown_layout(struct ain *ain) {{ (void)ain; }}
-static void escalayer_reboot_replace_cn_ui_text(struct string **strings, int nr_strings) {{ (void)strings; (void)nr_strings; }}
-
-{fn_r6}
-{fn_gbk_str}
-{fn_r03_str}
-{fn_hacks}
+{fn_cfg_utf8}
 {fn_cfg}
 
 static void reset_config_for_test(const char *game_name, const char *ain_name) {{
@@ -603,75 +583,78 @@ static void reset_config_for_test(const char *game_name, const char *ain_name) {
     config.home_dir = NULL;
     config.view_width = 800;
     config.view_height = 600;
-    sys4_text_is_gbk = false;
+    config.view_width_set = false;
+    config.view_height_set = false;
+    sys4_set_text_gbk(false);
+    sys4_source_is_utf8 = false;
     gbk_at_get_save_path = false;
 }}
 
-int main(void) {{
-    const char *r6_libs[] = {{ "SACT2", "DrawGraph", "ACXLoader", "DrawDungeon", "PlayMovie", NULL }};
-    const char *r6_structs[] = {{ "CDungeon", "CScreenBattle", NULL }};
-    const char *jp_funcs[] = {{ "main", NULL }};
-    const char *mg_funcs[] = {{ "main", "GetTextWidth", NULL }};
+static struct ain *make_r6_ain(const char *font_str, bool with_get_text_width) {{
+    struct ain *a = ain_new(4, 0);
+    ain_add_library(a, "SACT2");
+    ain_add_library(a, "DrawGraph");
+    ain_add_library(a, "ACXLoader");
+    ain_add_library(a, "DrawDungeon");
+    ain_add_library(a, "PlayMovie");
+    ain_add_struct(a, "CDungeon");
+    ain_add_struct(a, "CScreenBattle");
+    ain_add_function(a, "main");
+    if (with_get_text_width)
+        ain_add_function(a, "GetTextWidth");
+    ain_add_string(a, font_str);
+    return a;
+}}
 
-    // 1. JP Rance VI: Shift-JIS MS Gothic ("\\x82\\x6c\\x82\\x72 \\x83\\x53\\x83\\x56\\x83\\x62\\x83\\x4e"), GameName = "Rance6"
-    struct string jp_s0 = {{ "\\x82\\x6c\\x82\\x72 \\x83\\x53\\x83\\x56\\x83\\x62\\x83\\x4e" }};
-    struct string *jp_strs[] = {{ &jp_s0 }};
-    struct ain jp_ain = {{
-        .version = 4, .nr_strings = 1, .strings = jp_strs,
-        .funcs = jp_funcs, .globals = NULL, .structs = r6_structs, .libs = r6_libs
-    }};
+int main(void) {{
+    // 1. JP Rance VI: Shift-JIS MS Gothic, GameName = "Rance6"
+    struct ain *jp_ain = make_r6_ain("\\x82\\x6c\\x82\\x72 \\x83\\x53\\x83\\x56\\x83\\x62\\x83\\x4e", false);
     reset_config_for_test("Rance6", "Rance6.ain");
     config_init();
     assert(!gbk_at_get_save_path);
     assert(!sys4_text_is_gbk);
-    apply_game_specific_hacks(&jp_ain);
+    apply_game_specific_hacks(jp_ain);
     assert(game_rance6 && !game_rance6_mg && !sys4_text_is_gbk);
     assert(config.view_width == 640 && config.view_height == 480);
 
     // 2. MangaGamer English Rance VI (even with customized GameName!)
-    struct ain mg_ain = jp_ain;
-    mg_ain.funcs = mg_funcs;
+    struct ain *mg_ain = make_r6_ain("\\x82\\x6c\\x82\\x72 \\x83\\x53\\x83\\x56\\x83\\x62\\x83\\x4e", true);
     reset_config_for_test("Rance VI - The Collapse of Zeth", "Rance6.ain");
     config_init();
-    apply_game_specific_hacks(&mg_ain);
+    apply_game_specific_hacks(mg_ain);
     assert(game_rance6 && game_rance6_mg && !sys4_text_is_gbk);
 
-    // 3. CN Rance VI v1.10 Simplified System40.ini:
-    // GameName = "Rance6中文版 v1.10（哈尼喵汉化组×爱丽丝汉化组 制作）" in GBK
-    struct string cn_s0 = {{ "\\xba\\xda\\xcc\\xe5" }}; // 黑体
-    struct string *cn_strs[] = {{ &cn_s0 }};
-    struct ain cn_ain = {{
-        .version = 4, .nr_strings = 1, .strings = cn_strs,
-        .funcs = jp_funcs, .globals = NULL, .structs = r6_structs, .libs = r6_libs
-    }};
+    // 3. CN Rance VI v1.10 Simplified System40.ini
+    struct ain *cn_ain = make_r6_ain("\\xba\\xda\\xcc\\xe5", false);
     reset_config_for_test("Rance6\\xd6\\xd0\\xce\\xc4\\xb0\\xe6 v1.10\\xa3\\xa8\\xba\\xba\\xbb\\xaf\\xd7\\xe9\\xa3\\xa9", "Rance6.ain");
     config_init();
     assert(gbk_at_get_save_path && sys4_text_is_gbk);
-    apply_game_specific_hacks(&cn_ain);
+    apply_game_specific_hacks(cn_ain);
     assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
 
-    // 4. CN Rance VI v1.10 Traditional System40Tcn.ini ("中文版" + "漢化組")
+    // 4. CN Rance VI v1.10 Traditional System40Tcn.ini
     reset_config_for_test("Rance6\\xd6\\xd0\\xce\\xc4\\xb0\\xe6 v1.10\\xa3\\xa8\\x9e\\x61\\xbb\\xaf\\xbf\\x82\\xa3\\xa9", "Rance6.ain");
     config_init();
     assert(gbk_at_get_save_path && sys4_text_is_gbk);
-    apply_game_specific_hacks(&cn_ain);
+    apply_game_specific_hacks(cn_ain);
     assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
 
-    // 5. CN Rance VI with unpatched JP GameName = "Rance6" (both v1.10 "黑体" and v0.90 GBK "ＭＳ ゴシック")
+    // 5. CN Rance VI with unpatched JP GameName = "Rance6" (v1.10 "黑体" and v0.90 GBK "ＭＳ ゴシック")
     reset_config_for_test("Rance6", "Rance6.ain");
     config_init();
-    apply_game_specific_hacks(&cn_ain);
+    apply_game_specific_hacks(cn_ain);
     assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
 
-    struct string cn_v090_s0 = {{ "\\xa3\\xcd\\xa3\\xd3\\x20\\xa5\\xb4\\xa5\\xb7\\xa5\\xc3\\xa5\\xaf" }};
-    struct string *cn_v090_strs[] = {{ &cn_v090_s0 }};
-    struct ain cn_v090_ain = cn_ain;
-    cn_v090_ain.strings = cn_v090_strs;
+    struct ain *cn_v090_ain = make_r6_ain("\\xa3\\xcd\\xa3\\xd3\\x20\\xa5\\xb4\\xa5\\xb7\\xa5\\xc3\\xa5\\xaf", false);
     reset_config_for_test("Rance6", "Rance6.ain");
     config_init();
-    apply_game_specific_hacks(&cn_v090_ain);
+    apply_game_specific_hacks(cn_v090_ain);
     assert(game_rance6 && !game_rance6_mg && sys4_text_is_gbk);
 
+    ain_free(jp_ain);
+    ain_free(mg_ain);
+    ain_free(cn_ain);
+    ain_free(cn_v090_ain);
     free(config.game_name);
     free(config.ain_filename);
     free(config.save_dir);
@@ -679,7 +662,700 @@ int main(void) {{
     return 0;
 }}
 """
-        compile_and_run(c_code)
+        compile_and_run_with_sources(c_code, LIBSYS4_HACKS_SRCS, ["-lz", "-lm"])
+
+    def test_evenicle_reverse_erase_loop_bytecode_patch(self) -> None:
+        ev1_ain_path = Path("/root/Rance10_CN/Evenicle/イブニクル/Evenicle.ain")
+        ev1_arg = [str(ev1_ain_path)] if ev1_ain_path.is_file() else []
+        c_code = r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "xsystem4.h"
+#include "system4/ain.h"
+#include "system4/buffer.h"
+#include "system4/instructions.h"
+#include "system4/little_endian.h"
+
+void apply_game_specific_hacks(struct ain *ain);
+
+struct config config;
+bool message_layout_init_rance03(struct ain *ain) { (void)ain; return false; }
+
+static void emit0(struct buffer *b, enum opcode op) {
+    buffer_write_int16(b, (int16_t)op);
+}
+static void emit1(struct buffer *b, enum opcode op, int32_t a0) {
+    buffer_write_int16(b, (int16_t)op);
+    buffer_write_int32(b, a0);
+}
+static void emit3(struct buffer *b, enum opcode op, int32_t a0, int32_t a1, int32_t a2) {
+    buffer_write_int16(b, (int16_t)op);
+    buffer_write_int32(b, a0);
+    buffer_write_int32(b, a1);
+    buffer_write_int32(b, a2);
+}
+
+static void add_array_library(struct ain *a, int *lib_out, int *numof_out, int *erase_out) {
+    int lib = ain_add_library(a, "Array");
+    struct ain_library *l = &a->libraries[lib];
+    l->nr_functions = 2;
+    l->functions = calloc(2, sizeof(*l->functions));
+    l->functions[0].name = strdup("Numof");
+    l->functions[1].name = strdup("Erase");
+    *lib_out = lib;
+    *numof_out = 0;
+    *erase_out = 1;
+}
+
+static void attach_code(struct ain *a, int fno, struct buffer *b, uint32_t body_start) {
+    a->functions[fno].address = (int32_t)body_start;
+    a->code = malloc(b->index);
+    memcpy(a->code, b->buf, b->index);
+    a->code_size = b->index;
+}
+
+// Mini-VM verifier for the Evenicle 2 (AIN v14) reverse-erase loop bytecode.
+// Confirms the patched bytecode terminates cleanly in exactly N iterations
+// instead of spinning toward INT_MAX.
+static int run_ev2_loop(const uint8_t *code, size_t code_size, uint32_t start,
+        int array_lib, int numof_fn, int erase_fn, int initial_count, int *erases_out) {
+    int32_t locals[8] = {0};
+    int32_t stack[32] = {0};
+    int sp = 0;
+    int list_len = initial_count;
+    int erases = 0;
+    uint32_t ip = start;
+    int steps = 0;
+    while (ip < code_size && steps < 1000) {
+        steps++;
+        enum opcode op = (enum opcode)(uint16_t)LittleEndian_getW(code, ip);
+        switch (op) {
+        case PUSHLOCALPAGE:
+            stack[sp++] = 1;
+            ip += 2;
+            break;
+        case PUSHSTRUCTPAGE:
+            stack[sp++] = 2;
+            ip += 2;
+            break;
+        case PUSH:
+            stack[sp++] = LittleEndian_getDW(code, ip + 2);
+            ip += 6;
+            break;
+        case POP:
+            sp--;
+            ip += 2;
+            break;
+        case X_REF: {
+            int n = LittleEndian_getDW(code, ip + 2);
+            assert(n == 1);
+            int var = stack[--sp];
+            int page = stack[--sp];
+            stack[sp++] = (page == 1) ? locals[var] : 99;
+            ip += 6;
+            break;
+        }
+        case X_ASSIGN: {
+            int n = LittleEndian_getDW(code, ip + 2);
+            assert(n == 1);
+            int val = stack[--sp];
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1);
+            locals[var] = val;
+            stack[sp++] = val;
+            ip += 6;
+            break;
+        }
+        case X_DUP: {
+            int n = LittleEndian_getDW(code, ip + 2);
+            assert(n == 2);
+            int b = stack[sp - 1];
+            int a = stack[sp - 2];
+            stack[sp++] = a;
+            stack[sp++] = b;
+            ip += 6;
+            break;
+        }
+        case SUB: {
+            int rhs = stack[--sp];
+            int lhs = stack[--sp];
+            stack[sp++] = lhs - rhs;
+            ip += 2;
+            break;
+        }
+        case GTE: {
+            int rhs = stack[--sp];
+            int lhs = stack[--sp];
+            stack[sp++] = lhs >= rhs ? 1 : 0;
+            ip += 2;
+            break;
+        }
+        case INC: {
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1);
+            locals[var]++;
+            ip += 2;
+            break;
+        }
+        case DEC: {
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1);
+            locals[var]--;
+            ip += 2;
+            break;
+        }
+        case IFZ: {
+            uint32_t target = (uint32_t)LittleEndian_getDW(code, ip + 2);
+            int cond = stack[--sp];
+            ip = (cond == 0) ? target : ip + 6;
+            break;
+        }
+        case JUMP:
+            ip = (uint32_t)LittleEndian_getDW(code, ip + 2);
+            break;
+        case CALLHLL: {
+            int lib = LittleEndian_getDW(code, ip + 2);
+            int fn = LittleEndian_getDW(code, ip + 6);
+            assert(lib == array_lib);
+            if (fn == numof_fn) {
+                sp--; // pop array ref
+                stack[sp++] = list_len;
+            } else if (fn == erase_fn) {
+                int len = stack[--sp];
+                int idx = stack[--sp];
+                int arr = stack[--sp];
+                assert(arr == 99 && len == 1 && idx >= 0);
+                erases++;
+                stack[sp++] = 1;
+            } else {
+                assert(0);
+            }
+            ip += 14;
+            break;
+        }
+        case RETURN:
+            assert(sp == 0);
+            *erases_out = erases;
+            return 1;
+        default:
+            assert(0);
+        }
+    }
+    return 0; // did not terminate within step bound (hung!)
+}
+
+// Mini-VM verifier for the Evenicle 1 (AIN v6) reverse-erase loop bytecode.
+static int run_ev1_loop(const uint8_t *code, size_t code_size, uint32_t start,
+        int initial_count, int *erases_out) {
+    int32_t locals[8] = {0};
+    int32_t stack[32] = {0};
+    int sp = 0;
+    int list_len = initial_count;
+    int erases = 0;
+    uint32_t ip = start;
+    int steps = 0;
+    while (ip < code_size && steps < 1000) {
+        steps++;
+        enum opcode op = (enum opcode)(uint16_t)LittleEndian_getW(code, ip);
+        switch (op) {
+        case PUSHLOCALPAGE:
+            stack[sp++] = 1;
+            ip += 2;
+            break;
+        case PUSHGLOBALPAGE:
+            stack[sp++] = 3;
+            ip += 2;
+            break;
+        case PUSH:
+            stack[sp++] = LittleEndian_getDW(code, ip + 2);
+            ip += 6;
+            break;
+        case POP:
+            sp--;
+            ip += 2;
+            break;
+        case REF: {
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1);
+            stack[sp++] = locals[var];
+            ip += 2;
+            break;
+        }
+        case ASSIGN: {
+            int val = stack[--sp];
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1);
+            locals[var] = val;
+            stack[sp++] = val;
+            ip += 2;
+            break;
+        }
+        case DUP2: {
+            int b = stack[sp - 1];
+            int a = stack[sp - 2];
+            stack[sp++] = a;
+            stack[sp++] = b;
+            ip += 2;
+            break;
+        }
+        case A_NUMOF: {
+            int rank = stack[--sp];
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1 && var == 4 && rank == 1);
+            stack[sp++] = list_len;
+            ip += 2;
+            break;
+        }
+        case A_ERASE: {
+            int idx = stack[--sp];
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 3 && var == 293 && idx >= 0);
+            erases++;
+            stack[sp++] = 1;
+            ip += 2;
+            break;
+        }
+        case SUB: {
+            int rhs = stack[--sp];
+            int lhs = stack[--sp];
+            stack[sp++] = lhs - rhs;
+            ip += 2;
+            break;
+        }
+        case GTE: {
+            int rhs = stack[--sp];
+            int lhs = stack[--sp];
+            stack[sp++] = lhs >= rhs ? 1 : 0;
+            ip += 2;
+            break;
+        }
+        case INC: {
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1);
+            locals[var]++;
+            ip += 2;
+            break;
+        }
+        case DEC: {
+            int var = stack[--sp];
+            int page = stack[--sp];
+            assert(page == 1);
+            locals[var]--;
+            ip += 2;
+            break;
+        }
+        case SH_LOCALINC: {
+            int var = LittleEndian_getDW(code, ip + 2);
+            locals[var]++;
+            ip += 6;
+            break;
+        }
+        case SH_LOCALDEC: {
+            int var = LittleEndian_getDW(code, ip + 2);
+            locals[var]--;
+            ip += 6;
+            break;
+        }
+        case IFZ: {
+            uint32_t target = (uint32_t)LittleEndian_getDW(code, ip + 2);
+            int cond = stack[--sp];
+            ip = (cond == 0) ? target : ip + 6;
+            break;
+        }
+        case JUMP:
+            ip = (uint32_t)LittleEndian_getDW(code, ip + 2);
+            break;
+        case RETURN:
+            assert(sp == 0);
+            *erases_out = erases;
+            return 1;
+        default:
+            assert(0);
+        }
+    }
+    return 0;
+}
+
+static struct ain *build_ev2_ain(bool is_evenicle2, bool is_rance, const char *target_fn,
+        enum opcode loop2_step_op, uint32_t *loop1_inc_addr, uint32_t *loop2_start_addr,
+        uint32_t *loop2_step_addr, int *lib_out, int *numof_out, int *erase_out) {
+    struct ain *a = ain_new(14, 0);
+    if (is_evenicle2)
+        ain_add_function(a, "C_MedicaMenu@0");
+    if (is_rance)
+        ain_add_string(a, "th74s65a");
+    int fno = ain_add_function(a, target_fn);
+    add_array_library(a, lib_out, numof_out, erase_out);
+
+    struct buffer b;
+    buffer_init(&b, NULL, 0);
+    emit1(&b, FUNC, fno);
+    uint32_t body_start = (uint32_t)b.index;
+
+    // Loop 1 (forward loop: MUST NOT be modified!)
+    uint32_t l1_cond = (uint32_t)b.index;
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 1);
+    emit1(&b, X_REF, 1);
+    emit0(&b, PUSHSTRUCTPAGE);
+    emit1(&b, PUSH, 0);
+    emit1(&b, X_REF, 1);
+    emit3(&b, CALLHLL, *lib_out, *numof_out, 2);
+    emit0(&b, LT);
+    uint32_t l1_ifz_pos = (uint32_t)b.index;
+    emit1(&b, IFZ, 0);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 1);
+    emit1(&b, X_DUP, 2);
+    *loop1_inc_addr = (uint32_t)b.index;
+    emit0(&b, INC);
+    emit0(&b, POP);
+    emit0(&b, POP);
+    emit1(&b, JUMP, (int32_t)l1_cond);
+
+    // Loop 2 (exact verified Evenicle 2 EraseUnnecessaryInList reverse-erase loop)
+    uint32_t l2_init = (uint32_t)b.index;
+    *loop2_start_addr = l2_init;
+    buffer_write_int32_at(&b, l1_ifz_pos + 2, (int32_t)l2_init);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 0);
+    emit1(&b, X_REF, 1);
+    emit3(&b, CALLHLL, *lib_out, *numof_out, 1);
+    emit1(&b, PUSH, 1);
+    emit0(&b, SUB);
+    emit1(&b, X_ASSIGN, 1);
+    emit0(&b, POP);
+
+    uint32_t l2_cond = (uint32_t)b.index;
+    assert(l2_cond == l2_init + 52u);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit1(&b, X_REF, 1);
+    emit1(&b, PUSH, 0);
+    emit0(&b, GTE);
+    uint32_t l2_ifz_pos = (uint32_t)b.index;
+    emit1(&b, IFZ, 0);
+
+    emit0(&b, PUSHSTRUCTPAGE);
+    emit1(&b, PUSH, 0);
+    emit1(&b, X_REF, 1);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit1(&b, X_REF, 1);
+    emit1(&b, PUSH, 1);
+    emit3(&b, CALLHLL, *lib_out, *erase_out, 2);
+    emit0(&b, POP);
+
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit1(&b, X_DUP, 2);
+    *loop2_step_addr = (uint32_t)b.index;
+    emit0(&b, loop2_step_op);
+    emit0(&b, POP);
+    emit0(&b, POP);
+    emit1(&b, JUMP, (int32_t)l2_cond);
+
+    uint32_t l2_exit = (uint32_t)b.index;
+    assert(l2_exit == l2_cond + 104u);
+    buffer_write_int32_at(&b, l2_ifz_pos + 2, (int32_t)l2_exit);
+    emit0(&b, RETURN);
+    emit1(&b, ENDFUNC, fno);
+
+    attach_code(a, fno, &b, body_start);
+    free(b.buf);
+    return a;
+}
+
+static struct ain *build_ev1_ain(int variant, const char *target_fn, bool shorthand,
+        enum opcode loop2_step_op, uint32_t *loop1_inc_addr, uint32_t *loop2_start_addr,
+        uint32_t *loop2_step_addr) {
+    // variant: 0=non-evenicle, 1=evenicle, 2=evenicle_rance, 3=evenicle_gaiden
+    struct ain *a = ain_new(6, 1);
+    if (variant >= 1)
+        ain_add_struct(a, "CBigMap");
+    if (variant == 1)
+        ain_add_function(a, "CMapPlayer@RunPathFindMove");
+    if (variant == 2)
+        ain_add_string(a, "56s5d4");
+    if (variant == 3)
+        ain_add_string(a, "aa6sdd5432");
+    int fno = ain_add_function(a, target_fn);
+
+    struct buffer b;
+    buffer_init(&b, NULL, 0);
+    emit1(&b, FUNC, fno);
+    uint32_t body_start = (uint32_t)b.index;
+
+    // Loop 1 (forward loop: MUST NOT be modified!)
+    uint32_t l1_cond = (uint32_t)b.index;
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit0(&b, REF);
+    emit0(&b, PUSHGLOBALPAGE);
+    emit1(&b, PUSH, 293);
+    emit1(&b, PUSH, 1);
+    emit0(&b, A_NUMOF);
+    emit0(&b, LT);
+    uint32_t l1_ifz_pos = (uint32_t)b.index;
+    emit1(&b, IFZ, 0);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit0(&b, DUP2);
+    *loop1_inc_addr = (uint32_t)b.index;
+    emit0(&b, INC);
+    emit0(&b, POP);
+    emit0(&b, POP);
+    emit1(&b, JUMP, (int32_t)l1_cond);
+
+    // Loop 2 (exact verified Evenicle 1 WaitAllOrderCharaMotionFinish reverse-erase loop)
+    uint32_t l2_init = (uint32_t)b.index;
+    *loop2_start_addr = l2_init;
+    buffer_write_int32_at(&b, l1_ifz_pos + 2, (int32_t)l2_init);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 4);
+    emit1(&b, PUSH, 1);
+    emit0(&b, A_NUMOF);
+    emit1(&b, PUSH, 1);
+    emit0(&b, SUB);
+    emit0(&b, ASSIGN);
+    emit0(&b, POP);
+
+    uint32_t l2_cond = (uint32_t)b.index;
+    assert(l2_cond == l2_init + 36u);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit0(&b, REF);
+    emit1(&b, PUSH, 0);
+    emit0(&b, GTE);
+    uint32_t l2_ifz_pos = (uint32_t)b.index;
+    emit1(&b, IFZ, 0);
+    uint32_t l2_jbody_pos = (uint32_t)b.index;
+    emit1(&b, JUMP, 0);
+
+    uint32_t l2_step = (uint32_t)b.index;
+    if (!shorthand) {
+        emit0(&b, PUSHLOCALPAGE);
+        emit1(&b, PUSH, 3);
+        emit0(&b, DUP2);
+        *loop2_step_addr = (uint32_t)b.index;
+        emit0(&b, loop2_step_op);
+        emit0(&b, POP);
+        emit0(&b, POP);
+    } else {
+        *loop2_step_addr = (uint32_t)b.index;
+        emit1(&b, loop2_step_op, 3);
+    }
+    emit1(&b, JUMP, (int32_t)l2_cond);
+
+    uint32_t l2_body = (uint32_t)b.index;
+    buffer_write_int32_at(&b, l2_jbody_pos + 2, (int32_t)l2_body);
+    emit0(&b, PUSHGLOBALPAGE);
+    emit1(&b, PUSH, 293);
+    emit0(&b, PUSHLOCALPAGE);
+    emit1(&b, PUSH, 3);
+    emit0(&b, REF);
+    emit0(&b, A_ERASE);
+    emit0(&b, POP);
+    emit1(&b, JUMP, (int32_t)l2_step);
+
+    uint32_t l2_exit = (uint32_t)b.index;
+    buffer_write_int32_at(&b, l2_ifz_pos + 2, (int32_t)l2_exit);
+    emit0(&b, RETURN);
+    emit1(&b, ENDFUNC, fno);
+
+    attach_code(a, fno, &b, body_start);
+    free(b.buf);
+    return a;
+}
+
+int main(int argc, char **argv) {
+    config.view_width = 1280;
+    config.view_height = 720;
+
+    // 1. Evenicle 2 positive test (buggy INC hangs before patch, terminates cleanly after)
+    {
+        uint32_t l1_inc = 0, l2_start = 0, l2_step = 0;
+        int lib = 0, numof = 0, erase = 0;
+        struct ain *a = build_ev2_ain(true, false, "CReservePolyMotion@EraseUnnecessaryInList",
+            INC, &l1_inc, &l2_start, &l2_step, &lib, &numof, &erase);
+        uint8_t *before = malloc(a->code_size);
+        memcpy(before, a->code, a->code_size);
+
+        int erases = 0;
+        assert(run_ev2_loop(a->code, a->code_size, l2_start, lib, numof, erase, 3, &erases) == 0);
+
+        apply_game_specific_hacks(a);
+        assert(game_evenicle2);
+        assert((uint16_t)LittleEndian_getW(a->code, l1_inc) == INC);
+        assert((uint16_t)LittleEndian_getW(a->code, l2_step) == DEC);
+        for (size_t i = 0; i < a->code_size; i++) {
+            if (i != l2_step && i != l2_step + 1)
+                assert(a->code[i] == before[i]);
+        }
+        assert(run_ev2_loop(a->code, a->code_size, l2_start, lib, numof, erase, 3, &erases) == 1);
+        assert(erases == 3);
+
+        // Idempotent on second call (already DEC)
+        memcpy(before, a->code, a->code_size);
+        apply_game_specific_hacks(a);
+        assert(memcmp(a->code, before, a->code_size) == 0);
+
+        free(before);
+        ain_free(a);
+    }
+
+    // 2. Evenicle 2 Rance positive test
+    {
+        uint32_t l1_inc = 0, l2_start = 0, l2_step = 0;
+        int lib = 0, numof = 0, erase = 0;
+        struct ain *a = build_ev2_ain(true, true, "CReservePolyMotion@EraseUnnecessaryInList",
+            INC, &l1_inc, &l2_start, &l2_step, &lib, &numof, &erase);
+        apply_game_specific_hacks(a);
+        assert(game_evenicle2 && game_evenicle2_rance);
+        assert((uint16_t)LittleEndian_getW(a->code, l2_step) == DEC);
+        ain_free(a);
+    }
+
+    // 3. Evenicle 2 negative tests (already-fixed DEC, unrelated function, non-Evenicle2 v14)
+    {
+        uint32_t l1_inc = 0, l2_start = 0, l2_step = 0;
+        int lib = 0, numof = 0, erase = 0;
+        struct ain *fixed = build_ev2_ain(true, false, "CReservePolyMotion@EraseUnnecessaryInList",
+            DEC, &l1_inc, &l2_start, &l2_step, &lib, &numof, &erase);
+        uint8_t *snap = malloc(fixed->code_size);
+        memcpy(snap, fixed->code, fixed->code_size);
+        apply_game_specific_hacks(fixed);
+        assert(memcmp(fixed->code, snap, fixed->code_size) == 0);
+        free(snap);
+        ain_free(fixed);
+
+        struct ain *other_fn = build_ev2_ain(true, false, "CReservePolyMotion@OtherFunc",
+            INC, &l1_inc, &l2_start, &l2_step, &lib, &numof, &erase);
+        apply_game_specific_hacks(other_fn);
+        assert((uint16_t)LittleEndian_getW(other_fn->code, l2_step) == INC);
+        ain_free(other_fn);
+
+        struct ain *other_game = build_ev2_ain(false, false, "CReservePolyMotion@EraseUnnecessaryInList",
+            INC, &l1_inc, &l2_start, &l2_step, &lib, &numof, &erase);
+        apply_game_specific_hacks(other_game);
+        assert(!game_evenicle2);
+        assert((uint16_t)LittleEndian_getW(other_game->code, l2_step) == INC);
+        ain_free(other_game);
+    }
+
+    // 4. Evenicle 1 family positive tests (Evenicle, Evenicle Rance, Evenicle Gaiden + SH_LOCALINC)
+    for (int variant = 1; variant <= 3; variant++) {
+        for (int sh = 0; sh <= 1; sh++) {
+            uint32_t l1_inc = 0, l2_start = 0, l2_step = 0;
+            enum opcode buggy_op = sh ? SH_LOCALINC : INC;
+            enum opcode fixed_op = sh ? SH_LOCALDEC : DEC;
+            struct ain *a = build_ev1_ain(variant, "WaitAllOrderCharaMotionFinish",
+                sh != 0, buggy_op, &l1_inc, &l2_start, &l2_step);
+            uint8_t *before = malloc(a->code_size);
+            memcpy(before, a->code, a->code_size);
+
+            int erases = 0;
+            assert(run_ev1_loop(a->code, a->code_size, l2_start, 4, &erases) == 0);
+
+            apply_game_specific_hacks(a);
+            assert(game_evenicle || game_evenicle_rance || game_evenicle_gaiden);
+            assert((uint16_t)LittleEndian_getW(a->code, l1_inc) == INC);
+            assert((uint16_t)LittleEndian_getW(a->code, l2_step) == fixed_op);
+            for (size_t i = 0; i < a->code_size; i++) {
+                if (i != l2_step && i != l2_step + 1)
+                    assert(a->code[i] == before[i]);
+            }
+            assert(run_ev1_loop(a->code, a->code_size, l2_start, 4, &erases) == 1);
+            assert(erases == 4);
+
+            free(before);
+            ain_free(a);
+        }
+    }
+
+    // 5. Evenicle 1 negative tests (already-fixed DEC, unrelated function, non-Evenicle v6)
+    {
+        uint32_t l1_inc = 0, l2_start = 0, l2_step = 0;
+        struct ain *fixed = build_ev1_ain(1, "WaitAllOrderCharaMotionFinish",
+            false, DEC, &l1_inc, &l2_start, &l2_step);
+        uint8_t *snap = malloc(fixed->code_size);
+        memcpy(snap, fixed->code, fixed->code_size);
+        apply_game_specific_hacks(fixed);
+        assert(memcmp(fixed->code, snap, fixed->code_size) == 0);
+        free(snap);
+        ain_free(fixed);
+
+        struct ain *other_fn = build_ev1_ain(1, "OtherMotionWait",
+            false, INC, &l1_inc, &l2_start, &l2_step);
+        apply_game_specific_hacks(other_fn);
+        assert((uint16_t)LittleEndian_getW(other_fn->code, l2_step) == INC);
+        ain_free(other_fn);
+
+        struct ain *other_game = build_ev1_ain(0, "WaitAllOrderCharaMotionFinish",
+            false, INC, &l1_inc, &l2_start, &l2_step);
+        apply_game_specific_hacks(other_game);
+        assert(!game_evenicle && !game_evenicle_rance && !game_evenicle_gaiden);
+        assert((uint16_t)LittleEndian_getW(other_game->code, l2_step) == INC);
+        ain_free(other_game);
+    }
+
+    // 6. Live read-only verification against Evenicle.ain when present
+    if (argc > 1) {
+        int err = 0;
+        struct ain *live = ain_open(argv[1], &err);
+        assert(live != NULL && err == 0);
+        int fno = ain_get_function(live, "WaitAllOrderCharaMotionFinish");
+        assert(fno > 0);
+        uint32_t begin = (uint32_t)live->functions[fno].address;
+        uint32_t end = (uint32_t)live->code_size;
+        for (int i = 0; i < live->nr_functions; i++) {
+            uint32_t addr = (uint32_t)live->functions[i].address;
+            if (addr > begin && addr < end)
+                end = addr;
+        }
+        assert(begin < 0x1ea106u && 0x1ea106u + 2u <= end);
+        assert((uint16_t)LittleEndian_getW(live->code, 0x1e9feeu) == INC);
+        assert((uint16_t)LittleEndian_getW(live->code, 0x1ea106u) == INC);
+        uint8_t *before = malloc(end - begin);
+        memcpy(before, live->code + begin, end - begin);
+
+        apply_game_specific_hacks(live);
+        assert(game_evenicle);
+        assert((uint16_t)LittleEndian_getW(live->code, 0x1e9feeu) == INC);
+        assert((uint16_t)LittleEndian_getW(live->code, 0x1ea106u) == DEC);
+        for (uint32_t p = begin; p < end; p++) {
+            if (p != 0x1ea106u && p != 0x1ea107u)
+                assert(live->code[p] == before[p - begin]);
+        }
+        free(before);
+        ain_free(live);
+        puts("LIVE_EV1_OK");
+    }
+
+    puts("ALL_OK");
+    return 0;
+}
+"""
+        out = compile_and_run_with_sources(c_code, LIBSYS4_HACKS_SRCS, ["-lz", "-lm"], ev1_arg)
+        self.assertIn("ALL_OK", out)
+        if ev1_arg:
+            self.assertIn("LIVE_EV1_OK", out)
 
 
 if __name__ == "__main__":

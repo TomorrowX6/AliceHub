@@ -16,6 +16,8 @@
 
 #include <assert.h>
 #include <float.h>
+#include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <cglm/cglm.h>
 
@@ -80,63 +82,141 @@ static void init_triangles(struct collider *collider, struct pol_mesh *mesh)
 	fill_triangles(collider->triangles, mesh);
 }
 
-static void link_neighbors(struct collider *collider, int t1_index, int t2_index)
+static void link_unique_neighbors(struct collider *collider, int t1_index, int t2_index)
 {
 	struct collider_triangle *t1 = &collider->triangles[t1_index];
 	struct collider_triangle *t2 = &collider->triangles[t2_index];
+	bool has12 = false, has21 = false;
 	for (int i = 0; i < 3; i++) {
-		if (t1->neighbors[i] == -1) {
-			t1->neighbors[i] = t2_index;
-			break;
+		if (t1->neighbors[i] == t2_index) has12 = true;
+		if (t2->neighbors[i] == t1_index) has21 = true;
+	}
+	if (!has12) {
+		for (int i = 0; i < 3; i++) {
+			if (t1->neighbors[i] == -1) {
+				t1->neighbors[i] = t2_index;
+				break;
+			}
 		}
 	}
-	for (int i = 0; i < 3; i++) {
-		if (t2->neighbors[i] == -1) {
-			t2->neighbors[i] = t1_index;
-			break;
+	if (!has21) {
+		for (int i = 0; i < 3; i++) {
+			if (t2->neighbors[i] == -1) {
+				t2->neighbors[i] = t1_index;
+				break;
+			}
 		}
+	}
+}
+
+struct half_edge_slot {
+	uint64_t key;
+	uint32_t tri_p1;  // 0 = empty, UINT32_MAX = tombstone, else tri_index + 1
+};
+
+static inline size_t hash_edge_key(uint64_t x)
+{
+	x ^= x >> 30;
+	x *= 0xbf58476d1ce4e5b9ULL;
+	x ^= x >> 27;
+	x *= 0x94d049bb133111ebULL;
+	x ^= x >> 31;
+	return (size_t)x;
+}
+
+static struct half_edge_slot *edge_table_find(struct half_edge_slot *table, size_t mask, uint64_t key)
+{
+	size_t idx = hash_edge_key(key) & mask;
+	for (;;) {
+		struct half_edge_slot *slot = &table[idx];
+		if (slot->tri_p1 == 0)
+			return NULL;
+		if (slot->tri_p1 != UINT32_MAX && slot->key == key)
+			return slot;
+		idx = (idx + 1) & mask;
 	}
 }
 
 static void init_edges(struct collider *collider, struct pol_mesh *mesh)
 {
-	// Link neighboring triangles.
-	if (mesh->nr_triangles >= 65535)
-		ERROR("Too many triangles in collision mesh: %d", mesh->nr_triangles);
-	const int nv = mesh->nr_vertices;
-	const int table_size = nv * nv;
-	uint16_t *table = xcalloc(table_size, sizeof(uint16_t));
-	int nr_edges = 0;
-	for (int i = 0; i < mesh->nr_triangles; i++) {
+	// Link neighboring triangles via an O(nr_triangles) open-addressed half-edge table.
+	if (mesh->nr_triangles == 0) {
+		collider->nr_edges = 0;
+		collider->edges = NULL;
+		return;
+	}
+	size_t max_tris = (SIZE_MAX - 1) / 6;
+	if (max_tris > (size_t)(INT32_MAX / 3))
+		max_tris = (size_t)(INT32_MAX / 3);
+	if ((size_t)mesh->nr_triangles > max_tris)
+		ERROR("Too many triangles in collision mesh: %u", mesh->nr_triangles);
+
+	size_t min_cap = (size_t)mesh->nr_triangles * 6 + 1;
+	size_t cap = 16;
+	while (cap < min_cap) {
+		if (cap > (SIZE_MAX >> 1))
+			ERROR("Too many triangles in collision mesh: %u", mesh->nr_triangles);
+		cap <<= 1;
+	}
+	size_t mask = cap - 1;
+	struct half_edge_slot *table = xcalloc(cap, sizeof(*table));
+
+	uint32_t nr_edges = 0;
+	for (uint32_t i = 0; i < mesh->nr_triangles; i++) {
 		for (int j = 0; j < 3; j++) {
-			int v1 = mesh->triangles[i].vert_index[j];
-			int v2 = mesh->triangles[i].vert_index[(j + 1) % 3];
-			int k = v2 * nv + v1;
-			if (table[k]) {
-				link_neighbors(collider, table[k] - 1, i);
-				table[k] = 0;
+			uint32_t v1 = mesh->triangles[i].vert_index[j];
+			uint32_t v2 = mesh->triangles[i].vert_index[(j + 1) % 3];
+			if (v1 >= mesh->nr_vertices || v2 >= mesh->nr_vertices || v1 == v2)
+				continue;
+			uint64_t opp_key = ((uint64_t)v2 << 32) | (uint64_t)v1;
+			struct half_edge_slot *opp = edge_table_find(table, mask, opp_key);
+			if (opp) {
+				link_unique_neighbors(collider, (int)(opp->tri_p1 - 1), (int)i);
+				opp->tri_p1 = UINT32_MAX;
 				nr_edges--;
 			} else {
-				table[v1 * nv + v2] = i + 1;
-				nr_edges++;
+				uint64_t key = ((uint64_t)v1 << 32) | (uint64_t)v2;
+				size_t idx = hash_edge_key(key) & mask;
+				struct half_edge_slot *first_tomb = NULL;
+				for (;;) {
+					struct half_edge_slot *slot = &table[idx];
+					if (slot->tri_p1 == 0) {
+						struct half_edge_slot *dst = first_tomb ? first_tomb : slot;
+						dst->key = key;
+						dst->tri_p1 = i + 1;
+						nr_edges++;
+						break;
+					}
+					if (slot->tri_p1 == UINT32_MAX) {
+						if (!first_tomb)
+							first_tomb = slot;
+					} else if (slot->key == key) {
+						// Non-manifold duplicate directed edge: link without corrupting edge count.
+						link_unique_neighbors(collider, (int)(slot->tri_p1 - 1), (int)i);
+						break;
+					}
+					idx = (idx + 1) & mask;
+				}
 			}
 		}
 	}
+
 	// Collect boundary edges, i.e., edges that belong to only one triangle.
 	collider->nr_edges = nr_edges;
-	collider->edges = xcalloc(nr_edges, sizeof(struct collider_edge));
-	struct collider_edge* edge = collider->edges;
-	for (int i = 0; i < table_size; i++) {
-		if (!table[i]) continue;
-		int v1 = i / nv;
-		int v2 = i % nv;
+	collider->edges = nr_edges ? xcalloc(nr_edges, sizeof(struct collider_edge)) : NULL;
+	struct collider_edge *edge = collider->edges;
+	for (size_t i = 0; i < cap; i++) {
+		if (table[i].tri_p1 == 0 || table[i].tri_p1 == UINT32_MAX)
+			continue;
+		uint32_t v1 = (uint32_t)(table[i].key >> 32);
+		uint32_t v2 = (uint32_t)(table[i].key & 0xffffffffu);
 		edge->vertices[0][0] = mesh->vertices[v1].pos[0];
 		edge->vertices[0][1] = mesh->vertices[v1].pos[2];
 		edge->vertices[1][0] = mesh->vertices[v2].pos[0];
 		edge->vertices[1][1] = mesh->vertices[v2].pos[2];
 		glm_vec2_minv(edge->vertices[0], edge->vertices[1], edge->aabb[0]);
 		glm_vec2_maxv(edge->vertices[0], edge->vertices[1], edge->aabb[1]);
-		edge->tri_index = table[i] - 1;
+		edge->tri_index = (int)(table[i].tri_p1 - 1);
 		edge++;
 	}
 	assert(edge == collider->edges + nr_edges);
@@ -201,33 +281,6 @@ static struct collider_triangle* find_triangle(struct collider *collider, vec2 x
 			return t;
 	}
 	return NULL;
-}
-
-static void link_unique_neighbors(struct collider *collider, int t1_index, int t2_index)
-{
-	struct collider_triangle *t1 = &collider->triangles[t1_index];
-	struct collider_triangle *t2 = &collider->triangles[t2_index];
-	bool has12 = false, has21 = false;
-	for (int i = 0; i < 3; i++) {
-		if (t1->neighbors[i] == t2_index) has12 = true;
-		if (t2->neighbors[i] == t1_index) has21 = true;
-	}
-	if (!has12) {
-		for (int i = 0; i < 3; i++) {
-			if (t1->neighbors[i] == -1) {
-				t1->neighbors[i] = t2_index;
-				break;
-			}
-		}
-	}
-	if (!has21) {
-		for (int i = 0; i < 3; i++) {
-			if (t2->neighbors[i] == -1) {
-				t2->neighbors[i] = t1_index;
-				break;
-			}
-		}
-	}
 }
 
 struct cand_boundary_edge {
@@ -441,6 +494,8 @@ static bool segments_intersect(vec2 p0, vec2 p1, vec2 q0, vec2 q1)
 
 bool check_collision(struct collider *collider, vec2 p0, vec2 p1, float radius, vec2 out)
 {
+	if (!isfinite(radius) || radius < 0.0f)
+		radius = 0.0f;
 	if (find_triangle(collider, p1)) {
 		glm_vec2_copy(p1, out);
 	} else {
@@ -451,15 +506,18 @@ bool check_collision(struct collider *collider, vec2 p0, vec2 p1, float radius, 
 		glm_vec2_copy(p0, good);
 		glm_vec2_copy(p1, bad);
 		float w = glm_vec2_distance(good, bad);
-		while (w > radius) {
-			vec2 mid;
-			glm_vec2_center(good, bad, mid);
-			if (find_triangle(collider, mid)) {
-				glm_vec2_copy(mid, good);
-			} else {
-				glm_vec2_copy(mid, bad);
+		float min_w = fmaxf(radius, 1e-4f);
+		if (isfinite(w)) {
+			for (int iter = 0; iter < 32 && w > min_w; iter++) {
+				vec2 mid;
+				glm_vec2_center(good, bad, mid);
+				if (find_triangle(collider, mid)) {
+					glm_vec2_copy(mid, good);
+				} else {
+					glm_vec2_copy(mid, bad);
+				}
+				w *= 0.5f;
 			}
-			w /= 2.f;
 		}
 		glm_vec2_copy(good, out);
 	}

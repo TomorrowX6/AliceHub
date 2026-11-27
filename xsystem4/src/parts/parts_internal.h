@@ -183,6 +183,7 @@ struct parts_numeral_font {
 	enum parts_numeral_font_type type;
 	int cg_no;
 	int width[12];
+	struct string *cg_name;
 	Texture cg[12];
 };
 
@@ -797,6 +798,8 @@ bool parts_animation_set_cg_by_index(struct parts *parts, struct parts_animation
 bool parts_animation_set_cg(struct parts *parts, struct parts_animation *anim,
 		struct string *cg_name, int start_no, int nr_frames, int frame_time);
 void parts_numeral_font_init(struct parts_numeral_font *font);
+int parts_load_numeral_font_separate_string(struct string *cg_name);
+int parts_load_numeral_font_combined_by_name(struct string *cg_name, int w[12]);
 bool parts_numeral_set_number(struct parts *parts, struct parts_numeral *num, int n);
 bool parts_gauge_set_cg(struct parts *parts, struct parts_gauge *g, struct string *cg_name);
 bool parts_gauge_set_cg_by_index(struct parts *parts, struct parts_gauge *g, int cg_no);

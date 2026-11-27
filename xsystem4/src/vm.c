@@ -111,8 +111,13 @@ static bool vm_zero_vector_div_guard(void)
 	const char *name = ain->functions[fno].name;
 	return !strcmp(name, "VECTOR3D@Normalize")
 		|| !strcmp(name, "VECTOR2D@Normalize")
+		|| !strcmp(name, "VECTOR2D@Rotate")
 		|| !strcmp(name, "VECTOR3D@SetLength")
 		|| !strcmp(name, "VECTOR2D@SetLength")
+		|| !strcmp(name, "CASVector3D@Normalize")
+		|| !strcmp(name, "CASVector2D@Normalize")
+		|| !strcmp(name, "CASVector3D@SetLength")
+		|| !strcmp(name, "CASVector2D@SetLength")
 		|| !strcmp(name, "fxyz_t@Normalize");
 }
 

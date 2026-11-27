@@ -1250,44 +1250,101 @@ bool parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct string 
 
 void parts_numeral_font_init(struct parts_numeral_font *font)
 {
+	for (int i = 0; i < 12; i++) {
+		if (font->cg[i].handle)
+			gfx_delete_texture(&font->cg[i]);
+		font->cg[i] = (Texture){0};
+	}
+
 	if (font->type == PARTS_NUMERAL_FONT_SEPARATE) {
 		for (int i = 0; i < 12; i++) {
 			struct cg *cg = asset_cg_load(font->cg_no + i);
-			if (!cg) {
-				font->cg[i].handle = 0;
+			if (!cg)
 				continue;
-			}
 			gfx_init_texture_with_cg(&font->cg[i], cg);
 			cg_free(cg);
 		}
 	} else if (font->type == PARTS_NUMERAL_FONT_SEPARATE2) {
-		for (int i = 0; i < 12; i++) {
-			if (font->width[i] < 0)
-				continue;
-			struct cg *cg = asset_cg_load(font->width[i]);
-			if (!cg) {
-				font->cg[i].handle = 0;
-				continue;
+		if (font->cg_name && font->cg_name->size > 0) {
+			for (int i = 0; i < 12; i++) {
+				struct string *name = string_format(font->cg_name, (union vm_value){.i = i}, STRFMT_INT);
+				int no = -1;
+				struct cg *cg = asset_cg_load_by_name(name->text, &no);
+				free_string(name);
+				if (!cg) {
+					font->width[i] = -1;
+					continue;
+				}
+				font->width[i] = no;
+				gfx_init_texture_with_cg(&font->cg[i], cg);
+				cg_free(cg);
 			}
-			gfx_init_texture_with_cg(&font->cg[i], cg);
-			cg_free(cg);
+			font->cg_no = font->width[0];
+		} else {
+			for (int i = 0; i < 12; i++) {
+				if (font->width[i] < 0)
+					continue;
+				struct cg *cg = asset_cg_load(font->width[i]);
+				if (!cg)
+					continue;
+				gfx_init_texture_with_cg(&font->cg[i], cg);
+				cg_free(cg);
+			}
 		}
 	} else if (font->type == PARTS_NUMERAL_FONT_COMBINED) {
-		int x = 0;
-		Texture t = {0};
-		struct cg *cg = asset_cg_load(font->cg_no);
-		if (!cg) return;
-		gfx_init_texture_with_cg(&t, cg);
-		for (int i = 0; i < 12; i++) {
-			if (font->width[i] <= 0)
-				continue;
-			gfx_init_texture_blank(&font->cg[i], font->width[i], t.h);
-			gfx_copy_with_alpha_map(&font->cg[i], 0, 0, &t, x, 0, font->width[i], t.h);
-			x += font->width[i];
+		struct cg *cg = NULL;
+		if (font->cg_name && font->cg_name->size > 0) {
+			int no = font->cg_no;
+			cg = asset_cg_load_by_name(font->cg_name->text, &no);
+			if (cg)
+				font->cg_no = no;
 		}
-		gfx_delete_texture(&t);
+		if (!cg && font->cg_no > 0)
+			cg = asset_cg_load(font->cg_no);
+		if (!cg)
+			return;
+		if (!cg->pixels || cg->metrics.w <= 0 || cg->metrics.h <= 0) {
+			cg_free(cg);
+			return;
+		}
+		int src_w = cg->metrics.w;
+		int src_h = cg->metrics.h;
+		const uint8_t *src_px = (const uint8_t *)cg->pixels;
+		int64_t x = 0;
+		for (int i = 0; i < 12; i++) {
+			int gw = font->width[i];
+			if (gw <= 0)
+				continue;
+			if ((size_t)gw > SIZE_MAX / 4 / (size_t)src_h) {
+				x += gw;
+				continue;
+			}
+			uint8_t *buf = xcalloc((size_t)gw * (size_t)src_h, 4);
+			if (x >= 0 && x < src_w) {
+				int copy_w = src_w - (int)x;
+				if (copy_w > gw)
+					copy_w = gw;
+				for (int y = 0; y < src_h; y++) {
+					memcpy(buf + ((size_t)y * (size_t)gw) * 4,
+							src_px + ((size_t)y * (size_t)src_w + (size_t)x) * 4,
+							(size_t)copy_w * 4);
+				}
+			}
+			gfx_init_texture_with_pixels(&font->cg[i], gw, src_h, buf);
+			free(buf);
+			x += gw;
+		}
 		cg_free(cg);
 	}
+}
+
+static bool parts_numeral_font_has_texture(const struct parts_numeral_font *font)
+{
+	for (int i = 0; i < 12; i++) {
+		if (font->cg[i].handle)
+			return true;
+	}
+	return false;
 }
 
 static int parts_load_numeral_font_separate(int cg_no)
@@ -1304,40 +1361,53 @@ static int parts_load_numeral_font_separate(int cg_no)
 	parts_numeral_fonts = xrealloc_array(parts_numeral_fonts, font_no, font_no + 1,
 			sizeof(struct parts_numeral_font));
 	struct parts_numeral_font *font = &parts_numeral_fonts[font_no];
+	memset(font, 0, sizeof(*font));
 	font->cg_no = cg_no;
 	font->type = PARTS_NUMERAL_FONT_SEPARATE;
 	parts_numeral_font_init(font);
 	return font_no;
 }
 
-static int parts_load_numeral_font_separate_string(struct string *cg_name)
+int parts_load_numeral_font_separate_string(struct string *cg_name)
 {
+	if (!cg_name || !cg_name->size)
+		return -1;
+
+	// find existing font by name first
+	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
+		struct parts_numeral_font *font = &parts_numeral_fonts[i];
+		if (font->type == PARTS_NUMERAL_FONT_SEPARATE2
+				&& font->cg_name && !strcmp(font->cg_name->text, cg_name->text))
+			return i;
+	}
+
 	// convert name to CG indices
 	int indices[12];
+	bool any_exists = false;
 	for (int i = 0; i < 12; i++) {
 		struct string *name = string_format(cg_name, (union vm_value){.i = i}, STRFMT_INT);
-		if (!asset_exists_by_name(ASSET_CG, name->text, &indices[i])) {
+		if (asset_exists_by_name(ASSET_CG, name->text, &indices[i])) {
+			any_exists = true;
+		} else {
 			WARNING("numeral cg doesn't exist: %s", display_sjis0(name->text));
 			indices[i] = -1;
 		}
 		free_string(name);
 	}
+	if (!any_exists)
+		return -1;
 
-	// find existing font
+	// match legacy unnamed font by indices and upgrade it with cg_name
 	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
 		struct parts_numeral_font *font = &parts_numeral_fonts[i];
-		if (font->type != PARTS_NUMERAL_FONT_SEPARATE2)
+		if (font->type != PARTS_NUMERAL_FONT_SEPARATE2 || font->cg_name)
 			continue;
-		bool not_match = false;
-		for (int d = 0; d < 12; d++) {
-			if (font->width[d] != indices[d]) {
-				not_match = true;
-				break;
-			}
+		if (!memcmp(font->width, indices, sizeof(indices))) {
+			font->cg_name = string_dup(cg_name);
+			if (!parts_numeral_font_has_texture(font))
+				parts_numeral_font_init(font);
+			return i;
 		}
-		if (not_match)
-			continue;
-		return i;
 	}
 
 	// load new font
@@ -1345,8 +1415,10 @@ static int parts_load_numeral_font_separate_string(struct string *cg_name)
 	parts_numeral_fonts = xrealloc_array(parts_numeral_fonts, font_no, font_no + 1,
 			sizeof(struct parts_numeral_font));
 	struct parts_numeral_font *font = &parts_numeral_fonts[font_no];
+	memset(font, 0, sizeof(*font));
 	font->cg_no = indices[0];
 	font->type = PARTS_NUMERAL_FONT_SEPARATE2;
+	font->cg_name = string_dup(cg_name);
 	memcpy(font->width, indices, sizeof(int) * 12);
 	parts_numeral_font_init(font);
 	return font_no;
@@ -1357,7 +1429,7 @@ static int parts_load_numeral_font_combined(int cg_no, int w[12])
 	// find existing font
 	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
 		struct parts_numeral_font *font = &parts_numeral_fonts[i];
-		if (font->type != PARTS_NUMERAL_FONT_COMBINED || font->cg_no != cg_no)
+		if (font->type != PARTS_NUMERAL_FONT_COMBINED || font->cg_name || font->cg_no != cg_no)
 			continue;
 		if (!memcmp(w, font->width, sizeof(font->width)))
 			return i;
@@ -1368,8 +1440,48 @@ static int parts_load_numeral_font_combined(int cg_no, int w[12])
 	parts_numeral_fonts = xrealloc_array(parts_numeral_fonts, font_no, font_no + 1,
 			sizeof(struct parts_numeral_font));
 	struct parts_numeral_font *font = &parts_numeral_fonts[font_no];
+	memset(font, 0, sizeof(*font));
 	font->cg_no = cg_no;
 	font->type = PARTS_NUMERAL_FONT_COMBINED;
+	memcpy(font->width, w, sizeof(int) * 12);
+	parts_numeral_font_init(font);
+	return font_no;
+}
+
+int parts_load_numeral_font_combined_by_name(struct string *cg_name, int w[12])
+{
+	if (!cg_name || !cg_name->size)
+		return -1;
+	int no = 0;
+	if (!asset_exists_by_name(ASSET_CG, cg_name->text, &no))
+		return -1;
+
+	// find existing font by name, or upgrade matching legacy unnamed font
+	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
+		struct parts_numeral_font *font = &parts_numeral_fonts[i];
+		if (font->type != PARTS_NUMERAL_FONT_COMBINED)
+			continue;
+		if (memcmp(w, font->width, sizeof(font->width)))
+			continue;
+		if (font->cg_name && !strcmp(font->cg_name->text, cg_name->text))
+			return i;
+		if (!font->cg_name && font->cg_no == no) {
+			font->cg_name = string_dup(cg_name);
+			if (!parts_numeral_font_has_texture(font))
+				parts_numeral_font_init(font);
+			return i;
+		}
+	}
+
+	// load new font
+	int font_no = parts_nr_numeral_fonts++;
+	parts_numeral_fonts = xrealloc_array(parts_numeral_fonts, font_no, font_no + 1,
+			sizeof(struct parts_numeral_font));
+	struct parts_numeral_font *font = &parts_numeral_fonts[font_no];
+	memset(font, 0, sizeof(*font));
+	font->cg_no = no;
+	font->type = PARTS_NUMERAL_FONT_COMBINED;
+	font->cg_name = string_dup(cg_name);
 	memcpy(font->width, w, sizeof(int) * 12);
 	parts_numeral_font_init(font);
 	return font_no;
@@ -1544,13 +1656,7 @@ static void parts_update_loop(struct parts *parts, int passed_time, bool occlude
 {
 	bool visible = !occluded && parts_is_visible(parts);
 	struct parts_state *display = parts_display_state(parts);
-	bool state_dirty = false;
-	if (!visible && display->type == PARTS_FLAT &&
-			!display->flat.needs_advance && display->flat.pending_seek_delta <= 0) {
-		state_dirty = false;
-	} else {
-		state_dirty = parts_state_update(display, passed_time);
-	}
+	bool state_dirty = parts_state_update(display, passed_time);
 	if (display != &parts->states[PARTS_STATE_DEFAULT]
 			&& parts->states[PARTS_STATE_DEFAULT].type == PARTS_FLAT
 			&& parts->states[PARTS_STATE_DEFAULT].flat.needs_advance) {
@@ -1649,10 +1755,12 @@ void parts_release_all(void)
 
 	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
 		struct parts_numeral_font *font = &parts_numeral_fonts[i];
-		for (int i = 0; i < 12; i++) {
-			if (font->cg[i].handle)
-				gfx_delete_texture(&font->cg[i]);
+		for (int j = 0; j < 12; j++) {
+			if (font->cg[j].handle)
+				gfx_delete_texture(&font->cg[j]);
 		}
+		if (font->cg_name)
+			free_string(font->cg_name);
 	}
 
 	free(parts_numeral_fonts);
@@ -2146,8 +2254,13 @@ static struct cg *load_loop_cg_by_index(int no, void *_)
 bool parts_animation_set_cg_by_index(struct parts *parts, struct parts_animation *anim,
 		int cg_no, int nr_frames, int frame_time)
 {
-	return _parts_animation_set_cg(parts, anim, cg_no, nr_frames, frame_time,
+	bool r = _parts_animation_set_cg(parts, anim, cg_no, nr_frames, frame_time,
 			load_loop_cg_by_index, NULL);
+	if (r && anim->cg_name) {
+		free_string(anim->cg_name);
+		anim->cg_name = NULL;
+	}
+	return r;
 }
 
 bool PE_SetLoopCG_by_index(int parts_no, int cg_no, int nr_frames, int frame_time, int state)
@@ -2251,6 +2364,10 @@ bool parts_gauge_set_cg_by_index(struct parts *parts, struct parts_gauge *g, int
 	_parts_set_gauge_cg(parts, g, cg);
 	cg_free(cg);
 	g->cg_no = cg_no;
+	if (g->cg_name) {
+		free_string(g->cg_name);
+		g->cg_name = NULL;
+	}
 	return true;
 }
 
@@ -2498,8 +2615,9 @@ bool PE_SetNumeralCG(int parts_no, struct string *cg_name, int state)
 	struct parts_numeral *n = parts_get_numeral(p, state);
 	n->font_no = parts_load_numeral_font_separate_string(cg_name);
 	n->show_type = 0;
-	free_string(n->cg_name);
-	n->cg_name = string_dup(cg_name);
+	if (n->cg_name)
+		free_string(n->cg_name);
+	n->cg_name = cg_name ? string_dup(cg_name) : string_ref(&EMPTY_STRING);
 	return parts_numeral_update(p, n);
 }
 
@@ -2512,6 +2630,9 @@ bool PE_SetNumeralCG_by_index(int parts_no, int cg_no, int state)
 	struct parts_numeral *n = parts_get_numeral(p, state);
 	n->font_no = parts_load_numeral_font_separate(cg_no);
 	n->show_type = 0;
+	if (n->cg_name)
+		free_string(n->cg_name);
+	n->cg_name = string_ref(&EMPTY_STRING);
 	return parts_numeral_update(p, n);
 }
 
@@ -2530,6 +2651,9 @@ bool PE_SetNumeralLinkedCGNumberWidthWidthList_by_index(int parts_no, int cg_no,
 	struct parts_numeral *n = parts_get_numeral(p, state);
 	n->font_no = parts_load_numeral_font_combined(cg_no, w);
 	n->show_type = 1;
+	if (n->cg_name)
+		free_string(n->cg_name);
+	n->cg_name = string_ref(&EMPTY_STRING);
 	return parts_numeral_update(p, n);
 }
 
@@ -2539,17 +2663,20 @@ bool PE_SetNumeralLinkedCGNumberWidthWidthList(int parts_no, struct string *cg_n
 {
 	if (!parts_state_valid(--state))
 		return false;
-
-	int no;
-	if (!asset_exists_by_name(ASSET_CG, cg_name->text, &no))
+	if (!cg_name || !cg_name->size)
 		return false;
 
 	int w[12] = { w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w_minus, w_comma };
+	int font_no = parts_load_numeral_font_combined_by_name(cg_name, w);
+	if (font_no < 0)
+		return false;
+
 	struct parts *p = parts_get(parts_no);
 	struct parts_numeral *n = parts_get_numeral(p, state);
-	n->font_no = parts_load_numeral_font_combined(no, w);
+	n->font_no = font_no;
 	n->show_type = 1;
-	free_string(n->cg_name);
+	if (n->cg_name)
+		free_string(n->cg_name);
 	n->cg_name = string_dup(cg_name);
 	return parts_numeral_update(p, n);
 }
@@ -2716,7 +2843,7 @@ NUMERAL_GETTER(int, GetNumeralLength, length, 0)
 struct string *PE_GetNumeralCGName(int no, int state)
 {
 	struct parts_numeral *n = try_get_numeral(no, state);
-	return string_ref(n ? n->cg_name : &EMPTY_STRING);
+	return string_ref(n && n->cg_name ? n->cg_name : &EMPTY_STRING);
 }
 
 void PE_GetNumeralCGNumberWidthList(int no, int *w0, int *w1, int *w2, int *w3,
@@ -3909,11 +4036,14 @@ static void recover_cg_state(struct parts_cg *state, bool suspended)
 	if (state->common.texture.handle || suspended)
 		return;
 	struct cg *cg = NULL;
-	if (state->no > 0) {
-		cg = asset_cg_load(state->no);
-	} else if (state->name && state->name->size > 0) {
+	if (state->name && state->name->size > 0) {
 		int no = 0;
 		cg = asset_cg_load_by_name(state->name->text, &no);
+		if (cg && no > 0)
+			state->no = no;
+	}
+	if (!cg && state->no > 0) {
+		cg = asset_cg_load(state->no);
 	}
 	if (cg) {
 		gfx_init_texture_with_cg(&state->common.texture, cg);
@@ -3966,14 +4096,133 @@ static void recover_widget_states(struct parts *p)
 		parts_widget_rebuild_label(p);
 }
 
+static void recover_parts_state(struct parts *p, struct parts_state *s)
+{
+	switch (s->type) {
+	case PARTS_CG:
+		recover_cg_state(&s->cg, p->textures_suspended);
+		break;
+	case PARTS_TEXT:
+		if (recover_text_state(&s->text) && !p->textures_suspended)
+			parts_text_rerender_all(p, &s->text);
+		break;
+	case PARTS_ANIMATION: {
+		bool missing_frame = false;
+		if (s->common.texture.handle)
+			gfx_remap_texture(&s->common.texture);
+		for (unsigned fi = 0; s->anim.frames && fi < s->anim.nr_frames; fi++) {
+			if (s->anim.frames[fi].handle) {
+				if (!gfx_remap_texture(&s->anim.frames[fi]))
+					missing_frame = true;
+			} else if (s->anim.frames[fi].w > 0) {
+				missing_frame = true;
+			}
+		}
+		if (missing_frame && !p->textures_suspended && s->anim.nr_frames > 0) {
+			unsigned saved_elapsed = s->anim.elapsed;
+			unsigned saved_frame = s->anim.current_frame;
+			bool ok = false;
+			if (s->anim.cg_name && s->anim.cg_name->size > 0) {
+				struct string *name_copy = string_dup(s->anim.cg_name);
+				ok = parts_animation_set_cg(p, &s->anim, name_copy,
+						(int)s->anim.start_no, (int)s->anim.nr_frames, (int)s->anim.frame_time);
+				free_string(name_copy);
+			} else if (s->anim.start_no > 0) {
+				ok = parts_animation_set_cg_by_index(p, &s->anim,
+						(int)s->anim.start_no, (int)s->anim.nr_frames, (int)s->anim.frame_time);
+			}
+			if (ok && s->anim.nr_frames > 0) {
+				s->anim.elapsed = saved_elapsed;
+				s->anim.current_frame = saved_frame < s->anim.nr_frames ? saved_frame : 0;
+			}
+		}
+		if (s->anim.frames && s->anim.nr_frames > 0) {
+			if (s->anim.current_frame >= s->anim.nr_frames)
+				s->anim.current_frame = 0;
+			s->common.texture = s->anim.frames[s->anim.current_frame];
+		}
+		break;
+	}
+	case PARTS_NUMERAL:
+		if (s->common.texture.handle)
+			gfx_remap_texture(&s->common.texture);
+		if (!s->common.texture.handle && s->num.have_num && !p->textures_suspended)
+			parts_numeral_update(p, &s->num);
+		break;
+	case PARTS_HGAUGE:
+	case PARTS_VGAUGE: {
+		bool cg_ok = !s->gauge.cg.handle || gfx_remap_texture(&s->gauge.cg);
+		if (s->common.texture.handle)
+			gfx_remap_texture(&s->common.texture);
+		if (!p->textures_suspended) {
+			bool need_cg = !s->gauge.cg.handle &&
+				((s->gauge.cg_name && s->gauge.cg_name->size > 0) || s->gauge.cg_no >= 0 || !cg_ok);
+			if (need_cg) {
+				float saved_rate = s->gauge.rate;
+				bool loaded = false;
+				if (s->gauge.cg_name && s->gauge.cg_name->size > 0) {
+					struct string *name_copy = string_dup(s->gauge.cg_name);
+					loaded = parts_gauge_set_cg(p, &s->gauge, name_copy);
+					free_string(name_copy);
+				}
+				if (!loaded && s->gauge.cg_no >= 0)
+					loaded = parts_gauge_set_cg_by_index(p, &s->gauge, s->gauge.cg_no);
+				if (loaded) {
+					if (s->type == PARTS_VGAUGE)
+						parts_vgauge_set_rate(p, &s->gauge, saved_rate);
+					else
+						parts_hgauge_set_rate(p, &s->gauge, saved_rate);
+				}
+			} else if (!s->common.texture.handle && s->gauge.cg.handle) {
+				gfx_init_texture_rgba(&s->common.texture, s->gauge.cg.w, s->gauge.cg.h,
+						(SDL_Color){0, 0, 0, 255});
+				if (s->type == PARTS_VGAUGE)
+					parts_vgauge_set_rate(p, &s->gauge, s->gauge.rate);
+				else
+					parts_hgauge_set_rate(p, &s->gauge, s->gauge.rate);
+			}
+		}
+		break;
+	}
+	case PARTS_CONSTRUCTION_PROCESS:
+		if (s->common.texture.handle)
+			gfx_remap_texture(&s->common.texture);
+		if (!s->common.texture.handle && !p->textures_suspended &&
+		    !TAILQ_EMPTY(&s->cproc.ops)) {
+			s->cproc.needs_build = true;
+		}
+		break;
+	case PARTS_FLASH:
+		if (s->common.texture.handle)
+			gfx_remap_texture(&s->common.texture);
+		if (s->flash.bitmaps)
+			ht_foreach_value(s->flash.bitmaps, remap_flash_bitmap);
+		break;
+	case PARTS_FLAT:
+		parts_flat_recover_widget_skin(&s->flat, p->textures_suspended);
+		break;
+	default:
+		if (s->common.texture.handle)
+			gfx_remap_texture(&s->common.texture);
+		break;
+	}
+}
+
 static void recover_parts_in_current_context(void)
 {
 	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
 		struct parts_numeral_font *font = &parts_numeral_fonts[i];
+		bool needs_reinit = false;
 		for (int j = 0; j < 12; j++) {
-			if (font->cg[j].handle)
-				gfx_remap_texture(&font->cg[j]);
+			if (font->cg[j].handle) {
+				if (!gfx_remap_texture(&font->cg[j]))
+					needs_reinit = true;
+			} else if (font->cg[j].w > 0) {
+				needs_reinit = true;
+			}
 		}
+		if (needs_reinit)
+			parts_numeral_font_init(font);
 	}
 	if (!parts_table)
 		return;
@@ -3981,69 +4230,55 @@ static void recover_parts_in_current_context(void)
 	PARTS_LIST_FOREACH(p) {
 		for (int st = 0; st < PARTS_NR_STATES; st++) {
 			struct parts_state *s = &p->states[st];
-			switch (s->type) {
-			case PARTS_CG:
-				if (!p->widget)
-					recover_cg_state(&s->cg, p->textures_suspended);
-				break;
-			case PARTS_TEXT:
-				if (recover_text_state(&s->text) && !p->textures_suspended)
-					parts_text_rerender_all(p, &s->text);
-				break;
-			case PARTS_ANIMATION:
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				for (unsigned fi = 0; fi < s->anim.nr_frames; fi++) {
-					if (s->anim.frames[fi].handle)
-						gfx_remap_texture(&s->anim.frames[fi]);
-				}
-				break;
-			case PARTS_NUMERAL:
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				if (!s->common.texture.handle && s->num.have_num && !p->textures_suspended)
-					parts_numeral_update(p, &s->num);
-				break;
-			case PARTS_HGAUGE:
-			case PARTS_VGAUGE:
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				if (s->gauge.cg.handle)
-					gfx_remap_texture(&s->gauge.cg);
-				break;
-			case PARTS_CONSTRUCTION_PROCESS:
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				if (!s->common.texture.handle && !p->textures_suspended &&
-				    !TAILQ_EMPTY(&s->cproc.ops)) {
-					s->cproc.needs_build = true;
-				}
-				break;
-			case PARTS_FLASH:
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				if (s->flash.bitmaps)
-					ht_foreach_value(s->flash.bitmaps, remap_flash_bitmap);
-				break;
-			case PARTS_FLAT:
-				if (p->widget)
-					break;
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				if (s->flat.textures) {
-					for (size_t li = 0; li < s->flat.nr_libraries; li++) {
-						if (s->flat.textures[li].handle)
-							gfx_remap_texture(&s->flat.textures[li]);
-					}
-				}
-				break;
-			default:
-				if (s->common.texture.handle)
-					gfx_remap_texture(&s->common.texture);
-				break;
-			}
+			if (p->widget && (s->type == PARTS_CG || s->type == PARTS_FLAT))
+				continue;
+			recover_parts_state(p, s);
 		}
 		recover_widget_states(p);
+		if (p->panel && !p->textures_suspended && !p->states[0].common.texture.handle &&
+		    p->panel->width > 0 && p->panel->height > 0) {
+			parts_panel_rebuild(p);
+		}
+		if (p->scrollbar) {
+			struct parts_scrollbar *sb = p->scrollbar;
+			bool needs_rebuild = false;
+			for (int piece = 0; piece < 4; piece++) {
+				for (int st = 0; st < 4; st++) {
+					struct parts_state *sk = &sb->skins[piece][st];
+					if (sk->type == PARTS_CG) {
+						recover_cg_state(&sk->cg, p->textures_suspended);
+						if (!sk->common.texture.handle && sk->common.w > 0)
+							needs_rebuild = true;
+					} else if (sk->type == PARTS_FLAT) {
+						parts_flat_recover_widget_skin(&sk->flat, p->textures_suspended);
+						for (size_t li = 0; sk->flat.textures && li < sk->flat.nr_libraries; li++) {
+							if (!sk->flat.textures[li].handle && sk->flat.textures[li].w > 0)
+								needs_rebuild = true;
+						}
+					} else if (sk->common.texture.handle) {
+						if (!gfx_remap_texture(&sk->common.texture))
+							needs_rebuild = true;
+					}
+				}
+			}
+			if (needs_rebuild && !p->textures_suspended)
+				parts_scrollbar_rebuild(p);
+		}
+		if (p->message_box) {
+			struct parts_message_window *m = p->message_box;
+			if (recover_text_state(&m->label.text) && !p->textures_suspended) {
+				int saved_elapsed = m->elapsed;
+				bool saved_fixed = m->fixed;
+				parts_message_window_rebuild_text(p);
+				m->elapsed = saved_elapsed;
+				m->fixed = saved_fixed;
+			}
+			recover_parts_state(p, &m->key_wait);
+		}
+		if (p->text_box_label && p->text_box_label->type == PARTS_TEXT) {
+			if (recover_text_state(&p->text_box_label->text) && !p->textures_suspended)
+				parts_text_rerender_all(p, &p->text_box_label->text);
+		}
 		parts_component_dirty(p);
 		parts_dirty(p);
 	}

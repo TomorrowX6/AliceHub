@@ -17,6 +17,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -178,8 +179,10 @@ static void unload_instance(struct RE_instance *instance)
 	}
 	if (instance->bone_transforms) {
 		glDeleteTextures(1, &instance->bone_transforms_texture);
-		free(instance->bone_transforms);
+		instance->bone_transforms_texture = 0;
+		xfree_aligned(instance->bone_transforms);
 		instance->bone_transforms = NULL;
+		instance->bones_dirty = false;
 	}
 	if (instance->billboard_frames) {
 		// No need to free the textures, they are owned by the renderer.
@@ -236,7 +239,7 @@ static void update_motion(struct motion *m, float delta_frame)
 		m->current_frame = m->frame_begin;
 	switch (m->state) {
 	case RE_MOTION_STATE_NOLOOP:
-		if (m->current_frame > m->frame_end) {
+		if (m->current_frame >= m->frame_end) {
 			m->current_frame = m->frame_end;
 			m->state = RE_MOTION_STATE_STOP;
 		}
@@ -276,9 +279,48 @@ static void calc_motion_frame(struct motion *m, int bone, struct mot_frame *out)
 	interpolate_motion_frame(&frames[cur_frame], &frames[next_frame], t, out);
 }
 
+static void init_bone_transforms_identity(mat3x4 *bones, int nr_bones)
+{
+	static const mat3x4 identity = {
+		{ 1.0f, 0.0f, 0.0f, 0.0f },
+		{ 0.0f, 1.0f, 0.0f, 0.0f },
+		{ 0.0f, 0.0f, 1.0f, 0.0f },
+	};
+	for (int i = 0; i < nr_bones; i++)
+		memcpy(bones[i], identity, sizeof(mat3x4));
+}
+
+static void init_instance_bone_texture(struct RE_instance *instance)
+{
+	static mat3x4 identity_bones[MAX_BONES];
+	static bool identity_bones_initialized = false;
+	if (!identity_bones_initialized) {
+		init_bone_transforms_identity(identity_bones, MAX_BONES);
+		identity_bones_initialized = true;
+	}
+
+	glGenTextures(1, &instance->bone_transforms_texture);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, instance->bone_transforms_texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, MAX_BONES * 3, 1, 0, GL_RGBA, GL_FLOAT, identity_bones);
+	if (instance->bone_transforms && instance->model && instance->model->nr_bones > 0) {
+		int nr_bones = instance->model->nr_bones;
+		if (nr_bones > MAX_BONES)
+			nr_bones = MAX_BONES;
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, nr_bones * 3, 1, GL_RGBA, GL_FLOAT, instance->bone_transforms);
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 static void update_bones(struct RE_instance *inst)
 {
-	if (!inst->motion || !inst->model || !inst->bone_transforms)
+	if (!inst->motion || !inst->model || !inst->bone_transforms || inst->model->nr_bones <= 0)
 		return;
 
 	mat4 parent_transforms[MAX_BONES];
@@ -311,9 +353,15 @@ static void update_bones(struct RE_instance *inst)
 		glm_mat4_transpose(bone_transform);  // column major -> row major
 		glm_mat3x4_copy(bone_transform, inst->bone_transforms[i]);
 	}
-	glBindTexture(GL_TEXTURE_2D, inst->bone_transforms_texture);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, inst->model->nr_bones * 3, 1, GL_RGBA, GL_FLOAT, inst->bone_transforms);
-	glBindTexture(GL_TEXTURE_2D, 0);
+	if (!inst->bone_transforms_texture) {
+		init_instance_bone_texture(inst);
+	} else {
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, inst->bone_transforms_texture);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, inst->model->nr_bones * 3, 1, GL_RGBA, GL_FLOAT, inst->bone_transforms);
+		glBindTexture(GL_TEXTURE_2D, 0);
+	}
+	inst->bones_dirty = false;
 
 	// Update inst->bounding_sphere.
 	vec3 center;
@@ -321,7 +369,8 @@ static void update_bones(struct RE_instance *inst)
 	if (inst->local_transform_needs_update)
 		RE_instance_update_local_transform(inst);
 	glm_mat4_mulv3(inst->local_transform, center, 1.0f, inst->bounding_sphere);
-	inst->bounding_sphere[3] = glm_aabb_radius(aabb) * inst->scale[0] + inst->shadow_volume_bone_radius;
+	float max_scale = fmaxf(fabsf(inst->scale[0]), fmaxf(fabsf(inst->scale[1]), fabsf(inst->scale[2])));
+	inst->bounding_sphere[3] = glm_aabb_radius(aabb) * max_scale + inst->shadow_volume_bone_radius;
 
 	struct RE_instance *shvol = inst->shadow_volume_instance;
 	if (shvol) {
@@ -331,16 +380,12 @@ static void update_bones(struct RE_instance *inst)
 	}
 }
 
-static void init_instance_bone_texture(struct RE_instance *instance)
+void RE_instance_sync_bones(struct RE_instance *inst)
 {
-	glGenTextures(1, &instance->bone_transforms_texture);
-	glBindTexture(GL_TEXTURE_2D, instance->bone_transforms_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, MAX_BONES * 3, 1, 0, GL_RGBA, GL_FLOAT, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glBindTexture(GL_TEXTURE_2D, 0);
+	if (!inst || inst->type != RE_ITYPE_SKINNED || !inst->motion || !inst->bones_dirty)
+		return;
+	update_bones(inst);
+	inst->bones_dirty = false;
 }
 
 static void reset_cached_model_cb(struct ht_slot *slot, void *data)
@@ -367,6 +412,7 @@ static void reset_instance_gl(struct RE_instance *inst, struct archive *aar, enu
 	if (inst->bone_transforms) {
 		inst->bone_transforms_texture = 0;
 		init_instance_bone_texture(inst);
+		inst->bones_dirty = true;
 	}
 	if (inst->shadow_volume_instance) {
 		reset_instance_gl(inst->shadow_volume_instance, aar, version);
@@ -458,7 +504,9 @@ static void re_afa_index_cb(struct archive_data *d, void *user)
 	if (!slot->value)
 		slot->value = (void *)(intptr_t)(d->no + 1);
 	size_t nlen = strlen(norm);
-	if (w->txtex_by_dir && nlen > 9 && !strcmp(norm + nlen - 9, ".txtex.ex")) {
+	bool is_txtex = (nlen > 9 && !strcmp(norm + nlen - 9, ".txtex.ex"))
+	             || (nlen > 13 && !strcmp(norm + nlen - 13, ".txtex.ex.zlb"));
+	if (w->txtex_by_dir && is_txtex) {
 		const char *sl = strrchr(norm, '/');
 		if (sl && sl > norm) {
 			char *dir = xmalloc((size_t)(sl - norm) + 1);
@@ -503,6 +551,10 @@ static int re_afa_lookup_variants(struct re_afa_archive *w, const char *norm)
 		memcpy(buf, norm, len - 4);
 		strcpy(buf + len - 4, ".txtex.ex");
 		no = re_afa_find_exact(w, buf);
+		if (no < 0) {
+			strcpy(buf + len - 4, ".txtex.ex.zlb");
+			no = re_afa_find_exact(w, buf);
+		}
 		if (no >= 0) {
 			free(buf);
 			return no;
@@ -1179,8 +1231,10 @@ bool RE_instance_load(struct RE_instance *instance, const char *name)
 				ht_put(instance->plugin->model_cache, name, instance->model);
 		}
 		if (instance->model && instance->model->nr_bones > 0) {
-			instance->bone_transforms = xcalloc(instance->model->nr_bones, sizeof(mat3x4));
+			instance->bone_transforms = xcalloc_aligned(instance->model->nr_bones, mat3x4);
+			init_bone_transforms_identity(instance->bone_transforms, instance->model->nr_bones);
 			init_instance_bone_texture(instance);
+			instance->bones_dirty = false;
 		}
 		return !!instance->model;
 	case RE_ITYPE_PARTICLE_EFFECT:
@@ -1256,6 +1310,8 @@ bool RE_instance_load_motion(struct RE_instance *instance, const char *name)
 	if (instance->motion)
 		motion_free(instance->motion);
 	instance->motion = motion_load(name, instance, instance->plugin->aar);
+	if (instance->motion)
+		instance->bones_dirty = true;
 	return !!instance->motion;
 }
 
@@ -1266,6 +1322,8 @@ bool RE_instance_load_next_motion(struct RE_instance *instance, const char *name
 	if (instance->next_motion)
 		motion_free(instance->next_motion);
 	instance->next_motion = motion_load(name, instance, instance->plugin->aar);
+	if (instance->next_motion)
+		instance->bones_dirty = true;
 	return !!instance->next_motion;
 }
 
@@ -1275,6 +1333,7 @@ bool RE_instance_free_next_motion(struct RE_instance *instance)
 		return false;
 	motion_free(instance->next_motion);
 	instance->next_motion = NULL;
+	instance->bones_dirty = true;
 	return true;
 }
 
@@ -1334,6 +1393,8 @@ bool RE_instance_trans_local_pos_to_world_pos_by_bone(struct RE_instance *instan
 
 	if (instance->local_transform_needs_update)
 		RE_instance_update_local_transform(instance);
+	if (instance->bones_dirty)
+		RE_instance_sync_bones(instance);
 
 	mat4 bone_transform = GLM_MAT4_IDENTITY_INIT;
 	glm_mat3x4_copy(instance->bone_transforms[bone], bone_transform);
@@ -1364,6 +1425,8 @@ bool RE_instance_calc_height_ex(struct RE_instance *instance, float x, float z, 
 		if (!instance->plugin || !instance->plugin->renderer)
 			return false;
 		instance->height_detector = RE_renderer_create_height_detector(instance->plugin->renderer, instance->model);
+		if (!instance->height_detector)
+			return false;
 	}
 
 	if (RE_renderer_detect_height(instance->height_detector, lx, lz, &y)) {
@@ -1773,6 +1836,8 @@ bool RE_motion_set_state(struct motion *motion, int state)
 	if (!motion)
 		return false;
 	motion->state = state;
+	if (motion->instance)
+		motion->instance->bones_dirty = true;
 	return true;
 }
 
@@ -1786,6 +1851,8 @@ bool RE_motion_set_frame(struct motion *motion, float frame)
 	if (!motion)
 		return false;
 	motion->current_frame = frame;
+	if (motion->instance)
+		motion->instance->bones_dirty = true;
 	return true;
 }
 
