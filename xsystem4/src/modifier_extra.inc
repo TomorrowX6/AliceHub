@@ -72,6 +72,14 @@ static bool ex_all_locks_initialized_locked(void)
 	return true;
 }
 
+static void ex_reset_locks_locked(void)
+{
+	for (int i = 0; i < EX_MAX_GAMES && g_ex_locks[i].id; i++) {
+		g_ex_locks[i].mask = 0;
+		g_ex_locks[i].init = false;
+	}
+}
+
 static bool ex_is_active_extra_game(void)
 {
 	return game_rance6 || game_evenicle2 || game_evenicle2_rance ||
@@ -1611,15 +1619,11 @@ static void ex_wd_populate(cJSON *root)
 	struct page *cm = vm_get_global_page("g_sCharaData", NULL);
 	struct page *arr = vm_get_field_page(cm, "m_asData", NULL);
 	int n = vm_dd_array_len(arr);
-	cJSON_AddBoolToObject(root, "inGame", n > 0);
+	struct page *sd = vm_get_global_page("g_anSaveData", NULL);
+	cJSON_AddBoolToObject(root, "inGame", n > 0 || vm_dd_array_len(sd) > 3);
 	struct page *bt = vm_get_global_page("g_sBattle", NULL);
 	cJSON_AddBoolToObject(root, "inBattle", bt != NULL && vm_get_field_int(bt, "m_nMode", NULL, 0) > 0);
-	int32_t gold = 0;
-	if (n > 0) {
-		struct page *c0 = vm_safe_get_page(vm_dd_array_elem_slot(arr, 0));
-		struct page *p0 = vm_get_field_page(c0, "m_sParam", NULL);
-		gold = ex_arr_int_get(vm_get_field_page(p0, "m_anParam", NULL), 11, 0);
-	}
+	int32_t gold = ex_arr_int_get(sd, 3, 0);
 	cJSON_AddNumberToObject(root, "gold", gold);
 
 	cJSON *chars = cJSON_CreateArray();
@@ -1651,17 +1655,20 @@ static void ex_wd_locks(int mask)
 {
 	struct page *cm = vm_get_global_page("g_sCharaData", NULL);
 	struct page *arr = vm_get_field_page(cm, "m_asData", NULL);
-	for (int i = 0; i < vm_dd_array_len(arr); i++) {
-		struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(arr, i));
-		struct page *sp = vm_get_field_page(c, "m_sParam", NULL);
-		struct page *pa = vm_get_field_page(sp, "m_anParam", NULL);
-		if (!pa) continue;
-		if (mask & (1 << 0)) {
+	if (mask & (1 << 0)) {
+		for (int i = 0; i < vm_dd_array_len(arr); i++) {
+			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(arr, i));
+			struct page *sp = vm_get_field_page(c, "m_sParam", NULL);
+			struct page *pa = vm_get_field_page(sp, "m_anParam", NULL);
+			if (!pa) continue;
 			int mhp = ex_arr_int_get(pa, 2, 0);
 			if (mhp > 0) ex_arr_int_set(pa, 1, mhp);
 		}
-		if ((mask & (1 << 1)) && ex_arr_int_get(pa, 11, 0) < 999999)
-			ex_arr_int_set(pa, 11, 999999);
+	}
+	if (mask & (1 << 1)) {
+		struct page *sd = vm_get_global_page("g_anSaveData", NULL);
+		if (sd && ex_arr_int_get(sd, 3, 0) < 999999)
+			ex_arr_int_set(sd, 3, 999999);
 	}
 	if (mask & (1 << 2)) {
 		struct page *mm = vm_get_global_page("g_sMonsterData", NULL);
@@ -1682,10 +1689,15 @@ static void ex_wd_action(cJSON *act)
 	struct page *arr = vm_get_field_page(cm, "m_asData", NULL);
 	int32_t v;
 	if (ex_json_int(act, "gold", &v)) {
-		for (int i = 0; i < vm_dd_array_len(arr); i++) {
-			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(arr, i));
-			struct page *pa = vm_get_field_page(vm_get_field_page(c, "m_sParam", NULL), "m_anParam", NULL);
-			if (pa) ex_arr_int_set(pa, 11, vm_dd_clamp(v, 0, 99999999));
+		struct page *sd = vm_get_global_page("g_anSaveData", NULL);
+		if (sd) ex_arr_int_set(sd, 3, vm_dd_clamp(v, 0, 999999999));
+	}
+	if (ex_json_int(act, "addGold", &v)) {
+		struct page *sd = vm_get_global_page("g_anSaveData", NULL);
+		if (sd) {
+			int64_t next = (int64_t)ex_arr_int_get(sd, 3, 0) + v;
+			int32_t clamped = next > 999999999 ? 999999999 : (next < 0 ? 0 : (int32_t)next);
+			ex_arr_int_set(sd, 3, clamped);
 		}
 	}
 	if (ex_json_cheat_is(act, "fullHeal")) ex_wd_locks(1 << 0);
@@ -1892,12 +1904,27 @@ static void ex_dp_populate(cJSON *root)
 	cJSON_AddItemToObject(root, "exCharacters", chars);
 }
 
+static bool ex_dp_char_active(struct page *c)
+{
+	if (!c)
+		return false;
+	if (vm_get_field_int(c, DP_F_JOIN, NULL, 0) > 0)
+		return true;
+	struct page *hp = vm_get_field_page(c, DP_F_HP, NULL);
+	if (ex_arr_int_get(hp, 1, 0) > 0)
+		return true;
+	char *nm = vm_dd_get_field_utf8(c, DP_F_NAME, NULL);
+	bool has_name = nm && nm[0] != '\0';
+	free(nm);
+	return has_name;
+}
+
 static void ex_dp_locks(int mask)
 {
 	struct page *cd = vm_get_global_page("CD", NULL);
 	for (int i = 0; i < vm_dd_array_len(cd); i++) {
 		struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(cd, i));
-		if (!c || vm_get_field_int(c, DP_F_JOIN, NULL, 0) <= 0) continue;
+		if (!ex_dp_char_active(c)) continue;
 		if (mask & (1 << 0)) {
 			struct page *hp = vm_get_field_page(c, DP_F_HP, NULL);
 			int mhp = ex_arr_int_get(hp, 1, 0);
@@ -1921,7 +1948,7 @@ static void ex_dp_action(cJSON *act)
 		for (int i = 0; i < vm_dd_array_len(cd); i++) {
 			if (target >= 0 && i != target) continue;
 			struct page *c = vm_safe_get_page(vm_dd_array_elem_slot(cd, i));
-			if (!c || (target < 0 && vm_get_field_int(c, DP_F_JOIN, NULL, 0) <= 0)) continue;
+			if (!c || (target < 0 && !ex_dp_char_active(c))) continue;
 			struct page *hp = vm_get_field_page(c, DP_F_HP, NULL);
 			struct page *ex = vm_get_field_page(c, DP_F_EXP, NULL);
 			if (ex_json_int(ce, "lv", &v)) vm_set_field_int(c, DP_F_LV, NULL, vm_dd_clamp(v, 1, 999));
@@ -2778,8 +2805,8 @@ static void ex_t3g_locks(int mask)
 	if (!gp) return;
 	if ((mask & (1 << 0)) && ex_field_cint_read(gp, "m_nMoney", 0) < 999999)
 		ex_field_cint_write(gp, "m_nMoney", 999999, EX_KEY_TSUMAMIGUI3);
-	if ((mask & (1 << 1)) && ex_field_cint_read(gp, "m_nEnergy", 0) < 999)
-		ex_field_cint_write(gp, "m_nEnergy", 999, EX_KEY_TSUMAMIGUI3);
+	if ((mask & (1 << 1)) && ex_field_cint_read(gp, "m_nEnergy", 0) < 20)
+		ex_field_cint_write(gp, "m_nEnergy", 20, EX_KEY_TSUMAMIGUI3);
 	if (mask & (1 << 2)) {
 		struct page *arr = vm_get_field_page(vm_get_global_page("g_cHeroineParam", NULL), "m_acBase", NULL);
 		for (int i = 0; i < vm_dd_array_len(arr); i++) {
@@ -2803,9 +2830,9 @@ static void ex_t3g_action(cJSON *act)
 	struct page *gp = vm_get_global_page("g_cGameParam", NULL);
 	if (!gp) return;
 	int32_t v;
-	if (ex_json_int(act, "gold", &v)) ex_field_cint_write(gp, "m_nMoney", vm_dd_clamp(v, 0, 99999999), EX_KEY_TSUMAMIGUI3);
-	if (ex_json_int(act, "addGold", &v)) ex_field_cint_write(gp, "m_nMoney", vm_dd_clamp(ex_field_cint_read(gp, "m_nMoney", 0) + v, 0, 99999999), EX_KEY_TSUMAMIGUI3);
-	if (ex_json_int(act, "energy", &v)) ex_field_cint_write(gp, "m_nEnergy", vm_dd_clamp(v, 0, 9999), EX_KEY_TSUMAMIGUI3);
+	if (ex_json_int(act, "gold", &v)) ex_field_cint_write(gp, "m_nMoney", vm_dd_clamp(v, 0, 999999), EX_KEY_TSUMAMIGUI3);
+	if (ex_json_int(act, "addGold", &v)) ex_field_cint_write(gp, "m_nMoney", vm_dd_clamp(ex_field_cint_read(gp, "m_nMoney", 0) + v, 0, 999999), EX_KEY_TSUMAMIGUI3);
+	if (ex_json_int(act, "energy", &v)) ex_field_cint_write(gp, "m_nEnergy", vm_dd_clamp(v, 0, 20), EX_KEY_TSUMAMIGUI3);
 	if (ex_json_cheat_is(act, "fullHeal")) ex_t3g_locks((1 << 1) | (1 << 2));
 	if (ex_json_cheat_is(act, "maxItems")) ex_t3g_locks(1 << 3);
 	cJSON *ce = cJSON_GetObjectItemCaseSensitive(act, "exCharEdit");
@@ -2817,7 +2844,7 @@ static void ex_t3g_action(cJSON *act)
 			if (target >= 0 && i != target) continue;
 			struct page *h = vm_safe_get_page(vm_dd_array_elem_slot(arr, i));
 			if (!h) continue;
-			if (ex_json_int(ce, "lv", &v)) ex_field_cint_write(h, "m_nLevel", vm_dd_clamp(v, 0, 99), EX_KEY_TSUMAMIGUI3);
+			if (ex_json_int(ce, "lv", &v)) ex_field_cint_write(h, "m_nLevel", vm_dd_clamp(v, 0, 10), EX_KEY_TSUMAMIGUI3);
 			if (ex_json_int(ce, "love", &v)) ex_field_cint_write(h, "m_nRelation", vm_dd_clamp(v, 0, 9999), EX_KEY_TSUMAMIGUI3);
 			if (ex_json_int(ce, "seed", &v)) ex_field_cint_write(h, "m_nSeed", vm_dd_clamp(v, 0, 9999), EX_KEY_TSUMAMIGUI3);
 			if (ex_json_int(ce, "rival", &v)) ex_field_cint_write(h, "m_nEnemySemen", vm_dd_clamp(v, 0, 9999), EX_KEY_TSUMAMIGUI3);
@@ -2843,15 +2870,14 @@ static void ex_mm_locks(int mask)
 {
 	struct page *gp = vm_get_global_page("g_cGameParam", NULL);
 	if (!gp) return;
-	if ((mask & (1 << 0)) && ex_field_cint_read(gp, "m_nCondom", 0) < 99)
-		ex_field_cint_write(gp, "m_nCondom", 99, EX_KEY_MAMAN);
+	if ((mask & (1 << 0)) && ex_field_cint_read(gp, "m_nCondom", 0) < 5)
+		ex_field_cint_write(gp, "m_nCondom", 5, EX_KEY_MAMAN);
 	if (mask & (1 << 1)) {
-		int wlim = ex_field_cint_read(gp, "m_nWildLimit", 100);
-		if (wlim <= 0) wlim = 100;
+		int wlim = vm_dd_clamp(ex_field_cint_read(gp, "m_nWildLimit", 100), 1, 100);
 		if (ex_field_cint_read(gp, "m_nWild", 0) < wlim)
 			ex_field_cint_write(gp, "m_nWild", wlim, EX_KEY_MAMAN);
-		if (ex_field_cint_read(gp, "m_nHumor", 0) < 100)
-			ex_field_cint_write(gp, "m_nHumor", 100, EX_KEY_MAMAN);
+		if (ex_field_cint_read(gp, "m_nHumor", 0) < 5)
+			ex_field_cint_write(gp, "m_nHumor", 5, EX_KEY_MAMAN);
 	}
 	if (mask & (1 << 2)) {
 		struct page *fp = vm_get_global_page("g_cFondnessParam", NULL);
@@ -2869,10 +2895,10 @@ static void ex_mm_action(cJSON *act)
 	struct page *gp = vm_get_global_page("g_cGameParam", NULL);
 	if (!gp) return;
 	int32_t v;
-	if (ex_json_int(act, "condom", &v)) ex_field_cint_write(gp, "m_nCondom", vm_dd_clamp(v, 0, 999), EX_KEY_MAMAN);
-	if (ex_json_int(act, "wild", &v)) ex_field_cint_write(gp, "m_nWild", vm_dd_clamp(v, 0, 9999), EX_KEY_MAMAN);
-	if (ex_json_int(act, "mcon", &v)) ex_field_cint_write(gp, "m_nMotherComplex", vm_dd_clamp(v, 0, 9999), EX_KEY_MAMAN);
-	if (ex_json_int(act, "humor", &v)) ex_field_cint_write(gp, "m_nHumor", vm_dd_clamp(v, 0, 999), EX_KEY_MAMAN);
+	if (ex_json_int(act, "condom", &v)) ex_field_cint_write(gp, "m_nCondom", vm_dd_clamp(v, 0, 5), EX_KEY_MAMAN);
+	if (ex_json_int(act, "wild", &v)) ex_field_cint_write(gp, "m_nWild", vm_dd_clamp(v, 0, 100), EX_KEY_MAMAN);
+	if (ex_json_int(act, "mcon", &v)) ex_field_cint_write(gp, "m_nMotherComplex", vm_dd_clamp(v, 0, 100), EX_KEY_MAMAN);
+	if (ex_json_int(act, "humor", &v)) ex_field_cint_write(gp, "m_nHumor", vm_dd_clamp(v, 0, 5), EX_KEY_MAMAN);
 	if (ex_json_cheat_is(act, "fullHeal")) ex_mm_locks((1 << 0) | (1 << 1));
 	if (ex_json_cheat_is(act, "boostAll")) ex_mm_locks(0x07);
 }

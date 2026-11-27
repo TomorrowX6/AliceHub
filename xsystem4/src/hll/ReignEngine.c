@@ -2771,7 +2771,7 @@ HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDrawDOF, int PluginNumber, bo
 HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDOF_L, int PluginNumber, float DOF_L);
 HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDOF_F, int PluginNumber, float DOF_F);
 HLL_QUIET_UNIMPLEMENTED(true, bool, SealEngine, SetDOF_f, int PluginNumber, float DOF_f);
-HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDrawDOF, int PluginNumber, bool *DrawDOF);
+HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDrawDOF, int PluginNumber, int *DrawDOF);
 HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_L, int PluginNumber, float *DOF_L);
 HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_F, int PluginNumber, float *DOF_F);
 HLL_QUIET_UNIMPLEMENTED(false, bool, SealEngine, GetDOF_f, int PluginNumber, float *DOF_f);

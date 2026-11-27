@@ -28,7 +28,6 @@ extern FILE *yini_in;
 extern unsigned long yini_line;
 extern void yini_restart(FILE *input_file);
 
-#ifdef __SWITCH__
 extern int yini_lex_destroy(void);
 static FILE *active_ini;
 
@@ -40,7 +39,6 @@ void ini_abort_parse(void)
 		yini_lex_destroy();
 	}
 }
-#endif
 
 static void list_assign(struct ini_value *list, size_t i, struct ini_value *item)
 {
@@ -72,13 +70,9 @@ struct ini_entry *ini_parse(const char *path, int *nr_entries)
 	yini_restart(fp);
 	yini_line = 1;
 	yini_entries = NULL;
-#ifdef __SWITCH__
 	active_ini = fp;
-#endif
 	yini_parse();
-#ifdef __SWITCH__
 	active_ini = NULL;
-#endif
 	fclose(fp);
 
 	kvec_t(struct ini_entry) entries;

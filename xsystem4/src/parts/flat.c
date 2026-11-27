@@ -1651,17 +1651,19 @@ void parts_flat_foreach_emitter_particle(struct parts_flat *f, int emitter_lib_i
 	if (em->direction_type == EMITTER_DIRECTION_PARENT
 			|| em->direction_type == EMITTER_DIRECTION_PARENT_REVERSE) {
 		const struct flat_key_data_graphic *cur = parts_flat_key(timeline, birth_frame, instance);
-		if (birth_frame > 0) {
-			const struct flat_key_data_graphic *prev = parts_flat_key(timeline, birth_frame - 1, instance);
-			if (prev) {
-				parent_vel[0] = cur->pos_x - prev->pos_x;
-				parent_vel[1] = cur->pos_y - prev->pos_y;
-			}
-		} else if (birth_frame + 1 < frame_count) {
-			const struct flat_key_data_graphic *next = parts_flat_key(timeline, birth_frame + 1, instance);
-			if (next) {
-				parent_vel[0] = next->pos_x - cur->pos_x;
-				parent_vel[1] = next->pos_y - cur->pos_y;
+		if (cur) {
+			if (birth_frame > 0) {
+				const struct flat_key_data_graphic *prev = parts_flat_key(timeline, birth_frame - 1, instance);
+				if (prev) {
+					parent_vel[0] = cur->pos_x - prev->pos_x;
+					parent_vel[1] = cur->pos_y - prev->pos_y;
+				}
+			} else if (birth_frame + 1 < frame_count) {
+				const struct flat_key_data_graphic *next = parts_flat_key(timeline, birth_frame + 1, instance);
+				if (next) {
+					parent_vel[0] = next->pos_x - cur->pos_x;
+					parent_vel[1] = next->pos_y - cur->pos_y;
+				}
 			}
 		}
 	}
@@ -1843,6 +1845,7 @@ bool PE_SetPartsFlatAndStop(int parts_no, struct string *filename, int state)
 	struct parts_flat *f = parts_get_flat(parts, state);
 	bool result = parts_flat_load(parts, f, filename);
 	f->stopped = true;
+	parts_dirty(parts);
 	return result;
 }
 

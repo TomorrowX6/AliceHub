@@ -86,6 +86,7 @@ static void parse_textures(struct buffer *r, int pol_version, struct pol_materia
 			uv_tiling[1] = buffer_read_float(r);
 		}
 		if ((unsigned)type < MAX_TEXTURE_TYPE) {
+			free(m->textures[type]);
 			m->textures[type] = filename;
 			if (type == COLOR_MAP)
 				glm_vec2_copy(uv_tiling, m->uv_tiling);
@@ -214,7 +215,7 @@ static void parse_triangle(struct buffer *r, struct pol_mesh *mesh, int triangle
 	read_direction(r, t->normals[1]);
 	read_direction(r, t->normals[2]);
 	t->material_group_index = buffer_read_int32(r);
-	if (t->material_group_index >= mg->nr_children)
+	if (!mg || t->material_group_index >= mg->nr_children)
 		t->material_group_index = 0;
 }
 
@@ -248,8 +249,8 @@ static struct pol_mesh *parse_mesh(struct buffer *r, const struct pol *pol)
 	mesh->name = read_cstring(r);
 	mesh->flags = parse_mesh_attributes(mesh->name);
 	mesh->material = buffer_read_int32(r);
-	if (mesh->material >= pol->nr_materials) {
-		WARNING("material index out of range (%d >= %d)", mesh->material, pol->nr_materials);
+	if (pol->nr_materials == 0 || mesh->material >= pol->nr_materials) {
+		WARNING("material index out of range (%d >= %u)", mesh->material, pol->nr_materials);
 		mesh->material = 0;
 	}
 
@@ -326,8 +327,9 @@ static struct pol_mesh *parse_mesh(struct buffer *r, const struct pol *pol)
 
 	mesh->nr_triangles = buffer_read_int32(r);
 	mesh->triangles = xcalloc(mesh->nr_triangles, sizeof(struct pol_triangle));
+	const struct pol_material_group *mg = pol->nr_materials > 0 ? &pol->materials[mesh->material] : NULL;
 	for (uint32_t i = 0; i < mesh->nr_triangles; i++) {
-		parse_triangle(r, mesh, i, &pol->materials[mesh->material]);
+		parse_triangle(r, mesh, i, mg);
 	}
 
 	if (pol->version == 1) {
@@ -374,6 +376,8 @@ static void destroy_bone(struct pol_bone *bone)
 
 struct pol *pol_parse(uint8_t *data, size_t size)
 {
+	if (!data || size < 4)
+		return NULL;
 	struct buffer r;
 	buffer_init(&r, data, size);
 	if (memcmp(buffer_strdata(&r), "POL\0", 4))
@@ -455,6 +459,8 @@ struct pol_bone *pol_find_bone(struct pol *pol, uint32_t id)
 
 struct mot *mot_parse(uint8_t *data, size_t size, const char *name)
 {
+	if (!data || size < 4)
+		return NULL;
 	struct buffer r;
 	buffer_init(&r, data, size);
 	if (memcmp(buffer_strdata(&r), "MOT\0", 4))
@@ -506,6 +512,8 @@ void mot_free(struct mot *mot)
 
 struct amt *amt_parse(uint8_t *data, size_t size)
 {
+	if (!data || size < 4)
+		return NULL;
 	struct buffer r;
 	buffer_init(&r, data, size);
 	if (memcmp(buffer_strdata(&r), "AMT\0", 4))

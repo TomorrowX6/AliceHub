@@ -130,7 +130,6 @@ bool png_cg_get_metrics(const uint8_t *data, size_t size, struct cg_metrics *dst
 void png_cg_extract(const uint8_t *data, size_t size, struct cg *cg)
 {
 	struct png_reader r;
-	uint8_t * volatile row_data = NULL;
 	uint8_t * volatile pixels = NULL;
 
 	if (!png_init_structs(&r, data, size))
@@ -138,7 +137,6 @@ void png_cg_extract(const uint8_t *data, size_t size, struct cg *cg)
 
 	if (setjmp(png_jmpbuf(r.png_ptr))) {
 		WARNING("png_cg_extract failed");
-		free(row_data);
 		free(pixels);
 		cg->pixels = NULL;
 		png_destroy_read_struct(&r.png_ptr, &r.info_ptr, NULL);
@@ -168,6 +166,8 @@ void png_cg_extract(const uint8_t *data, size_t size, struct cg *cg)
 		png_set_packing(r.png_ptr);
 	if (r.color_type == PNG_COLOR_TYPE_GRAY || r.color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
 		png_set_gray_to_rgb(r.png_ptr);
+	png_set_add_alpha(r.png_ptr, 0xFF, PNG_FILLER_AFTER);
+	int nr_passes = png_set_interlace_handling(r.png_ptr);
 
 	png_read_update_info(r.png_ptr, r.info_ptr);
 
@@ -175,35 +175,17 @@ void png_cg_extract(const uint8_t *data, size_t size, struct cg *cg)
 	size_t w = (size_t)cg->metrics.w;
 	size_t h = (size_t)cg->metrics.h;
 	size_t row_bytes = png_get_rowbytes(r.png_ptr, r.info_ptr);
-	if (row_bytes > w * 4 ||
-	    (out_color_type == PNG_COLOR_TYPE_RGB_ALPHA && row_bytes != w * 4) ||
-	    (out_color_type == PNG_COLOR_TYPE_RGB && row_bytes != w * 3) ||
-	    (out_color_type != PNG_COLOR_TYPE_RGB && out_color_type != PNG_COLOR_TYPE_RGB_ALPHA)) {
+	if (out_color_type != PNG_COLOR_TYPE_RGB_ALPHA || row_bytes != w * 4) {
 		WARNING("Unsupported PNG row layout (color_type=%d, row_bytes=%zu, w=%zu)", out_color_type, row_bytes, w);
 		png_destroy_read_struct(&r.png_ptr, &r.info_ptr, NULL);
 		return;
 	}
 
 	pixels = xmalloc(w * h * 4);
-	if (out_color_type == PNG_COLOR_TYPE_RGB_ALPHA) {
+	for (int pass = 0; pass < nr_passes; pass++) {
 		for (size_t row = 0; row < h; row++) {
 			png_read_row(r.png_ptr, (png_bytep)(pixels + row * w * 4), NULL);
 		}
-	} else {
-		row_data = xmalloc(row_bytes);
-		for (size_t row = 0; row < h; row++) {
-			png_read_row(r.png_ptr, (png_bytep)row_data, NULL);
-			uint8_t *dst_row = pixels + row * w * 4;
-			size_t src_i = 0;
-			for (size_t col = 0; col < w; col++) {
-				dst_row[col * 4 + 0] = row_data[src_i++];
-				dst_row[col * 4 + 1] = row_data[src_i++];
-				dst_row[col * 4 + 2] = row_data[src_i++];
-				dst_row[col * 4 + 3] = 0xFF;
-			}
-		}
-		free(row_data);
-		row_data = NULL;
 	}
 
 	cg->type = ALCG_PNG;

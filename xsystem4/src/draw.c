@@ -975,6 +975,8 @@ void gfx_copy_stretch_blend_amap_alpha(struct texture *dst, int dx, int dy, int 
 // FIXME: this doesn't work correctly when the src rectangle crosses the edge of the CG.
 static void copy_rot_zoom(Texture *dst, Texture *src, int sx, int sy, int w, int h, float rotate, float mag, Shader *shader)
 {
+	if (!dst || !src || dst->w <= 0 || dst->h <= 0 || w <= 0 || h <= 0)
+		return;
 	if (!gfx_remap_texture(dst) || !gfx_remap_texture(src))
 		return;
 	w = min(w, src->w - sx);
@@ -1020,6 +1022,8 @@ void gfx_copy_rot_zoom_use_amap(Texture *dst, Texture *src, int sx, int sy, int 
 
 void gfx_copy_rot_zoom2(Texture *dst, float cx, float cy, Texture *src, float scx, float scy, float rot, float mag)
 {
+	if (!dst || !src || dst->w <= 0 || dst->h <= 0)
+		return;
 	gfx_fill_amap(dst, 0, 0, dst->w, dst->h, 0);
 	glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);
 
@@ -1045,6 +1049,8 @@ void gfx_copy_rot_zoom2(Texture *dst, float cx, float cy, Texture *src, float sc
 
 static void copy_rotate_y(Texture *dst, Texture *front, Texture *back, int sx, int sy, int w, int h, float rot, float mag, Shader *shader)
 {
+	if (!dst || !front || !back || dst->w <= 0 || dst->h <= 0)
+		return;
 	Texture *src = front;
 	vec3 scale = { src->w * mag, src->h * mag, 0 };
 	if (rot > 90.0 && rot <= 270.0) {
@@ -1082,6 +1088,8 @@ void gfx_copy_rotate_y_use_amap(Texture *dst, Texture *front, Texture *back, int
 
 static void copy_rotate_x(Texture *dst, Texture *front, Texture *back, int sx, int sy, int w, int h, float rot, float mag, Shader *shader)
 {
+	if (!dst || !front || !back || dst->w <= 0 || dst->h <= 0)
+		return;
 	Texture *src = front;
 	float flip_y = 1.0;
 	rot = 360.0 - rot;
@@ -1121,6 +1129,8 @@ void gfx_copy_rotate_x_use_amap(Texture *dst, Texture *front, Texture *back, int
 
 void gfx_copy_reverse_LR(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
 {
+	if (!dst || !src || w <= 0 || h <= 0)
+		return;
 	mat4 mw_transform = MAT4(
 	     -src->w, 0,      0, sx + w,
 	     0,       src->h, 0, -sy,
@@ -1138,6 +1148,8 @@ void gfx_copy_reverse_LR(Texture *dst, int dx, int dy, Texture *src, int sx, int
 
 void gfx_copy_reverse_UD(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
 {
+	if (!dst || !src || w <= 0 || h <= 0)
+		return;
 	mat4 mw_transform = MAT4(
 	     src->w, 0,       0, -sx,
 	     0,      -src->h, 0, sy + h,
@@ -1155,6 +1167,8 @@ void gfx_copy_reverse_UD(Texture *dst, int dx, int dy, Texture *src, int sx, int
 
 void gfx_copy_reverse_amap_LR(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
 {
+	if (!dst || !src || w <= 0 || h <= 0)
+		return;
 	mat4 mw_transform = MAT4(
 	     -src->w, 0,      0, sx + w,
 	     0,       src->h, 0, -sy,
@@ -1172,6 +1186,8 @@ void gfx_copy_reverse_amap_LR(Texture *dst, int dx, int dy, Texture *src, int sx
 
 void gfx_copy_reverse_amap_UD(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
 {
+	if (!dst || !src || w <= 0 || h <= 0)
+		return;
 	mat4 mw_transform = MAT4(
 	     src->w, 0,       0, -sx,
 	     0,      -src->h, 0, sy + h,
@@ -1189,6 +1205,8 @@ void gfx_copy_reverse_amap_UD(Texture *dst, int dx, int dy, Texture *src, int sx
 
 void gfx_copy_reverse_LR_with_alpha_map(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
 {
+	if (!dst || !src || w <= 0 || h <= 0)
+		return;
 	mat4 mw_transform = MAT4(
 	     -src->w, 0,      0, sx + w,
 	     0,       src->h, 0, -sy,
@@ -1362,6 +1380,8 @@ void gfx_copy_grayscale_with_alpha_map(Texture *dst, int dx, int dy, Texture *sr
 
 void gfx_copy_grayscale_reverse_LR_with_alpha_map(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)
 {
+	if (!dst || !src || w <= 0 || h <= 0)
+		return;
 	mat4 mw_transform = MAT4(
 	     -src->w, 0,      0, sx + w,
 	     0,       src->h, 0, -sy,
@@ -1379,6 +1399,8 @@ void gfx_copy_grayscale_reverse_LR_with_alpha_map(Texture *dst, int dx, int dy, 
 
 static void draw_line(Texture *dst, int x0, int y0, int x1, int y1, struct copy_data *data)
 {
+	if (!dst || dst->w <= 0 || dst->h <= 0)
+		return;
 	GLfloat w = dst->w;
 	GLfloat h = dst->h;
 
@@ -1431,9 +1453,46 @@ void gfx_draw_line_to_amap(Texture *dst, int x0, int y0, int x1, int y1, int a)
 
 void gfx_draw_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4])
 {
+	if (!dst || !src)
+		return;
 	glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ZERO, GL_ONE);
 	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, 0, 0, dst->w, dst->h);
 	gfx_render_quadrilateral(src, vertices);
+	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	restore_blend_mode();
+}
+
+void gfx_blend_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4], int a)
+{
+	if (!dst || !src)
+		return;
+	glBlendFuncSeparate(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA, GL_ZERO, GL_ONE);
+	glBlendColor(0, 0, 0, a / 255.0);
+	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, 0, 0, dst->w, dst->h);
+	gfx_render_quadrilateral(src, vertices);
+	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	restore_blend_mode();
+}
+
+void gfx_blend_amap_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4])
+{
+	if (!dst || !src)
+		return;
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_DST_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, 0, 0, dst->w, dst->h);
+	gfx_render_quadrilateral(src, vertices);
+	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	restore_blend_mode();
+}
+
+void gfx_blend_amap_alpha_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4], int a)
+{
+	if (!dst || !src)
+		return;
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_DST_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	struct copy_data data = { .r = 1.0f, .g = 1.0f, .b = 1.0f, .a = a / 255.0f };
+	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, dst, 0, 0, dst->w, dst->h);
+	_gfx_render_quadrilateral(&blend_amap_alpha_bright_shader.s, src, vertices, &data);
 	gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 	restore_blend_mode();
 }

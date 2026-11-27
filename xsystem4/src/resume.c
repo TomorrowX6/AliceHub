@@ -1604,16 +1604,23 @@ static void load_rsave_delegate(int slot, struct rsave_heap_delegate *d, struct 
 		page->delegate.end = d->end;
 		for (int i = 0; i < d->nr_entries; i++) {
 			int obj = d->entries[i].object;
-			int fun = resolve_rsave_function(d->entries[i].function.name, 0, false, -1);
-			if (fun < 0)
-				VM_ERROR("Failed to load VM image: delegate function '%s' not found",
-					 display_sjis0(d->entries[i].function.name ? d->entries[i].function.name : ""));
-			int seq = 0;
-			if (obj >= 0) {
-				if (delegate_target_matches_function(save, obj, fun))
-					seq = obj + 1;
-				else
-					seq = -1;
+			const char *fname = d->entries[i].function.name;
+			int fun = -1;
+			int seq = -1;
+			if (!fname || !fname[0]) {
+				obj = -1;
+			} else {
+				fun = resolve_rsave_function(fname, 0, false, -1);
+				if (fun < 0)
+					VM_ERROR("Failed to load VM image: delegate function '%s' not found",
+						 display_sjis0(fname));
+				seq = 0;
+				if (obj >= 0) {
+					if (delegate_target_matches_function(save, obj, fun))
+						seq = obj + 1;
+					else
+						seq = -1;
+				}
 			}
 			page->values[i * 4 + 0].i = obj;
 			page->values[i * 4 + 1].i = fun;
@@ -2119,7 +2126,8 @@ static struct page *load_json_image_comments(const char *key, const char *path, 
 	union vm_value dims = { .i = cJSON_GetArraySize(comments) };
 	struct page *array = alloc_array(1, &dims, AIN_ARRAY_STRING, 0, false);
 	for (int i = 0; i < dims.i; i++) {
-		int slot = heap_alloc_slot(VM_STRING);
+		int slot = array->values[i].i;
+		free_string(heap[slot].s);
 		cJSON *jstr = type_check(cJSON_String, cJSON_GetArrayItem(comments, i));
 		char *str = cJSON_GetStringValue(jstr);
 		if (!str || !str[0]) {
@@ -2127,7 +2135,6 @@ static struct page *load_json_image_comments(const char *key, const char *path, 
 		} else {
 			heap[slot].s = make_string(str, strlen(str));
 		}
-		array->values[i].i = slot;
 	}
 
 	*success = 1;
@@ -2154,13 +2161,13 @@ static struct page *load_rsave_image_comments(const char *key, const char *path,
 	struct page *array = alloc_array(1, &dims, AIN_ARRAY_STRING, 0, false);
 	bool src_is_gbk = rsave_detect_is_gbk(save, key);
 	for (int i = 0; i < dims.i; i++) {
-		int slot = heap_alloc_slot(VM_STRING);
+		int slot = array->values[i].i;
+		free_string(heap[slot].s);
 		if (!save->comments[i] || !save->comments[i][0]) {
 			heap[slot].s = string_ref(&EMPTY_STRING);
 		} else {
 			heap[slot].s = save_decode_vm_string(save->comments[i], strlen(save->comments[i]), src_is_gbk);
 		}
-		array->values[i].i = slot;
 	}
 	rsave_free(save);
 	return array;

@@ -62,7 +62,9 @@ int mixer_set_mute(int n, int mute);
 struct sts_mixer_stream_t;
 int mixer_stream_play(struct sts_mixer_stream_t* stream, int volume);
 bool mixer_stream_set_volume(int voice, int volume);
+bool mixer_stream_set_volume_stream(struct sts_mixer_stream_t *stream, int volume);
 void mixer_stream_stop(int voice);
+void mixer_stream_stop_stream(struct sts_mixer_stream_t *stream);
 
 struct archive_data;
 struct channel;

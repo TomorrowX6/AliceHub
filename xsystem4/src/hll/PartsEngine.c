@@ -896,7 +896,108 @@ DEFINE_V6_STR_GETTER(GetVScrollbarFlatName)
 DEFINE_V6_STR_GETTER(GetHScrollbarCGName)
 DEFINE_V6_STR_GETTER(GetHScrollbarFlatName)
 DEFINE_V6_STR_GETTER(GetTextBoxText)
+DEFINE_V6_STR_GETTER(GetMessageWindowCGName)
+DEFINE_V6_STR_GETTER(GetMessageWindowFlatName)
+DEFINE_V6_STR_GETTER(GetMessageWindowText)
 #undef DEFINE_V6_STR_GETTER
+
+static void PartsEngine_GetActivityEXText_v6(struct string *name, struct string **out)
+{
+	pf_assign_out_string(out, PE_GetActivityEXText(name));
+}
+
+static void PartsEngine_AddMotionHGaugeRate_int(int parts_no, int begin_numerator,
+		int begin_denominator, int end_numerator, int end_denominator, int begin_t, int end_t)
+{
+	PE_AddMotionHGaugeRate(parts_no, (float)begin_numerator, (float)begin_denominator,
+			(float)end_numerator, (float)end_denominator, begin_t, end_t);
+}
+
+static void PartsEngine_AddMotionHGaugeRate_int_curve(int parts_no, int begin_numerator,
+		int begin_denominator, int end_numerator, int end_denominator, int begin_t, int end_t,
+		struct string *curve_name)
+{
+	PE_AddMotionHGaugeRate_curve(parts_no, (float)begin_numerator, (float)begin_denominator,
+			(float)end_numerator, (float)end_denominator, begin_t, end_t, curve_name);
+}
+
+static void PartsEngine_AddMotionVGaugeRate_int(int parts_no, int begin_numerator,
+		int begin_denominator, int end_numerator, int end_denominator, int begin_t, int end_t)
+{
+	PE_AddMotionVGaugeRate(parts_no, (float)begin_numerator, (float)begin_denominator,
+			(float)end_numerator, (float)end_denominator, begin_t, end_t);
+}
+
+static void PartsEngine_AddMotionVGaugeRate_int_curve(int parts_no, int begin_numerator,
+		int begin_denominator, int end_numerator, int end_denominator, int begin_t, int end_t,
+		struct string *curve_name)
+{
+	PE_AddMotionVGaugeRate_curve(parts_no, (float)begin_numerator, (float)begin_denominator,
+			(float)end_numerator, (float)end_denominator, begin_t, end_t, curve_name);
+}
+
+static void PartsEngine_SetModeMarkShow(int parts_no, int type, bool show)
+{
+	(void)parts_no;
+	(void)type;
+	(void)show;
+}
+
+static bool PartsEngine_IsModeMarkShow(int parts_no, int type)
+{
+	(void)parts_no;
+	(void)type;
+	return false;
+}
+
+static void PartsEngine_SetSoundNumber(int parts_no, int sound_no, int state)
+{
+	struct parts *p = parts_get(parts_no);
+	if (state == 2)
+		p->on_cursor_sound = sound_no;
+	else if (state == 3)
+		p->on_click_sound = sound_no;
+}
+
+static int PartsEngine_GetSoundNumber(int parts_no, int state)
+{
+	struct parts *p = parts_try_get(parts_no);
+	if (!p)
+		return -1;
+	if (state == 2)
+		return p->on_cursor_sound;
+	if (state == 3)
+		return p->on_click_sound;
+	return -1;
+}
+
+static void PartsEngine_WidgetSetOnCursorSoundNumber(int parts_no, int sound_no)
+{
+	parts_get(parts_no)->on_cursor_sound = sound_no;
+}
+
+static void PartsEngine_WidgetSetClickSoundNumber(int parts_no, int sound_no)
+{
+	parts_get(parts_no)->on_click_sound = sound_no;
+}
+
+static int PartsEngine_WidgetGetOnCursorSoundNumber(int parts_no)
+{
+	struct parts *p = parts_try_get(parts_no);
+	return p ? p->on_cursor_sound : -1;
+}
+
+static int PartsEngine_WidgetGetClickSoundNumber(int parts_no)
+{
+	struct parts *p = parts_try_get(parts_no);
+	return p ? p->on_click_sound : -1;
+}
+
+static bool PartsEngine_WidgetIsDrag(int parts_no)
+{
+	struct parts *p = parts_try_get(parts_no);
+	return p ? p->draggable : false;
+}
 
 static void PartsEngine_WidgetGetEmptyString_v6(int parts_no, struct string **out)
 {
@@ -966,13 +1067,13 @@ static void PartsEngine_WidgetGetFontProperty(int parts_no, int *type, int *size
 }
 
 static void PartsEngine_GetFormGroupViewSnap(int parts_no, int table_idx,
-		bool *top, bool *bottom, bool *left, bool *right)
+		int *top, int *bottom, int *left, int *right)
 {
 	(void)parts_no; (void)table_idx;
-	if (top) *top = false;
-	if (bottom) *bottom = false;
-	if (left) *left = false;
-	if (right) *right = false;
+	if (top) *top = 0;
+	if (bottom) *bottom = 0;
+	if (left) *left = 0;
+	if (right) *right = 0;
 }
 
 static int PartsEngine_NumofFormGroupVList(int parts_no, int table_idx)
@@ -3271,8 +3372,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(AddMotionVibrationSize, PE_AddMotionVibrationSize),
 	    HLL_EXPORT(AddWholeMotionVibrationSize, PE_AddWholeMotionVibrationSize),
 	    HLL_EXPORT(AddMotionSound, PE_AddMotionSound),
-	    HLL_TODO_EXPORT(SetSoundNumber, PartsEngine_SetSoundNumber),
-	    HLL_TODO_EXPORT(GetSoundNumber, PartsEngine_GetSoundNumber),
+	    HLL_EXPORT(SetSoundNumber, PartsEngine_SetSoundNumber),
+	    HLL_EXPORT(GetSoundNumber, PartsEngine_GetSoundNumber),
 	    HLL_EXPORT(SetClickMissSoundNumber, PE_SetClickMissSoundNumber),
 	    HLL_TODO_EXPORT(GetClickMissSoundNumber, PartsEngine_GetClickMissSoundNumber),
 	    HLL_EXPORT(BeginMotion, PE_BeginMotion),
@@ -3449,8 +3550,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(SuspendBuildViewAt, PartsEngine_WidgetStub_i),
 	    HLL_EXPORT(ResumeBuildView, PartsEngine_SelectTextBoxAll),
 	    HLL_TODO_EXPORT(SetButtonSize, PartsEngine_SetButtonSize),
-	    HLL_TODO_EXPORT(SetButtonDrag, PartsEngine_SetButtonDrag),
-	    HLL_TODO_EXPORT(IsButtonDrag, PartsEngine_IsButtonDrag),
+	    HLL_EXPORT(SetButtonDrag, PE_SetDrag),
+	    HLL_EXPORT(IsButtonDrag, PartsEngine_WidgetIsDrag),
 	    HLL_TODO_EXPORT(SetButtonEnable, PartsEngine_SetButtonEnable),
 	    HLL_TODO_EXPORT(IsButtonEnable, PartsEngine_IsButtonEnable),
 	    HLL_EXPORT(SetButtonPixelDecide, PE_SetPartsPixelDecide),
@@ -3461,10 +3562,10 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_TODO_EXPORT(GetButtonB, PartsEngine_GetButtonB),
 	    HLL_TODO_EXPORT(SetButtonFontProperty, PartsEngine_SetButtonFontProperty),
 	    HLL_TODO_EXPORT(GetButtonFontProperty, PartsEngine_GetButtonFontProperty),
-	    HLL_TODO_EXPORT(SetButtonOnCursorSoundNumber, PartsEngine_SetButtonOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(SetButtonClickSoundNumber, PartsEngine_SetButtonClickSoundNumber),
-	    HLL_TODO_EXPORT(GetButtonOnCursorSoundNumber, PartsEngine_GetButtonOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(GetButtonClickSoundNumber, PartsEngine_GetButtonClickSoundNumber),
+	    HLL_EXPORT(SetButtonOnCursorSoundNumber, PartsEngine_WidgetSetOnCursorSoundNumber),
+	    HLL_EXPORT(SetButtonClickSoundNumber, PartsEngine_WidgetSetClickSoundNumber),
+	    HLL_EXPORT(GetButtonOnCursorSoundNumber, PartsEngine_WidgetGetOnCursorSoundNumber),
+	    HLL_EXPORT(GetButtonClickSoundNumber, PartsEngine_WidgetGetClickSoundNumber),
 	    HLL_TODO_EXPORT(SetButtonCGName, PartsEngine_SetButtonCGName),
 	    HLL_TODO_EXPORT(GetButtonCGName, PartsEngine_GetButtonCGName),
 	    HLL_TODO_EXPORT(SetButtonText, PartsEngine_SetButtonText),
@@ -3501,6 +3602,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetKeyWaitPosZ, PE_GetKeyWaitPosZ),
 	    HLL_EXPORT(SetKeyWaitShow, PE_SetKeyWaitShow),
 	    HLL_EXPORT(IsKeyWaitShow, PE_IsKeyWaitShow),
+	    HLL_EXPORT(SetModeMarkShow, PartsEngine_SetModeMarkShow),
+	    HLL_EXPORT(IsModeMarkShow, PartsEngine_IsModeMarkShow),
 	    HLL_EXPORT(SetMessageWindowText, PE_SetMessageWindowText),
 	    HLL_EXPORT(GetMessageWindowText, PE_GetMessageWindowText),
 	    HLL_EXPORT(FixMessageWindowText, PE_FixMessageWindowText),
@@ -3538,8 +3641,8 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetCheckBoxCharSpace, PE_GetCheckBoxCharSpace),
 	    HLL_EXPORT(SetCheckBoxLineSpace, PE_SetCheckBoxLineSpace),
 	    HLL_EXPORT(GetCheckBoxLineSpace, PE_GetCheckBoxLineSpace),
-	    HLL_TODO_EXPORT(SetCheckBoxDrag, PartsEngine_SetCheckBoxDrag),
-	    HLL_TODO_EXPORT(IsCheckBoxDrag, PartsEngine_IsCheckBoxDrag),
+	    HLL_EXPORT(SetCheckBoxDrag, PE_SetDrag),
+	    HLL_EXPORT(IsCheckBoxDrag, PartsEngine_WidgetIsDrag),
 	    HLL_EXPORT(CheckBoxChecked, PE_CheckBoxChecked),
 	    HLL_EXPORT(IsCheckBoxChecked, PE_IsCheckBoxChecked),
 	    HLL_EXPORT(SetCheckBoxColor, PE_SetCheckBoxColor),
@@ -3548,10 +3651,10 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetCheckBoxB, PE_GetCheckBoxB),
 	    HLL_EXPORT(SetCheckBoxFontProperty, PE_SetCheckBoxFontProperty),
 	    HLL_EXPORT(GetCheckBoxFontProperty, PE_GetCheckBoxFontProperty),
-	    HLL_TODO_EXPORT(SetCheckBoxOnCursorSoundNumber, PartsEngine_SetCheckBoxOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(SetCheckBoxClickSoundNumber, PartsEngine_SetCheckBoxClickSoundNumber),
-	    HLL_TODO_EXPORT(GetCheckBoxOnCursorSoundNumber, PartsEngine_GetCheckBoxOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(GetCheckBoxClickSoundNumber, PartsEngine_GetCheckBoxClickSoundNumber),
+	    HLL_EXPORT(SetCheckBoxOnCursorSoundNumber, PartsEngine_WidgetSetOnCursorSoundNumber),
+	    HLL_EXPORT(SetCheckBoxClickSoundNumber, PartsEngine_WidgetSetClickSoundNumber),
+	    HLL_EXPORT(GetCheckBoxOnCursorSoundNumber, PartsEngine_WidgetGetOnCursorSoundNumber),
+	    HLL_EXPORT(GetCheckBoxClickSoundNumber, PartsEngine_WidgetGetClickSoundNumber),
 	    HLL_EXPORT(SetCheckBoxCGName, PE_SetCheckBoxCGName),
 	    HLL_EXPORT(GetCheckBoxCGName, PE_GetCheckBoxCGName),
 	    HLL_EXPORT(SetCheckBoxText, PE_SetCheckBoxText),
@@ -3564,10 +3667,10 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(RemoveRadioButtonBoxChild, PE_RemoveRadioButtonBoxChild),
 	    HLL_EXPORT(NumofRadioButtonBoxChild, PE_NumofRadioButtonBoxChild),
 	    HLL_EXPORT(GetRadioButtonBoxChild, PE_GetRadioButtonBoxChild),
-	    HLL_TODO_EXPORT(SetVScrollbarOnCursorSoundNumber, PartsEngine_SetVScrollbarOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(SetVScrollbarClickSoundNumber, PartsEngine_SetVScrollbarClickSoundNumber),
-	    HLL_TODO_EXPORT(GetVScrollbarOnCursorSoundNumber, PartsEngine_GetVScrollbarOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(GetVScrollbarClickSoundNumber, PartsEngine_GetVScrollbarClickSoundNumber),
+	    HLL_EXPORT(SetVScrollbarOnCursorSoundNumber, PartsEngine_WidgetSetOnCursorSoundNumber),
+	    HLL_EXPORT(SetVScrollbarClickSoundNumber, PartsEngine_WidgetSetClickSoundNumber),
+	    HLL_EXPORT(GetVScrollbarOnCursorSoundNumber, PartsEngine_WidgetGetOnCursorSoundNumber),
+	    HLL_EXPORT(GetVScrollbarClickSoundNumber, PartsEngine_WidgetGetClickSoundNumber),
 	    HLL_EXPORT(SetVScrollbarSize, PE_SetVScrollbarSize),
 	    HLL_EXPORT(SetVScrollbarUpHeight, PE_SetVScrollbarUpHeight),
 	    HLL_EXPORT(SetVScrollbarDownHeight, PE_SetVScrollbarDownHeight),
@@ -3585,10 +3688,10 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(GetVScrollbarMoveSizeByButton, PE_GetVScrollbarMoveSizeByButton),
 	    HLL_EXPORT(SetVScrollbarCGName, PE_SetVScrollbarCGName),
 	    HLL_EXPORT(GetVScrollbarCGName, PE_GetVScrollbarCGName),
-	    HLL_TODO_EXPORT(SetHScrollbarOnCursorSoundNumber, PartsEngine_SetHScrollbarOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(SetHScrollbarClickSoundNumber, PartsEngine_SetHScrollbarClickSoundNumber),
-	    HLL_TODO_EXPORT(GetHScrollbarOnCursorSoundNumber, PartsEngine_GetHScrollbarOnCursorSoundNumber),
-	    HLL_TODO_EXPORT(GetHScrollbarClickSoundNumber, PartsEngine_GetHScrollbarClickSoundNumber),
+	    HLL_EXPORT(SetHScrollbarOnCursorSoundNumber, PartsEngine_WidgetSetOnCursorSoundNumber),
+	    HLL_EXPORT(SetHScrollbarClickSoundNumber, PartsEngine_WidgetSetClickSoundNumber),
+	    HLL_EXPORT(GetHScrollbarOnCursorSoundNumber, PartsEngine_WidgetGetOnCursorSoundNumber),
+	    HLL_EXPORT(GetHScrollbarClickSoundNumber, PartsEngine_WidgetGetClickSoundNumber),
 	    HLL_EXPORT(SetHScrollbarSize, PE_SetHScrollbarSize),
 	    HLL_EXPORT(SetHScrollbarLeftWidth, PE_SetHScrollbarLeftWidth),
 	    HLL_EXPORT(SetHScrollbarRightWidth, PE_SetHScrollbarRightWidth),
@@ -3929,20 +4032,30 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_SetPartsCGDetectionSurfaceArea, PartsEngine_Parts_SetPartsCGDetectionSurfaceArea),
 	    HLL_EXPORT(GetCGDetectionSurfaceArea, PartsEngine_GetCGDetectionSurfaceArea),
 	    HLL_EXPORT(Parts_SetPartsFlat, PE_SetPartsFlat),
+	    HLL_EXPORT(SetPartsFlat, PE_SetPartsFlat),
 	    HLL_EXPORT(Parts_SetPartsFlatThread, PE_SetPartsFlat),
 	    HLL_EXPORT(Parts_GetPartsFlatName, PE_GetPartsFlatName),
 	    HLL_EXPORT(Parts_IsPartsFlatStop, PE_IsPartsFlatStop),
 	    HLL_EXPORT(Parts_IsPartsFlatEnd, PE_IsPartsFlatEnd),
+	    HLL_EXPORT(IsPartsFlatEnd, PE_IsPartsFlatEnd),
 	    HLL_EXPORT(Parts_GetPartsFlatCurrentFrameNumber, PE_GetPartsFlatCurrentFrameNumber),
+	    HLL_EXPORT(GetPartsFlatCurrentFrameNumber, PE_GetPartsFlatCurrentFrameNumber),
 	    HLL_EXPORT(Parts_BackPartsFlatBeginFrame, PE_BackPartsFlatBeginFrame),
+	    HLL_EXPORT(BackPartsFlatBeginFrame, PE_BackPartsFlatBeginFrame),
 	    HLL_EXPORT(Parts_StepPartsFlatFinalFrame, PE_StepPartsFlatFinalFrame),
+	    HLL_EXPORT(StepPartsFlatFinalFrame, PE_StepPartsFlatFinalFrame),
 	    HLL_EXPORT(Parts_SetPartsFlatSurfaceArea, PE_SetPartsFlatSurfaceArea),
 	    HLL_EXPORT(GetFlatSurfaceArea, PE_GetFlatSurfaceArea),
 	    HLL_EXPORT(Parts_SetPartsFlatAndStop, PE_SetPartsFlatAndStop),
+	    HLL_EXPORT(SetPartsFlatAndStop, PE_SetPartsFlatAndStop),
 	    HLL_EXPORT(Parts_StopPartsFlat, PE_StopPartsFlat),
+	    HLL_EXPORT(StopPartsFlat, PE_StopPartsFlat),
 	    HLL_EXPORT(Parts_StartPartsFlat, PE_StartPartsFlat),
+	    HLL_EXPORT(StartPartsFlat, PE_StartPartsFlat),
 	    HLL_EXPORT(Parts_GoFramePartsFlat, PE_GoFramePartsFlat),
+	    HLL_EXPORT(GoFramePartsFlat, PE_GoFramePartsFlat),
 	    HLL_EXPORT(Parts_GetPartsFlatEndFrame, PE_GetPartsFlatEndFrame),
+	    HLL_EXPORT(GetPartsFlatEndFrame, PE_GetPartsFlatEndFrame),
 	    HLL_EXPORT(SetFlatFPSRate, PE_SetFlatFPSRate),
 	    HLL_EXPORT(GetFlatFPSRate, PE_GetFlatFPSRate),
 	    HLL_EXPORT(GetFlatFPS, PE_GetFlatFPS),
@@ -3951,6 +4064,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_GetFlatFrame, PE_GetFlatFrame),
 	    HLL_EXPORT(Parts_JumpFlatLabel, PE_JumpFlatLabel),
 	    HLL_EXPORT(Parts_ExistsFlatFile, PE_ExistsFlatFile),
+	    HLL_EXPORT(ExistsFlatFile, PE_ExistsFlatFile),
 	    HLL_EXPORT(Parts_GetPartsFlatDataInfo, PE_GetPartsFlatDataInfo),
 	    HLL_EXPORT(NumofFlatCG, PE_NumofFlatCG),
 	    HLL_EXPORT(GetFlatCGName, PE_GetFlatCGName),
@@ -4006,7 +4120,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_SetParentPartsNumber, PE_SetParentPartsNumber),
 	    HLL_EXPORT(Parts_SetInputState, PE_SetInputState),
 	    HLL_EXPORT(Parts_SetOnCursorShowLinkPartsNumber, PE_SetOnCursorShowLinkPartsNumber),
-	    HLL_TODO_EXPORT(Parts_SetSoundNumber, PartsEngine_Parts_SetSoundNumber),
+	    HLL_EXPORT(Parts_SetSoundNumber, PartsEngine_SetSoundNumber),
 	    HLL_EXPORT(Parts_SetPartsPixelDecide, PE_SetPartsPixelDecide),
 	    HLL_EXPORT(Parts_GetPartsPassCursor, PE_GetPartsPassCursor),
 	    HLL_EXPORT(Parts_GetPartsClickable, PE_GetPartsClickable),
@@ -4018,7 +4132,7 @@ HLL_LIBRARY(PartsEngine,
 	    HLL_EXPORT(Parts_GetParentPartsNumber, PE_GetParentPartsNumber),
 	    HLL_EXPORT(Parts_GetInputState, PE_GetInputState),
 	    HLL_EXPORT(Parts_GetOnCursorShowLinkPartsNumber, PE_GetOnCursorShowLinkPartsNumber),
-	    HLL_TODO_EXPORT(Parts_GetSoundNumber, PartsEngine_Parts_GetSoundNumber),
+	    HLL_EXPORT(Parts_GetSoundNumber, PartsEngine_GetSoundNumber),
 	    HLL_EXPORT(Parts_IsPartsPixelDecide, PartsEngine_Parts_IsPartsPixelDecide),
 	    HLL_EXPORT(Parts_SetLockUpdate, PartsEngine_Parts_SetLockUpdate),
 	    HLL_EXPORT(Parts_IsLockUpdate, PartsEngine_Parts_IsLockUpdate),
@@ -4137,9 +4251,39 @@ static void PartsEngine_PreLink(void)
 	REPLACE_IF_VOID("GetComboBoxCGName", PartsEngine_WidgetGetEmptyString_v6);
 	REPLACE_IF_VOID("GetComboBoxText", PartsEngine_WidgetGetEmptyString_v6);
 	REPLACE_IF_VOID("GetMultiTextBoxCGName", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetSpinBoxCGName", PartsEngine_WidgetGetEmptyString_v6);
+	REPLACE_IF_VOID("GetMessageWindowCGName", PartsEngine_GetMessageWindowCGName_v6);
+	REPLACE_IF_VOID("GetMessageWindowFlatName", PartsEngine_GetMessageWindowFlatName_v6);
+	REPLACE_IF_VOID("GetMessageWindowText", PartsEngine_GetMessageWindowText_v6);
+	REPLACE_IF_VOID("GetActivityEXText", PartsEngine_GetActivityEXText_v6);
 	REPLACE_IF_VOID("GetListBoxItem", PartsEngine_WidgetGetItemEmptyString_v6);
 	REPLACE_IF_VOID("GetComboBoxListBoxItem", PartsEngine_WidgetGetItemEmptyString_v6);
 #undef REPLACE_IF_VOID
+
+	fun = get_fun(libno, "AddMotionHGaugeRate");
+	if (fun && fun->nr_arguments >= 7) {
+		if (fun->arguments[1].type.data == AIN_INT) {
+			static_library_replace(&lib_PartsEngine, "AddMotionHGaugeRate",
+					fun->nr_arguments == 8
+						? (void *)PartsEngine_AddMotionHGaugeRate_int_curve
+						: (void *)PartsEngine_AddMotionHGaugeRate_int);
+		} else if (fun->nr_arguments == 7 && fun->arguments[1].type.data == AIN_FLOAT) {
+			static_library_replace(&lib_PartsEngine, "AddMotionHGaugeRate",
+					PE_AddMotionHGaugeRate);
+		}
+	}
+	fun = get_fun(libno, "AddMotionVGaugeRate");
+	if (fun && fun->nr_arguments >= 7) {
+		if (fun->arguments[1].type.data == AIN_INT) {
+			static_library_replace(&lib_PartsEngine, "AddMotionVGaugeRate",
+					fun->nr_arguments == 8
+						? (void *)PartsEngine_AddMotionVGaugeRate_int_curve
+						: (void *)PartsEngine_AddMotionVGaugeRate_int);
+		} else if (fun->nr_arguments == 7 && fun->arguments[1].type.data == AIN_FLOAT) {
+			static_library_replace(&lib_PartsEngine, "AddMotionVGaugeRate",
+					PE_AddMotionVGaugeRate);
+		}
+	}
 
 #define REPLACE_IF_VOID_OUT0(hll_name, fn_ptr) do { \
 	fun = get_fun(libno, hll_name); \

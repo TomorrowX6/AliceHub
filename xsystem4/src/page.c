@@ -476,32 +476,43 @@ int alloc_struct(int no)
 	return slot;
 }
 
+static struct ain *page_init2_cached_ain = NULL;
+static int *page_init2_fns = NULL;
+static int page_init2_cached_nr = 0;
+
+void page_end_session(void)
+{
+	free(page_init2_fns);
+	page_init2_fns = NULL;
+	page_init2_cached_ain = NULL;
+	page_init2_cached_nr = 0;
+}
+
 static int get_struct_member_init_fn(int no)
 {
-	static struct ain *cached_ain = NULL;
-	static int *init2_fns = NULL;
-	static int cached_nr = 0;
-	if (cached_ain != ain || cached_nr != ain->nr_structures) {
-		free(init2_fns);
-		cached_ain = ain;
-		cached_nr = ain->nr_structures;
-		init2_fns = xmalloc(sizeof(int) * max(cached_nr, 1));
-		for (int i = 0; i < cached_nr; i++)
-			init2_fns[i] = -2;
-	}
-	if (no < 0 || no >= cached_nr)
+	if (!ain)
 		return -1;
-	if (init2_fns[no] == -2) {
+	if (page_init2_cached_ain != ain || page_init2_cached_nr != ain->nr_structures) {
+		free(page_init2_fns);
+		page_init2_cached_ain = ain;
+		page_init2_cached_nr = ain->nr_structures;
+		page_init2_fns = xmalloc(sizeof(int) * max(page_init2_cached_nr, 1));
+		for (int i = 0; i < page_init2_cached_nr; i++)
+			page_init2_fns[i] = -2;
+	}
+	if (no < 0 || no >= page_init2_cached_nr)
+		return -1;
+	if (page_init2_fns[no] == -2) {
 		size_t len = strlen(ain->structures[no].name);
 		char *buf = xmalloc(len + 3);
 		memcpy(buf, ain->structures[no].name, len);
 		buf[len] = '@';
 		buf[len + 1] = '2';
 		buf[len + 2] = '\0';
-		init2_fns[no] = ain_get_function(ain, buf);
+		page_init2_fns[no] = ain_get_function(ain, buf);
 		free(buf);
 	}
-	return init2_fns[no];
+	return page_init2_fns[no];
 }
 
 void init_struct(int no, int slot)
@@ -667,7 +678,10 @@ int array_numof(struct page *page, int rank)
 	if (rank == 1) {
 		return page->nr_vars;
 	}
-	return array_numof(heap[page->values[0].i].page, rank - 1);
+	if (page->nr_vars <= 0)
+		return 0;
+	int slot = page->values[0].i;
+	return array_numof(page_index_valid(slot) ? heap[slot].page : NULL, rank - 1);
 }
 
 static bool array_index_ok(struct page *array, int i)
@@ -962,6 +976,16 @@ static int array_compare_member(const void *_a, const void *_b)
 	return d ? d : a->index - b->index;
 }
 
+static int array_compare_member_float(const void *_a, const void *_b)
+{
+	const struct sortable *a = _a;
+	const struct sortable *b = _b;
+	float a_f = heap_get_page(a->v.i)->values[current_sort_member].f;
+	float b_f = heap_get_page(b->v.i)->values[current_sort_member].f;
+	int d = (a_f > b_f) - (a_f < b_f);
+	return d ? d : a->index - b->index;
+}
+
 static int array_compare_member_string(const void *_a, const void *_b)
 {
 	const struct sortable *a = _a;
@@ -994,6 +1018,8 @@ void array_sort_mem(struct page *page, int member_no)
 	current_sort_member = member_no;
 	if (s->members[member_no].type.data == AIN_STRING)
 		qsort(values, page->nr_vars, sizeof(struct sortable), array_compare_member_string);
+	else if (s->members[member_no].type.data == AIN_FLOAT)
+		qsort(values, page->nr_vars, sizeof(struct sortable), array_compare_member_float);
 	else
 		qsort(values, page->nr_vars, sizeof(struct sortable), array_compare_member);
 	current_sort_member = prev_member;

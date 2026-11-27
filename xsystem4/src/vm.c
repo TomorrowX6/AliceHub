@@ -2357,7 +2357,12 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int rank = stack_pop().i;
 		int varno = stack_peek(rank).i;
 		int pageno = stack_peek(rank+1).i;
+		if (unlikely(!page_index_valid(pageno) || !heap[pageno].page
+				|| varno < 0 || varno >= heap[pageno].page->nr_vars))
+			VM_ERROR("A_ALLOC: invalid parent page %d var %d", pageno, varno);
 		int array = heap[pageno].page->values[varno].i;
+		if (unlikely(!page_index_valid(array)))
+			VM_ERROR("A_ALLOC: invalid array page index %d", array);
 		enum ain_data_type data_type = variable_type(heap[pageno].page, varno, &struct_type, NULL);
 		if (heap[array].page) {
 			delete_page_vars(heap[array].page);
@@ -2372,7 +2377,12 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int rank = stack_pop().i; // rank
 		int varno = stack_peek(rank).i;
 		int pageno = stack_peek(rank+1).i;
+		if (unlikely(!page_index_valid(pageno) || !heap[pageno].page
+				|| varno < 0 || varno >= heap[pageno].page->nr_vars))
+			VM_ERROR("A_REALLOC: invalid parent page %d var %d", pageno, varno);
 		int array = heap[pageno].page->values[varno].i;
+		if (unlikely(!page_index_valid(array)))
+			VM_ERROR("A_REALLOC: invalid array page index %d", array);
 		enum ain_data_type data_type = variable_type(heap[pageno].page, varno, &struct_type, NULL);
 		heap_set_page(array, realloc_array(heap[array].page, rank, stack_peek_ptr(rank-1), data_type, struct_type, true));
 		stack_ptr -= rank + 2;
@@ -2380,7 +2390,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case A_FREE: {
 		int array = stack_pop_var()->i;
-		if (heap[array].page) {
+		if (page_index_valid(array) && heap[array].page) {
 			delete_page_vars(heap[array].page);
 			free_page(heap[array].page);
 			heap_set_page(array, NULL);
@@ -2431,7 +2441,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case A_NUMOF: {
 		int rank = stack_pop().i; // rank
 		int array = stack_pop_var()->i;
-		stack_push(array_numof(heap[array].page, rank));
+		stack_push(page_index_valid(array) ? array_numof(heap[array].page, rank) : 0);
 		break;
 	}
 	case A_COPY: {
@@ -2440,7 +2450,8 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int src = stack_pop().i;
 		int dst_i = stack_pop().i;
 		int dst = stack_pop_var()->i;
-		array_copy(heap[dst].page, dst_i, heap[src].page, src_i, n);
+		array_copy(page_index_valid(dst) ? heap[dst].page : NULL, dst_i,
+				page_index_valid(src) ? heap[src].page : NULL, src_i, n);
 		stack_push(n);
 		break;
 	}
@@ -2449,7 +2460,7 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int n = stack_pop().i;
 		int i = stack_pop().i;
 		int array = stack_pop_var()->i;
-		stack_push(array_fill(heap[array].page, i, n, val));
+		stack_push(page_index_valid(array) ? array_fill(heap[array].page, i, n, val) : 0);
 		break;
 	}
 	case A_PUSHBACK: {
@@ -2457,14 +2468,20 @@ static enum opcode execute_instruction(enum opcode opcode)
 		union vm_value val = stack_pop();
 		int varno = stack_pop().i;
 		int pageno = stack_pop().i;
+		if (unlikely(!page_index_valid(pageno) || !heap[pageno].page
+				|| varno < 0 || varno >= heap[pageno].page->nr_vars))
+			VM_ERROR("A_PUSHBACK: invalid parent page %d var %d", pageno, varno);
 		int array = heap[pageno].page->values[varno].i;
+		if (unlikely(!page_index_valid(array)))
+			VM_ERROR("A_PUSHBACK: invalid array page index %d", array);
 		enum ain_data_type data_type = variable_type(heap[pageno].page, varno, &struct_type, NULL);
 		heap_set_page(array, array_pushback(heap[array].page, val, data_type, struct_type));
 		break;
 	}
 	case A_POPBACK: {
 		int array = stack_pop_var()->i;
-		heap_set_page(array, array_popback(heap[array].page));
+		if (page_index_valid(array))
+			heap_set_page(array, array_popback(heap[array].page));
 		break;
 	}
 	case A_EMPTY: {
@@ -2476,7 +2493,8 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int i = stack_pop().i;
 		int array = stack_pop_var()->i;
 		bool success = false;
-		heap_set_page(array, array_erase(heap[array].page, i, &success));
+		if (page_index_valid(array))
+			heap_set_page(array, array_erase(heap[array].page, i, &success));
 		stack_push(success);
 		break;
 	}
@@ -2486,7 +2504,12 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int i = stack_pop().i;
 		int varno = stack_pop().i;
 		int pageno = stack_pop().i;
+		if (unlikely(!page_index_valid(pageno) || !heap[pageno].page
+				|| varno < 0 || varno >= heap[pageno].page->nr_vars))
+			VM_ERROR("A_INSERT: invalid parent page %d var %d", pageno, varno);
 		int array = heap[pageno].page->values[varno].i;
+		if (unlikely(!page_index_valid(array)))
+			VM_ERROR("A_INSERT: invalid array page index %d", array);
 		enum ain_data_type data_type = variable_type(heap[pageno].page, varno, &struct_type, NULL);
 		heap_set_page(array, array_insert(heap[array].page, i, val, data_type, struct_type));
 		break;
@@ -2496,7 +2519,8 @@ static enum opcode execute_instruction(enum opcode opcode)
 		int obj = (ain->version > 8 || (ain->version == 8 && !game_tsumamigui3_jun && !game_tsumamigui3_ntr))
 			? stack_pop().i : -1;
 		int array = stack_pop_var()->i;
-		array_sort(heap[array].page, fno, obj);
+		if (page_index_valid(array))
+			array_sort(heap[array].page, fno, obj);
 		break;
 	}
 	case A_FIND: {
@@ -2539,7 +2563,8 @@ static enum opcode execute_instruction(enum opcode opcode)
 	}
 	case A_REVERSE: {
 		int array = stack_pop_var()->i;
-		array_reverse(heap[array].page);
+		if (page_index_valid(array))
+			array_reverse(heap[array].page);
 		break;
 	}
 	//
@@ -2925,7 +2950,8 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case A_SORT_MEM: {
 		int mno = stack_pop().i;
 		int array = stack_pop_var()->i;
-		array_sort_mem(heap[array].page, mno);
+		if (page_index_valid(array))
+			array_sort_mem(heap[array].page, mno);
 		break;
 	}
 	case DG_SET: {
@@ -3448,6 +3474,8 @@ void vm_end_session(void)
 	}
 	unlink_libraries();
 	ain = NULL;
+	page_end_session();
+	modifier_end_session();
 	call_stack_ptr = 0;
 	vm_reset_once = false;
 }

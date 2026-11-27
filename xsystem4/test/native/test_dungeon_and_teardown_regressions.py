@@ -547,6 +547,7 @@ struct cg *polyobj_get_texture(struct polyobj *po, int i) { (void)po; (void)i; r
 struct polyobj_object *polyobj_get_object(struct polyobj *po, int i) { (void)po; (void)i; return NULL; }
 void polyobj_object_free(struct polyobj_object *obj) { (void)obj; }
 struct sact_sprite *sact_try_get_sprite(int sp_no) { (void)sp_no; return NULL; }
+struct texture *sprite_get_texture(struct sact_sprite *sp) { return sp ? &sp->texture : NULL; }
 Uint32 SDL_GetTicks(void) { return 100; }
 
 int main(void) {
@@ -1249,6 +1250,7 @@ char *gamedir_path(const char *p) { return strdup(p); }
 FILE *atomic_save_open(const char *p, const char *m, char **t) { (void)p; (void)m; *t = NULL; return NULL; }
 void atomic_save_abort(FILE *f, char *t) { (void)f; free(t); }
 bool atomic_save_commit(FILE *f, const char *p, char *t, bool b) { (void)f; (void)p; free(t); (void)b; return true; }
+void savedata_set_background_flush_hook(void (*hook)(void)) { (void)hook; }
 int ain_get_struct(struct ain *a, char *name) { (void)a; (void)name; return g_mock_scene_struct_no; }
 int ain_get_library(struct ain *a, const char *name) { (void)a; (void)name; return 0; }
 int ain_get_library_function(struct ain *a, int l, const char *name) { (void)a; (void)l; (void)name; return -1; }
@@ -1639,7 +1641,9 @@ struct texture *sprite_get_texture(struct sact_sprite *sp) { (void)sp; return NU
 _Noreturn void _vm_error(const char *fmt, ...) { (void)fmt; abort(); }
 int mixer_stream_play(sts_mixer_stream_t *s, int v) { (void)s; (void)v; return -1; }
 void mixer_stream_stop(int v) { (void)v; }
+void mixer_stream_stop_stream(sts_mixer_stream_t *s) { (void)s; }
 bool mixer_stream_set_volume(int v, int vol) { (void)v; (void)vol; return true; }
+bool mixer_stream_set_volume_stream(sts_mixer_stream_t *s, int vol) { (void)s; (void)vol; return true; }
 bool kiwi_prepare_from_memory(int id, uint8_t *buf, size_t sz, int g) { (void)id; free(buf); (void)sz; (void)g; return false; }
 bool kiwi_play_sound(int id) { (void)id; return true; }
 bool kiwi_stop_sound(int id) { (void)id; return true; }

@@ -45,6 +45,24 @@ HARNESS = r"""
 #include "cJSON.h"
 
 #define LOCK_DISABLE_STREAMER_MODE (1 << 11)
+#define EX_MAX_GAMES 32
+
+static void ex_snapshot_locks_locked(int *out_masks, bool *out_init)
+{
+	memset(out_masks, 0, sizeof(int) * EX_MAX_GAMES);
+	memset(out_init, 0, sizeof(bool) * EX_MAX_GAMES);
+}
+static bool ex_all_locks_initialized_locked(void) { return true; }
+static void ex_load_locks_from_json_locked(cJSON *root) { (void)root; }
+static bool ex_locks_differ_from_json(cJSON *root, const int *snap_masks, const bool *snap_init)
+{
+	(void)root; (void)snap_masks; (void)snap_init;
+	return false;
+}
+static void ex_save_locks_to_json(cJSON *root, const int *snap_masks, const bool *snap_init)
+{
+	(void)root; (void)snap_masks; (void)snap_init;
+}
 
 static pthread_mutex_t g_mod_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_cfg_io_mutex = PTHREAD_MUTEX_INITIALIZER;

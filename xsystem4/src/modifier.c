@@ -224,6 +224,7 @@ static bool ex_all_locks_initialized_locked(void);
 static void ex_load_locks_from_json_locked(cJSON *root);
 static bool ex_locks_differ_from_json(cJSON *root, const int *snap_masks, const bool *snap_init);
 static void ex_save_locks_to_json(cJSON *root, const int *snap_masks, const bool *snap_init);
+static void ex_reset_locks_locked(void);
 static inline bool vm_is_evenicle_family(void)
 {
 	return game_evenicle || game_evenicle_rance || game_evenicle_gaiden;
@@ -6990,6 +6991,62 @@ void modifier_on_ain_init(void)
 	s_r03_compatible = true;
 }
 
+void modifier_end_session(void)
+{
+	pthread_mutex_lock(&g_mod_mutex);
+	g_vm_ready_cached = false;
+	free(g_cached_live_state_json);
+	g_cached_live_state_json = NULL;
+	free(g_pending_action_json);
+	g_pending_action_json = NULL;
+	g_live_state_req_seq = 0;
+	g_live_state_built_seq = 0;
+	g_has_ui_scale_init = false;
+	g_font_scale_pct = 100;
+	g_scrollbar_scale_pct = 100;
+	g_pending_lock_streamer_mode = -1;
+	g_has_lock_mask_init = false;
+	g_live_lock_mask = 0;
+	g_has_dohna_lock_mask_init = false;
+	g_dohna_lock_mask = 0;
+	g_has_evenicle_lock_mask_init = false;
+	g_evenicle_lock_mask = 0;
+	g_has_sr_lock_mask_init = false;
+	g_sr_lock_mask = 0;
+	g_has_r03_lock_mask_init = false;
+	g_r03_lock_mask = 0;
+	g_has_r08_lock_mask_init = false;
+	g_r08_lock_mask = 0;
+	g_has_r09_lock_mask_init = false;
+	g_r09_lock_mask = 0;
+	g_has_r01_lock_mask_init = false;
+	g_r01_lock_mask = 0;
+	g_has_r02_lock_mask_init = false;
+	g_r02_lock_mask = 0;
+	ex_reset_locks_locked();
+	pthread_cond_broadcast(&g_mod_cond);
+	pthread_mutex_unlock(&g_mod_mutex);
+
+	s_applied_font_scale_pct = 100;
+	s_applied_scrollbar_scale_pct = 100;
+	s_game_config_ready = false;
+	s_game_config_loaded = false;
+	s_inspected_ain = NULL;
+	s_dd_inspected_ain = NULL;
+	s_ev_inspected_ain = NULL;
+	s_sr_inspected_ain = NULL;
+	s_r03_inspected_ain = NULL;
+	s_card_org_mdata_slot = -1;
+	s_card_org_pair0_slot = -1;
+	s_r03_compatible = false;
+	s_r03_applying = false;
+	ex_hhr_reset_assists();
+	r08_on_ain_init();
+	r09_on_ain_init();
+	r01_on_ain_init();
+	r02_on_ain_init();
+}
+
 static inline int32_t r03_clamp_sum(int32_t old, int32_t delta)
 {
 	int64_t sum = (int64_t)old + delta;
@@ -9088,12 +9145,22 @@ static int get_game_lock_mask(const int *target)
 #if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(MODIFIER_OFFLINE_ONLY)
 char *modifier_api_read_local_save_summary(const char *path)
 {
-	return path ? read_local_save_summary_str(path) : NULL;
+	if (!path)
+		return NULL;
+	bool previous_gbk = sys4_text_is_gbk;
+	char *summary = read_local_save_summary_str(path);
+	sys4_set_text_gbk(previous_gbk);
+	return summary;
 }
 
 bool modifier_api_write_local_save_mod(const char *path, const char *mod_json)
 {
-	return (path && mod_json) ? write_local_save_mod_str(path, mod_json) : false;
+	if (!path || !mod_json)
+		return false;
+	bool previous_gbk = sys4_text_is_gbk;
+	bool written = write_local_save_mod_str(path, mod_json);
+	sys4_set_text_gbk(previous_gbk);
+	return written;
 }
 
 char *modifier_api_read_global_save_summary(const char *global_path, const char *collection_path)
@@ -9118,10 +9185,8 @@ bool modifier_api_write_global_save_mod(const char *global_path, const char *col
 #if defined(__ANDROID__) || defined(ALICEHUB_IOS) || (defined(__SWITCH__) && !defined(MODIFIER_OFFLINE_ONLY))
 const char *modifier_api_current_game(void)
 {
-#ifdef __SWITCH__
 	if (!vm_is_ready())
 		return "";
-#endif
 	if (game_rance10) return "rance10";
 	if (game_dohnadohna) return "dohnadohna";
 	if (game_evenicle_rance) return "eveniclerance";
@@ -9438,9 +9503,10 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeReadLocalSaveSummary(
 	if (!jpath)
 		return jni_new_string_utf8_safe(env, "{}");
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
-	char *json = path ? read_local_save_summary_str(path) : NULL;
-	if (path)
-		(*env)->ReleaseStringUTFChars(env, jpath, path);
+	if (!path)
+		return NULL;
+	char *json = modifier_api_read_local_save_summary(path);
+	(*env)->ReleaseStringUTFChars(env, jpath, path);
 	jstring ret = jni_new_string_utf8_safe(env, json ? json : "{}");
 	free(json);
 	return ret;
@@ -9454,10 +9520,16 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeWriteLocalSaveMod(
 	if (!jpath || !jmod)
 		return JNI_FALSE;
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
-	const char *mod  = (*env)->GetStringUTFChars(env, jmod, NULL);
-	bool ok = (path && mod) ? write_local_save_mod_str(path, mod) : false;
-	if (path) (*env)->ReleaseStringUTFChars(env, jpath, path);
-	if (mod)  (*env)->ReleaseStringUTFChars(env, jmod, mod);
+	if (!path)
+		return JNI_FALSE;
+	const char *mod = (*env)->GetStringUTFChars(env, jmod, NULL);
+	if (!mod) {
+		(*env)->ReleaseStringUTFChars(env, jpath, path);
+		return JNI_FALSE;
+	}
+	bool ok = modifier_api_write_local_save_mod(path, mod);
+	(*env)->ReleaseStringUTFChars(env, jpath, path);
+	(*env)->ReleaseStringUTFChars(env, jmod, mod);
 	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -9466,11 +9538,23 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeReadGlobalSaveSummary
 	JNIEnv *env, jclass clazz, jstring jglobal_path, jstring jcollection_path)
 {
 	(void)clazz;
-	const char *gp = jglobal_path ? (*env)->GetStringUTFChars(env, jglobal_path, NULL) : NULL;
-	const char *cp = jcollection_path ? (*env)->GetStringUTFChars(env, jcollection_path, NULL) : NULL;
-	char *json = read_global_save_summary_str(gp ? gp : "", cp ? cp : "");
-	if (jglobal_path && gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
-	if (jcollection_path && cp) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
+	const char *gp = NULL;
+	if (jglobal_path) {
+		gp = (*env)->GetStringUTFChars(env, jglobal_path, NULL);
+		if (!gp)
+			return NULL;
+	}
+	const char *cp = NULL;
+	if (jcollection_path) {
+		cp = (*env)->GetStringUTFChars(env, jcollection_path, NULL);
+		if (!cp) {
+			if (gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
+			return NULL;
+		}
+	}
+	char *json = modifier_api_read_global_save_summary(gp, cp);
+	if (gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
+	if (cp) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
 	jstring ret = jni_new_string_utf8_safe(env, json ? json : "{}");
 	free(json);
 	return ret;
@@ -9483,13 +9567,30 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeWriteGlobalSaveMod(
 	(void)clazz;
 	if (!jmod)
 		return JNI_FALSE;
-	const char *gp  = jglobal_path ? (*env)->GetStringUTFChars(env, jglobal_path, NULL) : NULL;
-	const char *cp  = jcollection_path ? (*env)->GetStringUTFChars(env, jcollection_path, NULL) : NULL;
+	const char *gp = NULL;
+	if (jglobal_path) {
+		gp = (*env)->GetStringUTFChars(env, jglobal_path, NULL);
+		if (!gp)
+			return JNI_FALSE;
+	}
+	const char *cp = NULL;
+	if (jcollection_path) {
+		cp = (*env)->GetStringUTFChars(env, jcollection_path, NULL);
+		if (!cp) {
+			if (gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
+			return JNI_FALSE;
+		}
+	}
 	const char *mod = (*env)->GetStringUTFChars(env, jmod, NULL);
-	bool ok = mod ? write_global_save_mod_str(gp ? gp : "", cp ? cp : "", mod) : false;
-	if (jglobal_path && gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
-	if (jcollection_path && cp) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
-	if (mod) (*env)->ReleaseStringUTFChars(env, jmod, mod);
+	if (!mod) {
+		if (gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
+		if (cp) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
+		return JNI_FALSE;
+	}
+	bool ok = modifier_api_write_global_save_mod(gp, cp, mod);
+	if (gp) (*env)->ReleaseStringUTFChars(env, jglobal_path, gp);
+	if (cp) (*env)->ReleaseStringUTFChars(env, jcollection_path, cp);
+	(*env)->ReleaseStringUTFChars(env, jmod, mod);
 	return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -9512,9 +9613,10 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetConfigPath(
 	if (!jpath)
 		return;
 	const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
+	if (!path)
+		return;
 	modifier_api_set_config_path(path);
-	if (path)
-		(*env)->ReleaseStringUTFChars(env, jpath, path);
+	(*env)->ReleaseStringUTFChars(env, jpath, path);
 }
 
 JNIEXPORT void JNICALL
@@ -9785,9 +9887,10 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetUiScaleGameKey(
 		return;
 	}
 	const char *key = (*env)->GetStringUTFChars(env, jgameKey, NULL);
+	if (!key)
+		return;
 	modifier_api_set_ui_scale_game_key(key);
-	if (key)
-		(*env)->ReleaseStringUTFChars(env, jgameKey, key);
+	(*env)->ReleaseStringUTFChars(env, jgameKey, key);
 }
 
 JNIEXPORT void JNICALL
@@ -9830,10 +9933,11 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
 	(void)clazz;
 	if (!jsrcPath || !jdstPath) return JNI_FALSE;
 	const char *src_path = (*env)->GetStringUTFChars(env, jsrcPath, NULL);
+	if (!src_path)
+		return JNI_FALSE;
 	const char *dst_path = (*env)->GetStringUTFChars(env, jdstPath, NULL);
-	if (!src_path || !dst_path) {
-		if (src_path) (*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
-		if (dst_path) (*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+	if (!dst_path) {
+		(*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
 		return JNI_FALSE;
 	}
 	bool ok = savedata_export_pc_file(src_path, dst_path);
@@ -9849,13 +9953,21 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFileWithA
 	(void)clazz;
 	if (!jsrcPath || !jdstPath) return JNI_FALSE;
 	const char *src_path = (*env)->GetStringUTFChars(env, jsrcPath, NULL);
-	const char *dst_path = (*env)->GetStringUTFChars(env, jdstPath, NULL);
-	const char *ain_path = jainPath ? (*env)->GetStringUTFChars(env, jainPath, NULL) : NULL;
-	if (!src_path || !dst_path || (jainPath && !ain_path)) {
-		if (src_path) (*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
-		if (dst_path) (*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
-		if (ain_path) (*env)->ReleaseStringUTFChars(env, jainPath, ain_path);
+	if (!src_path)
 		return JNI_FALSE;
+	const char *dst_path = (*env)->GetStringUTFChars(env, jdstPath, NULL);
+	if (!dst_path) {
+		(*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+		return JNI_FALSE;
+	}
+	const char *ain_path = NULL;
+	if (jainPath) {
+		ain_path = (*env)->GetStringUTFChars(env, jainPath, NULL);
+		if (!ain_path) {
+			(*env)->ReleaseStringUTFChars(env, jsrcPath, src_path);
+			(*env)->ReleaseStringUTFChars(env, jdstPath, dst_path);
+			return JNI_FALSE;
+		}
 	}
 	const char *effective_ain = (ain_path && ain_path[0]) ? ain_path : NULL;
 	bool ok = savedata_export_pc_file_with_ain(src_path, dst_path, effective_ain);

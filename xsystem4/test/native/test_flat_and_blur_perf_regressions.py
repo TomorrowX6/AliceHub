@@ -319,6 +319,7 @@ char *sjis_filename2utf(const char *src, size_t len) { (void)src; (void)len; ret
 const char *display_sjis0(const char *s) { return s; }
 void modifier_on_frame(void) {}
 void icon_init(void) {}
+void icon_fini(void) {}
 
 struct string *make_string(const char *str, size_t len) {
     struct string *s = calloc(1, sizeof(struct string) + len + 1);
@@ -975,6 +976,7 @@ void sys_message(const char *fmt, ...) {
 char *sjis_filename2utf(const char *src, size_t len) { (void)src; (void)len; return strdup("blur-test"); }
 void modifier_on_frame(void) {}
 void icon_init(void) {}
+void icon_fini(void) {}
 
 static int g_draw_calls = 0;
 void __real_glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);

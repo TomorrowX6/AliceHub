@@ -283,8 +283,27 @@ void string_erase(struct string **s, int index)
 
 void string_clear(struct string *s)
 {
+	if (!s || s->cow)
+		return;
 	s->size = 0;
 	s->text[0] = '\0';
+}
+
+void string_clear_ref(struct string **s)
+{
+	if (!s)
+		return;
+	if (!*s) {
+		*s = make_string("", 0);
+		return;
+	}
+	if ((*s)->cow) {
+		free_string(*s);
+		*s = make_string("", 0);
+		return;
+	}
+	(*s)->size = 0;
+	(*s)->text[0] = '\0';
 }
 
 int string_find(const struct string *haystack, const struct string *needle)

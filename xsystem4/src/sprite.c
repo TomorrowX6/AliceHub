@@ -401,6 +401,41 @@ void sprite_init_color(struct sact_sprite *sp, int w, int h, int r, int g, int b
 	sprite_dirty(sp);
 }
 
+void sprite_init_copy(struct sact_sprite *dst, struct sact_sprite *src)
+{
+	if (!dst || !src || dst == src)
+		return;
+	struct texture *src_tex = sprite_get_texture(src);
+	SDL_Color c = { 0, 0, 0, src->sp.has_alpha ? 0 : 255 };
+	sprite_bind_plugin(dst, NULL);
+	gfx_delete_texture(&dst->texture);
+	if (src->rect.w > 0 && src->rect.h > 0) {
+		if (src->sp.has_alpha)
+			gfx_init_texture_rgba(&dst->texture, src->rect.w, src->rect.h, c);
+		else
+			gfx_init_texture_rgb(&dst->texture, src->rect.w, src->rect.h, c);
+		if (src_tex && src_tex->handle) {
+			gfx_copy(&dst->texture, 0, 0, src_tex, 0, 0, src->rect.w, src->rect.h);
+			if (src->sp.has_alpha)
+				gfx_copy_amap(&dst->texture, 0, 0, src_tex, 0, 0, src->rect.w, src->rect.h);
+		}
+	}
+	dst->color = src->color;
+	dst->blend_rate = src->blend_rate;
+	dst->multiply_color = src->multiply_color;
+	dst->add_color = src->add_color;
+	dst->draw_method = src->draw_method;
+	dst->rect.w = src->rect.w;
+	dst->rect.h = src->rect.h;
+	dst->surface_area = src->surface_area;
+	dst->cg_no = src->cg_no;
+	dst->sp.has_pixel = src->sp.has_pixel;
+	dst->sp.has_alpha = src->sp.has_alpha;
+	dst->sp.render = sprite_render;
+	dst->sp.to_json = _sprite_to_json;
+	sprite_text_copy(dst, src);
+}
+
 void sprite_init_custom(struct sact_sprite *sp)
 {
 	sp->sp.render = sprite_render;

@@ -214,8 +214,10 @@ static int SDL_LockMutex(SDL_mutex *m) {{ assert(m != NULL); mutex_lock_calls++;
 static int SDL_UnlockMutex(SDL_mutex *m) {{ assert(m != NULL); return 0; }}
 static uint32_t SDL_GetTicks(void) {{ return 1234; }}
 static void mixer_stream_stop(int voice) {{ (void)voice; mixer_stop_calls++; }}
+static void mixer_stream_stop_stream(sts_mixer_stream_t *s) {{ if (s && s->callback) mixer_stop_calls++; }}
 static int mixer_stream_play(sts_mixer_stream_t *s, int vol) {{ (void)s; (void)vol; mixer_play_calls++; return 1; }}
 static bool mixer_stream_set_volume(int voice, int vol) {{ (void)voice; (void)vol; return true; }}
+static bool mixer_stream_set_volume_stream(sts_mixer_stream_t *s, int vol) {{ (void)s; (void)vol; return true; }}
 static void audio_callback(void *sample, void *userdata) {{ (void)sample; (void)userdata; }}
 static void kiwi_stop_sound(int id) {{ (void)id; }}
 static void kiwi_play_sound(int id) {{ (void)id; }}

@@ -1129,6 +1129,7 @@ void gfx_fini(void)
 	SDL_GL_DeleteContext(sdl.gl.context);
 close_sdl:
 #endif
+	icon_fini();
 	SDL_DestroyWindow(sdl.window);
 	SDL_FreeFormat(sdl.format);
 #ifdef ALICEHUB_IOS
@@ -1944,10 +1945,10 @@ void gfx_render_texture(struct texture *t, Rectangle *r)
 	_gfx_render_texture(&default_shader, t, r, t);
 }
 
-void gfx_render_quadrilateral(struct texture *t, struct gfx_vertex vertices[4])
+void _gfx_render_quadrilateral(struct shader *s, struct texture *t, struct gfx_vertex vertices[4], void *data)
 {
 	gfx_remap_texture(t);
-	if (!t || !t->handle) {
+	if (!t || !t->handle || t->w <= 0 || t->h <= 0) {
 		WARNING("Attempted to render uninitialized texture");
 		return;
 	}
@@ -1965,14 +1966,19 @@ void gfx_render_quadrilateral(struct texture *t, struct gfx_vertex vertices[4])
 
 	mat4 world_transform = GLM_MAT4_IDENTITY_INIT;
 	struct gfx_render_job job = {
-		.shader = &default_shader,
+		.shader = s,
 		.shape = GFX_QUADRILATERAL,
 		.texture = t->handle,
 		.world_transform = world_transform[0],
 		.view_transform = world_view_transform[0],
-		.data = t
+		.data = data
 	};
 	gfx_render(&job);
+}
+
+void gfx_render_quadrilateral(struct texture *t, struct gfx_vertex vertices[4])
+{
+	_gfx_render_quadrilateral(&default_shader, t, vertices, t);
 }
 
 static void init_texture(struct texture *t, int w, int h)

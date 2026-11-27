@@ -910,11 +910,28 @@ HLL_LIBRARY(TextFileWriter,
 	    HLL_EXPORT(Close, TextFile_Close),
 	    HLL_EXPORT(Write, TextFile_Write));
 
+static void EXWriter_Create(void) {}
+static void EXWriter_Close(void) {}
 static int EXWriter_CreateHandle(void) { return 0; }
 static void EXWriter_ReleaseHandle(possibly_unused int id) {}
 static bool EXWriter_Load(possibly_unused int id, possibly_unused struct string *file_name) { return false; }
+static bool EXWriter_Load_v8(possibly_unused struct string *file_name) { return false; }
+static void *EXWriter_ResolveLoad(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 1 ? (void *)EXWriter_Load_v8 : (void *)EXWriter_Load;
+}
 static bool EXWriter_Save(possibly_unused int id, possibly_unused struct string *file_name) { return false; }
+static bool EXWriter_Save_v8(possibly_unused struct string *file_name) { return false; }
+static void *EXWriter_ResolveSave(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 1 ? (void *)EXWriter_Save_v8 : (void *)EXWriter_Save;
+}
 static bool EXWriter_LoadFromString(possibly_unused int id, possibly_unused struct string *text) { return false; }
+static bool EXWriter_LoadFromString_v8(possibly_unused struct string *text) { return false; }
+static void *EXWriter_ResolveLoadFromString(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 1 ? (void *)EXWriter_LoadFromString_v8 : (void *)EXWriter_LoadFromString;
+}
 static bool EXWriter_SaveToString(possibly_unused int id, struct string **text)
 {
 	if (text) {
@@ -924,44 +941,129 @@ static bool EXWriter_SaveToString(possibly_unused int id, struct string **text)
 	}
 	return false;
 }
+static bool EXWriter_SaveToString_v8(struct string **text)
+{
+	return EXWriter_SaveToString(0, text);
+}
+static void *EXWriter_ResolveSaveToString(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 1 ? (void *)EXWriter_SaveToString_v8 : (void *)EXWriter_SaveToString;
+}
 static bool EXWriter_EraseDefine(possibly_unused int id, possibly_unused struct string *name) { return false; }
+static bool EXWriter_EraseDefine_v8(possibly_unused struct string *name) { return false; }
+static void *EXWriter_ResolveEraseDefine(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 1 ? (void *)EXWriter_EraseDefine_v8 : (void *)EXWriter_EraseDefine;
+}
 static bool EXWriter_Rename(possibly_unused int id, possibly_unused struct string *old_name, possibly_unused struct string *new_name) { return false; }
+static bool EXWriter_Rename_v8(possibly_unused struct string *old_name, possibly_unused struct string *new_name) { return false; }
+static void *EXWriter_ResolveRename(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_Rename_v8 : (void *)EXWriter_Rename;
+}
 static bool EXWriter_SetPartial(possibly_unused int id, possibly_unused struct string *name, possibly_unused bool partial) { return false; }
+static bool EXWriter_SetPartial_v8(possibly_unused struct string *name, possibly_unused bool partial) { return false; }
+static void *EXWriter_ResolveSetPartial(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_SetPartial_v8 : (void *)EXWriter_SetPartial;
+}
 static bool EXWriter_SetInt(possibly_unused int id, possibly_unused struct string *name, possibly_unused int data) { return false; }
+static bool EXWriter_SetInt_v8(possibly_unused struct string *name, possibly_unused int data) { return false; }
+static void *EXWriter_ResolveSetInt(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_SetInt_v8 : (void *)EXWriter_SetInt;
+}
 static bool EXWriter_SetFloat(possibly_unused int id, possibly_unused struct string *name, possibly_unused float data) { return false; }
+static bool EXWriter_SetFloat_v8(possibly_unused struct string *name, possibly_unused float data) { return false; }
+static void *EXWriter_ResolveSetFloat(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_SetFloat_v8 : (void *)EXWriter_SetFloat;
+}
 static bool EXWriter_SetString(possibly_unused int id, possibly_unused struct string *name, possibly_unused struct string *data) { return false; }
+static bool EXWriter_SetString_v8(possibly_unused struct string *name, possibly_unused struct string *data) { return false; }
+static void *EXWriter_ResolveSetString(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_SetString_v8 : (void *)EXWriter_SetString;
+}
 static bool EXWriter_AddArrayInt(possibly_unused int id, possibly_unused struct string *name, possibly_unused int data) { return false; }
+static bool EXWriter_AddArrayInt_v8(possibly_unused struct string *name, possibly_unused int data) { return false; }
+static void *EXWriter_ResolveAddArrayInt(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_AddArrayInt_v8 : (void *)EXWriter_AddArrayInt;
+}
 static bool EXWriter_AddArrayFloat(possibly_unused int id, possibly_unused struct string *name, possibly_unused float data) { return false; }
+static bool EXWriter_AddArrayFloat_v8(possibly_unused struct string *name, possibly_unused float data) { return false; }
+static void *EXWriter_ResolveAddArrayFloat(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_AddArrayFloat_v8 : (void *)EXWriter_AddArrayFloat;
+}
 static bool EXWriter_AddArrayString(possibly_unused int id, possibly_unused struct string *name, possibly_unused struct string *data) { return false; }
+static bool EXWriter_AddArrayString_v8(possibly_unused struct string *name, possibly_unused struct string *data) { return false; }
+static void *EXWriter_ResolveAddArrayString(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_AddArrayString_v8 : (void *)EXWriter_AddArrayString;
+}
 static bool EXWriter_AddTableFormatInt(possibly_unused int id, possibly_unused struct string *name, possibly_unused struct string *format_name, possibly_unused bool is_key) { return false; }
+static bool EXWriter_AddTableFormatInt_v8(possibly_unused struct string *name, possibly_unused struct string *format_name, possibly_unused bool is_key) { return false; }
+static void *EXWriter_ResolveAddTableFormatInt(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 3 ? (void *)EXWriter_AddTableFormatInt_v8 : (void *)EXWriter_AddTableFormatInt;
+}
 static bool EXWriter_AddTableFormatFloat(possibly_unused int id, possibly_unused struct string *name, possibly_unused struct string *format_name) { return false; }
+static bool EXWriter_AddTableFormatFloat_v8(possibly_unused struct string *name, possibly_unused struct string *format_name) { return false; }
+static void *EXWriter_ResolveAddTableFormatFloat(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_AddTableFormatFloat_v8 : (void *)EXWriter_AddTableFormatFloat;
+}
 static bool EXWriter_AddTableFormatString(possibly_unused int id, possibly_unused struct string *name, possibly_unused struct string *format_name, possibly_unused bool is_key) { return false; }
+static bool EXWriter_AddTableFormatString_v8(possibly_unused struct string *name, possibly_unused struct string *format_name, possibly_unused bool is_key) { return false; }
+static void *EXWriter_ResolveAddTableFormatString(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 3 ? (void *)EXWriter_AddTableFormatString_v8 : (void *)EXWriter_AddTableFormatString;
+}
 static bool EXWriter_AddTableInt(possibly_unused int id, possibly_unused struct string *name, possibly_unused int data) { return false; }
+static bool EXWriter_AddTableInt_v8(possibly_unused struct string *name, possibly_unused int data) { return false; }
+static void *EXWriter_ResolveAddTableInt(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_AddTableInt_v8 : (void *)EXWriter_AddTableInt;
+}
 static bool EXWriter_AddTableFloat(possibly_unused int id, possibly_unused struct string *name, possibly_unused float data) { return false; }
+static bool EXWriter_AddTableFloat_v8(possibly_unused struct string *name, possibly_unused float data) { return false; }
+static void *EXWriter_ResolveAddTableFloat(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_AddTableFloat_v8 : (void *)EXWriter_AddTableFloat;
+}
 static bool EXWriter_AddTableString(possibly_unused int id, possibly_unused struct string *name, possibly_unused struct string *data) { return false; }
+static bool EXWriter_AddTableString_v8(possibly_unused struct string *name, possibly_unused struct string *data) { return false; }
+static void *EXWriter_ResolveAddTableString(const struct ain_hll_function *f)
+{
+	return f->nr_arguments == 2 ? (void *)EXWriter_AddTableString_v8 : (void *)EXWriter_AddTableString;
+}
 
 HLL_LIBRARY(EXWriter,
+	    HLL_EXPORT(Create, EXWriter_Create),
+	    HLL_EXPORT(Close, EXWriter_Close),
 	    HLL_EXPORT(CreateHandle, EXWriter_CreateHandle),
 	    HLL_EXPORT(ReleaseHandle, EXWriter_ReleaseHandle),
-	    HLL_EXPORT(Load, EXWriter_Load),
-	    HLL_EXPORT(Save, EXWriter_Save),
-	    HLL_EXPORT(LoadFromString, EXWriter_LoadFromString),
-	    HLL_EXPORT(SaveToString, EXWriter_SaveToString),
-	    HLL_EXPORT(EraseDefine, EXWriter_EraseDefine),
-	    HLL_EXPORT(Rename, EXWriter_Rename),
-	    HLL_EXPORT(SetPartial, EXWriter_SetPartial),
-	    HLL_EXPORT(SetInt, EXWriter_SetInt),
-	    HLL_EXPORT(SetFloat, EXWriter_SetFloat),
-	    HLL_EXPORT(SetString, EXWriter_SetString),
-	    HLL_EXPORT(AddArrayInt, EXWriter_AddArrayInt),
-	    HLL_EXPORT(AddArrayFloat, EXWriter_AddArrayFloat),
-	    HLL_EXPORT(AddArrayString, EXWriter_AddArrayString),
-	    HLL_EXPORT(AddTableFormatInt, EXWriter_AddTableFormatInt),
-	    HLL_EXPORT(AddTableFormatFloat, EXWriter_AddTableFormatFloat),
-	    HLL_EXPORT(AddTableFormatString, EXWriter_AddTableFormatString),
-	    HLL_EXPORT(AddTableInt, EXWriter_AddTableInt),
-	    HLL_EXPORT(AddTableFloat, EXWriter_AddTableFloat),
-	    HLL_EXPORT(AddTableString, EXWriter_AddTableString));
+	    HLL_OVERLOAD(Load, EXWriter_ResolveLoad),
+	    HLL_OVERLOAD(Save, EXWriter_ResolveSave),
+	    HLL_OVERLOAD(LoadFromString, EXWriter_ResolveLoadFromString),
+	    HLL_OVERLOAD(SaveToString, EXWriter_ResolveSaveToString),
+	    HLL_OVERLOAD(EraseDefine, EXWriter_ResolveEraseDefine),
+	    HLL_OVERLOAD(Rename, EXWriter_ResolveRename),
+	    HLL_OVERLOAD(SetPartial, EXWriter_ResolveSetPartial),
+	    HLL_OVERLOAD(SetInt, EXWriter_ResolveSetInt),
+	    HLL_OVERLOAD(SetFloat, EXWriter_ResolveSetFloat),
+	    HLL_OVERLOAD(SetString, EXWriter_ResolveSetString),
+	    HLL_OVERLOAD(AddArrayInt, EXWriter_ResolveAddArrayInt),
+	    HLL_OVERLOAD(AddArrayFloat, EXWriter_ResolveAddArrayFloat),
+	    HLL_OVERLOAD(AddArrayString, EXWriter_ResolveAddArrayString),
+	    HLL_OVERLOAD(AddTableFormatInt, EXWriter_ResolveAddTableFormatInt),
+	    HLL_OVERLOAD(AddTableFormatFloat, EXWriter_ResolveAddTableFormatFloat),
+	    HLL_OVERLOAD(AddTableFormatString, EXWriter_ResolveAddTableFormatString),
+	    HLL_OVERLOAD(AddTableInt, EXWriter_ResolveAddTableInt),
+	    HLL_OVERLOAD(AddTableFloat, EXWriter_ResolveAddTableFloat),
+	    HLL_OVERLOAD(AddTableString, EXWriter_ResolveAddTableString));
 
 
 static bool FileDialog_OpenLoadDialog(struct string **load_file_name,
@@ -1031,6 +1133,7 @@ static bool ADVEngine_LoadByFile(possibly_unused struct string *file_path,
 		possibly_unused struct string *function_name) { return false; }
 static bool ADVEngine_LoadByText(possibly_unused struct string *text) { return false; }
 static void ADVEngine_Release(void) {}
+static bool ADVEngine_IsExistIf(void) { return false; }
 static bool ADVEngine_IsExistLowerIf(void) { return false; }
 static int ADVEngine_NumofStep(void) { return 0; }
 static int ADVEngine_NumofStep_fn(possibly_unused struct string *fn) { return 0; }
@@ -1039,6 +1142,20 @@ static void *ADVEngine_ResolveNumofStep(const struct ain_hll_function *f)
 	return f->nr_arguments == 1 ? (void *)ADVEngine_NumofStep_fn : (void *)ADVEngine_NumofStep;
 }
 static struct string *ADVEngine_GetStepText(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
+static void ADVEngine_GetEmptyOut_i(struct string **out, possibly_unused int step)
+{
+	if (out) {
+		if (*out) free_string(*out);
+		*out = string_ref(&EMPTY_STRING);
+	}
+}
+static void ADVEngine_GetEmptyOut_s(struct string **out, possibly_unused struct string *key)
+{
+	if (out) {
+		if (*out) free_string(*out);
+		*out = string_ref(&EMPTY_STRING);
+	}
+}
 static void ADVEngine_GetStepText_v6(struct string **out, possibly_unused struct string *fn, possibly_unused int step)
 {
 	if (out) {
@@ -1048,7 +1165,11 @@ static void ADVEngine_GetStepText_v6(struct string **out, possibly_unused struct
 }
 static void *ADVEngine_ResolveGetStepText(const struct ain_hll_function *f)
 {
-	return f->nr_arguments == 3 ? (void *)ADVEngine_GetStepText_v6 : (void *)ADVEngine_GetStepText;
+	if (f->nr_arguments == 3)
+		return (void *)ADVEngine_GetStepText_v6;
+	if (f->nr_arguments == 2 && f->return_type.data == AIN_VOID)
+		return (void *)ADVEngine_GetEmptyOut_i;
+	return (void *)ADVEngine_GetStepText;
 }
 static void ADVEngine_OpenFunctionFile(possibly_unused int step) {}
 static void ADVEngine_OpenFunctionFile_v6(possibly_unused struct string *fn, possibly_unused int step) {}
@@ -1065,7 +1186,11 @@ static void *ADVEngine_ResolveGetCodeType(const struct ain_hll_function *f)
 static struct string *ADVEngine_GetMessage(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
 static void *ADVEngine_ResolveGetMessage(const struct ain_hll_function *f)
 {
-	return f->nr_arguments == 3 ? (void *)ADVEngine_GetStepText_v6 : (void *)ADVEngine_GetMessage;
+	if (f->nr_arguments == 3)
+		return (void *)ADVEngine_GetStepText_v6;
+	if (f->nr_arguments == 2 && f->return_type.data == AIN_VOID)
+		return (void *)ADVEngine_GetEmptyOut_i;
+	return (void *)ADVEngine_GetMessage;
 }
 static bool ADVEngine_BindFunction(possibly_unused int step) { return false; }
 static bool ADVEngine_BindFunction_v6(possibly_unused struct string *fn, possibly_unused int step) { return false; }
@@ -1076,7 +1201,11 @@ static void *ADVEngine_ResolveBindFunction(const struct ain_hll_function *f)
 static struct string *ADVEngine_GetFuncName(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
 static void *ADVEngine_ResolveGetFuncName(const struct ain_hll_function *f)
 {
-	return f->nr_arguments == 3 ? (void *)ADVEngine_GetStepText_v6 : (void *)ADVEngine_GetFuncName;
+	if (f->nr_arguments == 3)
+		return (void *)ADVEngine_GetStepText_v6;
+	if (f->nr_arguments == 2 && f->return_type.data == AIN_VOID)
+		return (void *)ADVEngine_GetEmptyOut_i;
+	return (void *)ADVEngine_GetFuncName;
 }
 static int ADVEngine_CreateDelegateObjectID(possibly_unused int step) { return -1; }
 static int ADVEngine_CreateDelegateObjectID_v6(possibly_unused struct string *fn, possibly_unused int step) { return -1; }
@@ -1144,10 +1273,32 @@ static void *ADVEngine_ResolveGetArgString(const struct ain_hll_function *f)
 	return f->nr_arguments == 4 ? (void *)ADVEngine_GetArgumentValue_string_v6 : (void *)ADVEngine_GetArgumentValue_string;
 }
 static struct string *ADVEngine_GetIfFuncName(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
+static void *ADVEngine_ResolveGetIfFuncName(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 3)
+		return (void *)ADVEngine_GetStepText_v6;
+	if (f->nr_arguments == 2 && f->return_type.data == AIN_VOID)
+		return (void *)ADVEngine_GetEmptyOut_i;
+	return (void *)ADVEngine_GetIfFuncName;
+}
 static struct string *ADVEngine_GetIfFuncArg(possibly_unused int step) { return string_ref(&EMPTY_STRING); }
+static void *ADVEngine_ResolveGetIfFuncArg(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 3)
+		return (void *)ADVEngine_GetStepText_v6;
+	if (f->nr_arguments == 2 && f->return_type.data == AIN_VOID)
+		return (void *)ADVEngine_GetEmptyOut_i;
+	return (void *)ADVEngine_GetIfFuncArg;
+}
 static int ADVEngine_GetIfValue(possibly_unused int step) { return 0; }
 static bool ADVEngine_IsLowerIf(possibly_unused int step) { return false; }
 static struct string *ADVEngine_GetAttribute(possibly_unused struct string *key) { return string_ref(&EMPTY_STRING); }
+static void *ADVEngine_ResolveGetAttribute(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 2 && f->return_type.data == AIN_VOID)
+		return (void *)ADVEngine_GetEmptyOut_s;
+	return (void *)ADVEngine_GetAttribute;
+}
 
 HLL_LIBRARY(ADVEngine,
 	    HLL_EXPORT(NumofFunctionName, ADVEngine_NumofFunctionName),
@@ -1161,6 +1312,7 @@ HLL_LIBRARY(ADVEngine,
 	    HLL_EXPORT(LoadByFile, ADVEngine_LoadByFile),
 	    HLL_EXPORT(LoadByText, ADVEngine_LoadByText),
 	    HLL_EXPORT(Release, ADVEngine_Release),
+	    HLL_EXPORT(IsExistIf, ADVEngine_IsExistIf),
 	    HLL_EXPORT(IsExistLowerIf, ADVEngine_IsExistLowerIf),
 	    HLL_OVERLOAD(NumofStep, ADVEngine_ResolveNumofStep),
 	    HLL_OVERLOAD(GetStepText, ADVEngine_ResolveGetStepText),
@@ -1174,8 +1326,8 @@ HLL_LIBRARY(ADVEngine,
 	    HLL_OVERLOAD(GetArgumentValue_float, ADVEngine_ResolveGetArgFloat),
 	    HLL_OVERLOAD(GetArgumentValue_bool, ADVEngine_ResolveGetArgBool),
 	    HLL_OVERLOAD(GetArgumentValue_string, ADVEngine_ResolveGetArgString),
-	    HLL_EXPORT(GetIfFuncName, ADVEngine_GetIfFuncName),
-	    HLL_EXPORT(GetIfFuncArg, ADVEngine_GetIfFuncArg),
+	    HLL_OVERLOAD(GetIfFuncName, ADVEngine_ResolveGetIfFuncName),
+	    HLL_OVERLOAD(GetIfFuncArg, ADVEngine_ResolveGetIfFuncArg),
 	    HLL_EXPORT(GetIfValue, ADVEngine_GetIfValue),
 	    HLL_EXPORT(IsLowerIf, ADVEngine_IsLowerIf),
-	    HLL_EXPORT(GetAttribute, ADVEngine_GetAttribute));
+	    HLL_OVERLOAD(GetAttribute, ADVEngine_ResolveGetAttribute));

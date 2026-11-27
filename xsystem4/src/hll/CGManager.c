@@ -36,7 +36,7 @@ static bool CGManager_IsExist(struct string *cg_name)
 	return asset_exists_by_name(ASSET_CG, cg_name->text, NULL);
 }
 
-static bool CGManager_GetInfo(struct string *cg_name, int *width, int *height, int *bpp, bool *exist_pixel, bool *exist_alpha)
+static bool CGManager_GetInfo(struct string *cg_name, int *width, int *height, int *bpp, int *exist_pixel, int *exist_alpha)
 {
 	struct cg_metrics metrics;
 	if (!cg_name || !asset_cg_get_metrics_by_name(cg_name->text, &metrics))
@@ -44,8 +44,8 @@ static bool CGManager_GetInfo(struct string *cg_name, int *width, int *height, i
 	*width = metrics.w;
 	*height = metrics.h;
 	*bpp = metrics.bpp;
-	*exist_pixel = metrics.has_pixel;
-	*exist_alpha = metrics.has_alpha;
+	*exist_pixel = metrics.has_pixel ? 1 : 0;
+	*exist_alpha = metrics.has_alpha ? 1 : 0;
 	return true;
 }
 

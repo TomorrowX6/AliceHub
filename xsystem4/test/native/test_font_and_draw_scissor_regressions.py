@@ -532,14 +532,6 @@ int main(int argc, char **argv) {{
         self.assertIn("gfx_get_fnl_substitute_y_pad(", newfont_src)
 
     def test_hacks_resolution_and_structural_detection(self):
-        fn_apply = extract_function("src/hacks.c", "apply_game_specific_hacks")
-        fn_has_gbk = extract_function("src/hacks.c", "ain_has_gbk_string")
-        fn_has_r03 = extract_function("src/hacks.c", "ain_has_gbk_r03_strings")
-        fn_msg_gbk = extract_function("src/hacks.c", "ain_messages_look_gbk")
-        fn_scan_enc = extract_function("src/hacks.c", "scan_string_array_encoding")
-        fn_detect_enc = extract_function("src/hacks.c", "ain_detect_text_encoding")
-        fn_gbk_name = extract_function("src/hacks.c", "config_game_name_has_gbk_marker")
-
         harness = f"""
 #include <assert.h>
 #include <stdbool.h>
@@ -557,43 +549,8 @@ int main(int argc, char **argv) {{
 #include "xsystem4.h"
 
 struct config config;
-bool game_daibanchou = false, game_daibanchou_en = false, game_daiteikoku = false;
-bool game_haruurare = false, game_rance01 = false, game_rance02 = false;
-bool game_rance02_mg = false, game_rance6 = false, game_rance6_mg = false;
-bool game_rance7_mg = false, game_sengokurance = false, game_rance8 = false;
-bool game_rance8_mg = false, game_rance9 = false, game_rance10 = false;
-bool game_dohnadohna = false, game_evenicle = false, game_evenicle_rance = false;
-bool game_evenicle_gaiden = false, game_evenicle2 = false, game_evenicle2_rance = false;
-bool game_haharanman = false, game_okusama = false, game_night_remaster = false;
-bool game_oyakorankan = false, game_toushin3 = false, game_rance03 = false;
-bool game_dungeons_and_dolls = false, game_escalayer_reboot = false;
-bool game_galzoo = false, game_ixseal = false, game_tsumashibori = false;
-bool game_tsumamigui3 = false, game_tsumamigui3_jun = false, game_tsumamigui3_ntr = false;
-bool game_maman = false, game_waidonyo = false;
-
-enum ain_text_encoding {{
-    AIN_ENC_UNKNOWN = 0,
-    AIN_ENC_GBK,
-    AIN_ENC_SJIS,
-}};
-
-static void apply_daibanchou_hacks(struct ain *a) {{ (void)a; }}
-static void apply_rance02_hacks(struct ain *a) {{ (void)a; }}
-static void apply_rance6_hacks(struct ain *a) {{ (void)a; }}
-static void apply_rance9_hacks(struct ain *a) {{ (void)a; }}
-static void apply_rance03_message_layout(struct ain *a) {{ (void)a; }}
-static void apply_rance03_card_caption_layout(struct ain *a) {{ (void)a; }}
-static void apply_rance03_effect_sound_paths(struct ain *a) {{ (void)a; }}
-static void apply_rance03_skill_cooldown_layout(struct ain *a) {{ (void)a; }}
-static void escalayer_reboot_replace_cn_ui_text(struct string **s, int n) {{ (void)s; (void)n; }}
-
-{fn_has_gbk}
-{fn_has_r03}
-{fn_msg_gbk}
-{fn_scan_enc}
-{fn_detect_enc}
-{fn_gbk_name}
-{fn_apply}
+void message_layout_init_rance03(void) {{}}
+void apply_game_specific_hacks(struct ain *ain);
 
 static void add_struct(struct ain *a, const char *name) {{
     a->structures = xrealloc(a->structures, (a->nr_structures + 1) * sizeof(*a->structures));
@@ -737,7 +694,7 @@ int main(void) {{
 """
         out = compile_and_run(
             harness,
-            LIBSYS4_CORE,
+            [*LIBSYS4_CORE, ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c"],
             ["-lz", "-lm"],
         )
         self.assertEqual(out.strip(), "OK")

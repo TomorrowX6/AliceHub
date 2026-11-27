@@ -243,11 +243,11 @@ static void read_graphic_tl(struct flat_timeline *tl, struct buffer *r, const in
 
 		tl->graphic.frames[f].count = n;
 
-		size_t need = n *ksz;
-		if (buffer_remaining(r) < need) {
-			WARNING("Frame %zu declares %u keys (%zu bytes) but only %zu bytes remain; truncating.",
-					f, n, need, buffer_remaining(r));
-			n = (int32_t)(buffer_remaining(r) / ksz);
+		size_t rem = buffer_remaining(r);
+		if (ksz > 0 && n > rem / ksz) {
+			WARNING("Frame %zu declares %u keys (%zu bytes each) but only %zu bytes remain; truncating.",
+					f, n, ksz, rem);
+			n = (uint32_t)(rem / ksz);
 			tl->graphic.frames[f].count = n;
 		}
 
@@ -319,9 +319,25 @@ static bool parse_timeline(struct flat *fl, struct flat_timeline *tl, struct buf
 			break;
 		case FLAT_TIMELINE_SOUND:
 			WARNING("Unimplemented timeline SOUND");
+			if (tl->name) {
+				free_string(tl->name);
+				tl->name = NULL;
+			}
+			if (tl->library_name) {
+				free_string(tl->library_name);
+				tl->library_name = NULL;
+			}
 			return false;
 		default:
 			WARNING("Unknown MTLC timeline type %d", tl->type);
+			if (tl->name) {
+				free_string(tl->name);
+				tl->name = NULL;
+			}
+			if (tl->library_name) {
+				free_string(tl->library_name);
+				tl->library_name = NULL;
+			}
 			return false;
 	}
 

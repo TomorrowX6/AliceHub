@@ -27,6 +27,11 @@ int parts_get_modifier_scrollbar_scale(void)
 	return s_modifier_scrollbar_scale_pct;
 }
 
+void parts_scrollbar_end_session(void)
+{
+	s_modifier_scrollbar_scale_pct = 100;
+}
+
 int parts_scrollbar_range(struct parts_scrollbar *s)
 {
 	return min((int64_t)INT_MAX, max((int64_t)0, (int64_t)s->total - s->view));

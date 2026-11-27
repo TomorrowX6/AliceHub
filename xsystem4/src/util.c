@@ -217,20 +217,36 @@ static char *dir_find_mojibake_icase(const char *dir, const char *component)
 	if (!d)
 		return NULL;
 	char *target_repaired = cjk_repair_sjis_as_gbk_utf8(component);
-	const char *target = target_repaired ? target_repaired : component;
+	const char *targets[2] = { component, target_repaired };
 	char *found = NULL;
 	char *d_name;
 	while ((d_name = readdir_utf8(d))) {
 		char *entry_repaired = cjk_repair_sjis_as_gbk_utf8(d_name);
-		const char *candidate = entry_repaired ? entry_repaired : d_name;
-		if (!strcmp(candidate, target)) {
+		const char *candidates[2] = { d_name, entry_repaired };
+		bool exact = false;
+		bool icase = false;
+		for (int ti = 0; ti < 2 && !exact; ti++) {
+			if (!targets[ti])
+				continue;
+			for (int ci = 0; ci < 2; ci++) {
+				if (!candidates[ci])
+					continue;
+				if (!strcmp(candidates[ci], targets[ti])) {
+					exact = true;
+					break;
+				}
+				if (!icase && !strcasecmp(candidates[ci], targets[ti]))
+					icase = true;
+			}
+		}
+		if (exact) {
 			free(found);
 			found = path_join(dir, d_name);
 			free(entry_repaired);
 			free(d_name);
 			break;
 		}
-		if (!found && !strcasecmp(candidate, target)) {
+		if (!found && icase) {
 			found = path_join(dir, d_name);
 		}
 		free(entry_repaired);

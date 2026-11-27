@@ -80,6 +80,7 @@ bool game_waidonyo = false;
 bool game_dorapeko = false;
 bool game_pascha3 = false;
 bool game_sanbiki = false;
+bool game_haniwapetit = false;
 
 static void write_instruction0(struct buffer *out, enum opcode op)
 {
@@ -832,7 +833,9 @@ static bool config_game_name_has_gbk_marker(const char *name)
 		|| strstr(name, "\xd2\xec\xbf\xd5\xbf\xdf")
 		|| strstr(name, "\xd0\xb0\xd2\xb9")
 		|| strstr(name, "\xb6\xb7\xc9\xf1")
-		|| strstr(name, "\xb7\xdb\xb2\xca\xc1\xe5\xd2\xf4");
+		|| strstr(name, "\xb7\xdb\xb2\xca\xc1\xe5\xd2\xf4")
+		|| strstr(name, "\xa4\xcf\xa1\xab\xa4\xc8\xa4\xd5\xa4\xeb\xa5\xde\xa5\xde\xa5\xf3")
+		|| strstr(name, "\xbf\xa8\xc0\xad\xb1\xa3\xbb\xa4\xd0\xad\xbb\xe1");
 }
 
 static bool has_ntr_marker(const char *name)
@@ -1248,8 +1251,10 @@ static void fix_evenicle_reverse_erase_loop(struct ain *ain, const char *func_na
 	int matches = 0;
 	for (uint32_t p = begin; end - p >= 2u; ) {
 		unsigned op = (uint16_t)LittleEndian_getW(ain->code, p);
-		if (op >= NR_OPCODES || op == FUNC)
+		if (op >= NR_OPCODES)
 			return;
+		if (op == FUNC)
+			break;
 		uint32_t w = hack_instruction_width(ain, (enum opcode)op);
 		if (w == 0 || w > end - p)
 			return;
@@ -1320,6 +1325,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_dorapeko = false;
 	game_pascha3 = false;
 	game_sanbiki = false;
+	game_haniwapetit = false;
 
 	game_rance10 = ain->version == 12
 		&& ain_get_function(ain, "CardConstructProcessCacheFront@CreateOrganizationProcess") >= 0;
@@ -1458,6 +1464,10 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| ain_get_struct(ain, "s\x83L\x83\x83\x83\x89\x83N\x83^") >= 0)
 		&& (ain_get_global(ain, "g_n\xbd\xf0") >= 0
 			|| ain_get_global(ain, "g_n\x8b\xe0") >= 0);
+	game_haniwapetit = ain->version == 6
+		&& ain_get_global(ain, "g_cScenarioDebug") >= 0
+		&& ain_get_global(ain, "g_nMSG_Mode") >= 0
+		&& ain_get_global(ain, "g_nMSG_W") >= 0;
 	// The Chinese release uses CP936 for script text and archive entry names.
 	// Detect actual AIN text encoding first so Shift-JIS releases/repacks with a Chinese
 	// GameName in AliceStart.ini (e.g. Shift-JIS Rance IX with GameName="兰斯9") are not

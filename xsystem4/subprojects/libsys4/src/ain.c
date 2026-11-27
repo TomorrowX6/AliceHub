@@ -930,9 +930,9 @@ static struct ain_function *read_functions(struct ain_reader *r, int count, stru
 		funs[i].address = read_int32(r);
 		// XXX: Fix for broken CN dohnadohna.ain
 		//      Typically 0xFF is not valid as a first byte, so this is probably OK
-		if (r->buf[r->index] == 0xFF) {
-			WARNING("Junk at start of function name: '%s'", r->buf + r->index);
-			while (r->buf[r->index] == 0xFF)
+		if (r->index < r->size && r->buf[r->index] == 0xFF) {
+			WARNING("Junk at start of function name at offset %zu", r->index);
+			while (r->index < r->size && r->buf[r->index] == 0xFF)
 				r->index++;
 		}
 		funs[i].name = read_string(r);
@@ -1100,7 +1100,7 @@ static struct ain_library *read_libraries(struct ain_reader *r, int count)
 
 static struct ain_switch_case *read_switch_cases(struct ain_reader *r, int count, struct ain_switch *parent)
 {
-	struct ain_switch_case *cases = calloc(count, sizeof(struct ain_switch));
+	struct ain_switch_case *cases = calloc(count, sizeof(struct ain_switch_case));
 	for (int i = 0; i < count; i++) {
 		cases[i].value = read_int32(r);
 		cases[i].address = read_int32(r);
@@ -1439,7 +1439,7 @@ uint8_t *ain_read(const char *path, long *len, int *error)
 	fclose(fp);
 
 	// check magic
-	if (!strncmp((char*)buf, "AI2\0\0\0\0", 8)) {
+	if (!memcmp(buf, "AI2\0\0\0\0\0", 8)) {
 		uint8_t *uc = decompress_ain(buf, len);
 		if (!uc) {
 			*error = AIN_INVALID;

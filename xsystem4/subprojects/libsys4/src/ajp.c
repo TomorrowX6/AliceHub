@@ -218,7 +218,15 @@ static void apply_mask(uint8_t *rgba, const uint8_t *mask_data, const struct ajp
 	if (ajp->mask_size == 0)
 		return;
 	size_t npix = (size_t)ajp->width * (size_t)ajp->height;
-	if (ajp->mask_size >= 4 && pms8_checkfmt(mask_data)) {
+	if (ajp->mask_size >= 44 && pms8_checkfmt_sized(mask_data, ajp->mask_size)) {
+		struct cg_metrics mask_metrics = {0};
+		if (!pms_get_metrics(mask_data, &mask_metrics) ||
+		    mask_metrics.w <= 0 || mask_metrics.h <= 0 ||
+		    (uint64_t)mask_metrics.w * (uint64_t)mask_metrics.h != (uint64_t)npix) {
+			WARNING("Unexpected AJP PMS8 mask size (%dx%d vs. %ux%u)",
+				mask_metrics.w, mask_metrics.h, ajp->width, ajp->height);
+			return;
+		}
 		uint8_t *mask = pms_extract_mask(mask_data, ajp->mask_size);
 		if (!mask)
 			return;

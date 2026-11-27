@@ -44,6 +44,7 @@ bool savedata_export_pc_file(const char *src_path, const char *dst_path);
 bool savedata_export_pc_file_with_ain(const char *src_path, const char *dst_path, const char *ain_path);
 bool savedata_file_has_xsystem4_only_state(const char *src_path);
 int delete_save_file(const char *filename);
+void savedata_set_background_flush_hook(void (*hook)(void));
 void savedata_flush_on_background(void);
 void savedata_reset(void);
 

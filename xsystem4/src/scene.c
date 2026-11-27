@@ -143,6 +143,10 @@ int scene_set_wp(int cg_no) {
 	if (!cg)
 		return 0;
 
+	if (!scene_reset_registered) {
+		gfx_register_reset_callback(scene_on_gl_reset, NULL);
+		scene_reset_registered = true;
+	}
 	gfx_delete_texture(&wp);
 	gfx_init_texture_with_cg(&wp, cg);
 	cg_free(cg);
