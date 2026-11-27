@@ -681,7 +681,7 @@ static uint64_t savedir_fnv1a64_ascii_icase(const char *s, size_t len)
 	return h;
 }
 
-static _Atomic uint32_t g_savedir_mem_session_seq = 0;
+static _Atomic uint64_t g_savedir_mem_session_nonce = 0;
 
 static uint64_t savedir_current_pid(void)
 {
@@ -694,27 +694,57 @@ static uint64_t savedir_current_pid(void)
 #endif
 }
 
-static uint32_t savedir_current_mem_session_seq(void)
+static uint64_t savedir_make_session_nonce(uint64_t prev)
 {
-	uint32_t seq = atomic_load_explicit(&g_savedir_mem_session_seq, memory_order_acquire);
-	if (seq != 0)
-		return seq;
-	uint32_t expected = 0;
-	if (atomic_compare_exchange_strong_explicit(&g_savedir_mem_session_seq, &expected, 1u,
+	uint64_t h = 14695981039346656037ULL ^ savedir_current_pid();
+#ifdef _WIN32
+	FILETIME ft;
+	GetSystemTimeAsFileTime(&ft);
+	uint64_t rt = ((uint64_t)ft.dwHighDateTime << 32) | (uint64_t)ft.dwLowDateTime;
+	uint64_t mono = (uint64_t)GetTickCount64();
+	h = (h ^ rt) * 1099511628211ULL;
+	h = (h ^ mono) * 1099511628211ULL;
+#else
+	struct timespec rt = { 0 }, mono = { 0 };
+	clock_gettime(CLOCK_REALTIME, &rt);
+	clock_gettime(CLOCK_MONOTONIC, &mono);
+	h = (h ^ (uint64_t)rt.tv_sec) * 1099511628211ULL;
+	h = (h ^ (uint64_t)rt.tv_nsec) * 1099511628211ULL;
+	h = (h ^ (uint64_t)mono.tv_sec) * 1099511628211ULL;
+	h = (h ^ (uint64_t)mono.tv_nsec) * 1099511628211ULL;
+#endif
+	h ^= (uintptr_t)&g_savedir_mem_session_nonce;
+	h *= 1099511628211ULL;
+	h ^= prev + 1ULL;
+	if (h == 0 || h == prev)
+		h = prev + 1ULL;
+	if (h == 0)
+		h = 1ULL;
+	return h;
+}
+
+static uint64_t savedir_current_mem_session_nonce(void)
+{
+	uint64_t nonce = atomic_load_explicit(&g_savedir_mem_session_nonce, memory_order_acquire);
+	if (nonce != 0)
+		return nonce;
+	uint64_t candidate = savedir_make_session_nonce(0);
+	uint64_t expected = 0;
+	if (atomic_compare_exchange_strong_explicit(&g_savedir_mem_session_nonce, &expected, candidate,
 			memory_order_acq_rel, memory_order_acquire))
-		return 1u;
+		return candidate;
 	return expected;
 }
 
-static size_t savedir_format_session_prefix(char *buf, size_t cap, uint64_t pid, uint32_t seq)
+static size_t savedir_format_session_prefix(char *buf, size_t cap, uint64_t pid, uint64_t nonce)
 {
-	int n = snprintf(buf, cap, "%sp%" PRIu64 ".%" PRIu32 ".", SAVEDIR_MEMORY_PREFIX, pid, seq);
+	int n = snprintf(buf, cap, "%sp%" PRIu64 ".%016" PRIx64 ".", SAVEDIR_MEMORY_PREFIX, pid, nonce);
 	if (n < 0 || (size_t)n >= cap)
 		return 0;
 	return (size_t)n;
 }
 
-static bool savedir_parse_memory_owner(const char *d_name, uint64_t *pid_out, uint32_t *seq_out)
+static bool savedir_parse_memory_owner(const char *d_name, uint64_t *pid_out, uint64_t *nonce_out)
 {
 	const size_t pfx_len = sizeof(SAVEDIR_MEMORY_PREFIX) - 1;
 	const char *p = d_name;
@@ -741,37 +771,39 @@ static bool savedir_parse_memory_owner(const char *d_name, uint64_t *pid_out, ui
 	if (*p != '.')
 		return false;
 	p++;
-	if (*p < '0' || *p > '9')
-		return false;
-	uint64_t seq = 0;
-	while (*p >= '0' && *p <= '9') {
-		uint64_t digit = (uint64_t)(*p - '0');
-		if (seq > (UINT32_MAX - digit) / 10)
+	uint64_t nonce = 0;
+	size_t hex_digits = 0;
+	while ((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F')) {
+		if (hex_digits >= 16)
 			return false;
-		seq = seq * 10 + digit;
+		uint64_t v = (*p >= '0' && *p <= '9') ? (uint64_t)(*p - '0')
+			: (*p >= 'a' && *p <= 'f') ? (uint64_t)(*p - 'a' + 10)
+			: (uint64_t)(*p - 'A' + 10);
+		nonce = (nonce << 4) | v;
+		hex_digits++;
 		p++;
 	}
-	if (*p != '.' || seq == 0)
+	if (*p != '.' || hex_digits == 0 || nonce == 0)
 		return false;
 	*pid_out = pid;
-	*seq_out = (uint32_t)seq;
+	*nonce_out = nonce;
 	return true;
 }
 
-static bool savedir_owner_is_dead(uint64_t pid, uint32_t seq, uint64_t my_pid, uint32_t my_seq)
+static bool savedir_owner_is_dead(uint64_t pid, uint64_t nonce, uint64_t my_pid, uint64_t my_nonce)
 {
 #ifdef __SWITCH__
 	// Switch runs a single game instance at a time and always uses pid=1;
 	// at startup (before the new session writes any snapshots), any leftover
 	// .alicehub-mem.* file on the SD card is guaranteed stale.
 	(void)pid;
-	(void)seq;
+	(void)nonce;
 	(void)my_pid;
-	(void)my_seq;
+	(void)my_nonce;
 	return true;
 #else
 	if (pid == my_pid)
-		return seq != my_seq;
+		return nonce != my_nonce;
 #if defined(_WIN32)
 	if (pid == 0 || pid > UINT32_MAX)
 		return false;
@@ -798,13 +830,15 @@ static char *savedir_format_memory_basename(const char *utf_rest)
 	static const char hex[] = "0123456789abcdef";
 	char pfx[64];
 	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx),
-		savedir_current_pid(), savedir_current_mem_session_seq());
-	const size_t max_body = 140;
+		savedir_current_pid(), savedir_current_mem_session_nonce());
+	const size_t max_body = 130;
 	size_t rest_len = utf_rest ? strlen(utf_rest) : 0;
 	if (!rest_len) {
-		char *out = xmalloc(pfx_len + sizeof("_empty"));
+		// '~' is always percent-encoded for non-empty inputs (and hash suffixes
+		// never place '~' at index 0), so "~empty" cannot collide with any input.
+		char *out = xmalloc(pfx_len + sizeof("~empty"));
 		memcpy(out, pfx, pfx_len);
-		memcpy(out + pfx_len, "_empty", sizeof("_empty"));
+		memcpy(out + pfx_len, "~empty", sizeof("~empty"));
 		return out;
 	}
 
@@ -998,7 +1032,7 @@ int savedir_memory_find(const char *pattern, int *count, char **match_out)
 	return found;
 }
 
-static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint32_t my_seq)
+static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint64_t my_nonce)
 {
 	if (!config.save_dir || !config.save_dir[0])
 		return;
@@ -1008,9 +1042,9 @@ static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint32_t my_seq)
 	char *d_name;
 	while ((d_name = readdir_utf8(d)) != NULL) {
 		uint64_t owner_pid = 0;
-		uint32_t owner_seq = 0;
-		if (savedir_parse_memory_owner(d_name, &owner_pid, &owner_seq)
-				&& savedir_owner_is_dead(owner_pid, owner_seq, my_pid, my_seq)) {
+		uint64_t owner_nonce = 0;
+		if (savedir_parse_memory_owner(d_name, &owner_pid, &owner_nonce)
+				&& savedir_owner_is_dead(owner_pid, owner_nonce, my_pid, my_nonce)) {
 			char *full = path_join(config.save_dir, d_name);
 			ustat st;
 			if (stat_utf8(full, &st) == 0 && S_ISREG(st.st_mode))
@@ -1025,11 +1059,13 @@ static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint32_t my_seq)
 void savedir_begin_memory_session(void)
 {
 	savedir_mem_registry_clear();
-	uint32_t prev = atomic_fetch_add_explicit(&g_savedir_mem_session_seq, 1u, memory_order_acq_rel);
-	uint32_t seq = prev + 1u;
-	if (seq == 0)
-		seq = atomic_fetch_add_explicit(&g_savedir_mem_session_seq, 1u, memory_order_acq_rel) + 1u;
-	savedir_cleanup_stale_memory_saves(savedir_current_pid(), seq);
+	uint64_t prev = atomic_load_explicit(&g_savedir_mem_session_nonce, memory_order_acquire);
+	uint64_t nonce;
+	do {
+		nonce = savedir_make_session_nonce(prev);
+	} while (!atomic_compare_exchange_weak_explicit(&g_savedir_mem_session_nonce, &prev, nonce,
+			memory_order_acq_rel, memory_order_acquire));
+	savedir_cleanup_stale_memory_saves(savedir_current_pid(), nonce);
 }
 
 void savedir_cleanup_memory_saves(void)
@@ -1037,11 +1073,11 @@ void savedir_cleanup_memory_saves(void)
 	savedir_mem_registry_clear();
 	if (!config.save_dir || !config.save_dir[0])
 		return;
-	uint32_t my_seq = atomic_load_explicit(&g_savedir_mem_session_seq, memory_order_acquire);
-	if (my_seq == 0)
+	uint64_t my_nonce = atomic_load_explicit(&g_savedir_mem_session_nonce, memory_order_acquire);
+	if (my_nonce == 0)
 		return;
 	char pfx[64];
-	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx), savedir_current_pid(), my_seq);
+	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx), savedir_current_pid(), my_nonce);
 	if (!pfx_len)
 		return;
 	UDIR *d = opendir_utf8(config.save_dir);

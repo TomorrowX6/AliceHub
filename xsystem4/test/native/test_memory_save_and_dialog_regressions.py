@@ -112,13 +112,24 @@ static bool has_illegal_fat_chars(const char *base)
     return len == 0 || base[len - 1] == '.' || base[len - 1] == ' ';
 }
 
-static const char *strip_session_prefix(const char *base, char *expected_pfx, size_t cap, uint32_t seq)
+static const char *strip_session_prefix(const char *base, char *expected_pfx, size_t cap)
 {
-    snprintf(expected_pfx, cap, "%sp%" PRIu64 ".%" PRIu32 ".",
-        SAVEDIR_MEMORY_PREFIX, (uint64_t)getpid(), seq);
-    size_t n = strlen(expected_pfx);
-    assert(strncmp(base, expected_pfx, n) == 0);
-    return base + n;
+    char pid_pfx[64];
+    snprintf(pid_pfx, sizeof(pid_pfx), "%sp%" PRIu64 ".",
+        SAVEDIR_MEMORY_PREFIX, (uint64_t)getpid());
+    size_t n = strlen(pid_pfx);
+    assert(strncmp(base, pid_pfx, n) == 0);
+    const char *p = base + n;
+    for (int i = 0; i < 16; i++) {
+        char c = p[i];
+        assert((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
+    }
+    assert(p[16] == '.');
+    size_t full_len = n + 17;
+    assert(full_len < cap);
+    memcpy(expected_pfx, base, full_len);
+    expected_pfx[full_len] = '\0';
+    return base + full_len;
 }
 
 int main(void)
@@ -129,8 +140,10 @@ int main(void)
     config.save_dir = strdup(dir);
     sys4_set_text_gbk(true);
 
-    // 0. Concurrent-instance isolation: create a file owned by a guaranteed-live other PID
-    //    (our parent process) and a file owned by a guaranteed-dead child PID.
+    // 0. Concurrent-instance isolation + PID-reuse crash recovery:
+    //    - live_other (parent PID) must be preserved
+    //    - dead_other (reaped child PID) must be swept
+    //    - same_pid_stale (same PID with a stale nonce from a prior crashed PID-reused process) must be swept
     pid_t dead_pid = fork();
     assert(dead_pid >= 0);
     if (dead_pid == 0)
@@ -139,28 +152,32 @@ int main(void)
     assert(waitpid(dead_pid, &st, 0) == dead_pid);
 
     uint8_t payload[] = "replay-snapshot-ok";
-    char live_other[512], dead_other[512];
-    snprintf(live_other, sizeof(live_other), "%s/%sp%" PRIu64 ".1.LiveOther.asd",
+    char live_other[512], dead_other[512], same_pid_stale[512];
+    snprintf(live_other, sizeof(live_other), "%s/%sp%" PRIu64 ".0000000000000001.LiveOther.asd",
         dir, SAVEDIR_MEMORY_PREFIX, (uint64_t)getppid());
-    snprintf(dead_other, sizeof(dead_other), "%s/%sp%" PRIu64 ".1.DeadCrash.asd",
+    snprintf(dead_other, sizeof(dead_other), "%s/%sp%" PRIu64 ".0000000000000001.DeadCrash.asd",
         dir, SAVEDIR_MEMORY_PREFIX, (uint64_t)dead_pid);
+    snprintf(same_pid_stale, sizeof(same_pid_stale), "%s/%sp%" PRIu64 ".0000000000000001.ReusedPidCrash.asd",
+        dir, SAVEDIR_MEMORY_PREFIX, (uint64_t)getpid());
     assert(file_write(live_other, payload, 4));
     assert(file_write(dead_other, payload, 4));
+    assert(file_write(same_pid_stale, payload, 4));
 
-    // Starting session 1 sweeps dead_other but preserves live_other!
+    // Starting session 1 sweeps dead_other AND same_pid_stale, while preserving live_other!
     savedir_begin_memory_session();
     assert(!file_exists(dead_other));
+    assert(!file_exists(same_pid_stale));
     assert(file_exists(live_other));
 
     // 1. Escalayer Reboot replay snapshot maps to a per-session flat hidden dotfile with no '<' or '>'.
-    char pfx[64];
+    char pfx[64], pfx2[64];
     char *p_esca = savedir_path("<memory>MemoryMode_EscalayerReboot_.asd");
     assert(p_esca != NULL);
     assert(savedir_is_memory_save_path(p_esca));
     assert(strncmp(p_esca, dir, strlen(dir)) == 0);
     assert(p_esca[strlen(dir)] == '/');
     const char *base_esca = p_esca + strlen(dir) + 1;
-    assert(strcmp(strip_session_prefix(base_esca, pfx, sizeof(pfx), 1u),
+    assert(strcmp(strip_session_prefix(base_esca, pfx, sizeof(pfx)),
         "MemoryMode_EscalayerReboot_.asd") == 0);
     assert(!has_illegal_fat_chars(base_esca));
     assert(!savedir_file_exists("<memory>MemoryMode_EscalayerReboot_.asd"));
@@ -202,14 +219,25 @@ int main(void)
     char *p_dot = savedir_path("<memory>trailing.");
     const char *base_dot = p_dot + strlen(dir) + 1;
     assert(!has_illegal_fat_chars(base_dot));
-    assert(strcmp(strip_session_prefix(base_dot, pfx, sizeof(pfx), 1u), "trailing%2e") == 0);
+    assert(strcmp(strip_session_prefix(base_dot, pfx2, sizeof(pfx2)), "trailing%2e") == 0);
+    assert(strcmp(pfx, pfx2) == 0);
     free(p_dot);
 
     char *p_empty = savedir_path("<memory>");
+    char *p_lit_empty = savedir_path("<memory>_empty");
+    char *p_tilde_empty = savedir_path("<memory>~empty");
     const char *base_empty = p_empty + strlen(dir) + 1;
+    const char *base_lit_empty = p_lit_empty + strlen(dir) + 1;
+    const char *base_tilde_empty = p_tilde_empty + strlen(dir) + 1;
     assert(!has_illegal_fat_chars(base_empty));
-    assert(strcmp(strip_session_prefix(base_empty, pfx, sizeof(pfx), 1u), "_empty") == 0);
+    assert(strcmp(strip_session_prefix(base_empty, pfx2, sizeof(pfx2)), "~empty") == 0);
+    assert(strcmp(strip_session_prefix(base_lit_empty, pfx2, sizeof(pfx2)), "_empty") == 0);
+    assert(strcmp(strip_session_prefix(base_tilde_empty, pfx2, sizeof(pfx2)), "%7eempty") == 0);
+    assert(strcmp(p_empty, p_lit_empty) != 0);
+    assert(strcmp(p_empty, p_tilde_empty) != 0);
     free(p_empty);
+    free(p_lit_empty);
+    free(p_tilde_empty);
 
     // 3. Long names (>140 bytes) stay bounded (<190 bytes) and distinct via hash.
     char long1[300], long2[300], long1_upper[300];
@@ -261,8 +289,9 @@ int main(void)
     assert(file_exists(live_other));
     char *p_esca_s2 = savedir_path("<memory>MemoryMode_EscalayerReboot_.asd");
     assert(strcmp(p_esca_s2, p_esca) != 0);
-    assert(strcmp(strip_session_prefix(p_esca_s2 + strlen(dir) + 1, pfx, sizeof(pfx), 2u),
+    assert(strcmp(strip_session_prefix(p_esca_s2 + strlen(dir) + 1, pfx2, sizeof(pfx2)),
         "MemoryMode_EscalayerReboot_.asd") == 0);
+    assert(strcmp(pfx, pfx2) != 0);
 
     // 5b. savedir_memory_find(): wildcard + case-insensitive exact + long hashed (>140B) +
     //     GBK-mode CP932 Japanese round-trip, while hiding other PIDs and deleted snapshots.
@@ -392,10 +421,10 @@ int main(void)
     assert(dir != NULL);
     config.save_dir = strdup(dir);
 
-    // Simulate a leftover p1.1 snapshot from an unclean Switch exit before relaunch.
+    // Simulate a leftover p1 snapshot from an unclean Switch exit before relaunch.
     uint8_t stale[] = "stale-switch-replay";
     char stale_path[512];
-    snprintf(stale_path, sizeof(stale_path), "%s/%sp1.1.MemoryMode_EscalayerReboot_.asd",
+    snprintf(stale_path, sizeof(stale_path), "%s/%sp1.0000000000000001.MemoryMode_EscalayerReboot_.asd",
         dir, SAVEDIR_MEMORY_PREFIX);
     assert(file_write(stale_path, stale, sizeof(stale) - 1));
 
@@ -720,6 +749,13 @@ int main(void)
     check_decode("mixed_short_dual_valid_gbk", mixed_short_jieyi, sizeof(mixed_short_jieyi) - 1,
         "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe3\x80\x90 \xe5\x82\x91\xe5\x84\x80.asd \xe3\x80\x91 "
         "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97");
+
+    const uint8_t mixed_8140_gbk[] = {
+        // セーブ 丂.asd (GBK '丂' = 81 40 must NOT become Shift-JIS ideographic space)
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0x81, 0x40, '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("mixed_8140_gbk_preserved", mixed_8140_gbk, sizeof(mixed_8140_gbk) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe4\xb8\x82.asd");
 
     // 6. Bounded length without NUL terminator + empty string + NULL input.
     const uint8_t bounded[] = {

@@ -1473,6 +1473,39 @@ struct cjk_dialog_run_stats {
 	bool all_sjis_punct;
 };
 
+static bool cjk_dialog_is_sjis_punct_pair(const uint8_t *p)
+{
+	if (p[0] != 0x81)
+		return false;
+	switch (p[1]) {
+	case 0x41: // 、
+	case 0x42: // 。
+	case 0x45: // ・
+	case 0x46: // ：
+	case 0x47: // ；
+	case 0x48: // ？
+	case 0x49: // ！
+	case 0x63: // …
+	case 0x69: // （
+	case 0x6a: // ）
+	case 0x6d: // ［
+	case 0x6e: // ］
+	case 0x71: // 〈
+	case 0x72: // 〉
+	case 0x73: // 《
+	case 0x74: // 》
+	case 0x75: // 「
+	case 0x76: // 」
+	case 0x77: // 『
+	case 0x78: // 』
+	case 0x79: // 【
+	case 0x7a: // 】
+		return true;
+	default:
+		return false;
+	}
+}
+
 static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 		struct cjk_dialog_run_stats *st)
 {
@@ -1485,7 +1518,7 @@ static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 			st->common++;
 		else
 			st->extended++;
-		if (p[0] != 0x81)
+		if (!cjk_dialog_is_sjis_punct_pair(p))
 			st->all_sjis_punct = false;
 	}
 }
