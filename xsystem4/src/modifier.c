@@ -1105,6 +1105,26 @@ static bool write_local_save_mod_str(const char *path, const char *mod_json_str)
 			gs_set_field_int(gs, party_rec, "m_hpRatio", NULL, u.i);
 		}
 	}
+	cJSON *it;
+	if ((it = cJSON_GetObjectItem(mod, "allStatusPer")) && cJSON_IsNumber(it) && cs_rec >= 0) {
+		int32_t v = it->valueint;
+		gs_set_field_int(gs, cs_rec, "m_AtkPerPhysical", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_AtkPerMagical", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_DefPerPhysical", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_DefPerMagical", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerAvoidance", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_DecPerBadCondition", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_perAutoBattleAtk", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerCritical", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerMultiAttack", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerExpUp", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerHpUp", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerAutoHeal", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerFindTreasure", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_PerInjection", NULL, v);
+		gs_set_field_int(gs, cs_rec, "m_AddPerHit", NULL, v);
+		gs_set_field_int(gs, cs_rec, "StatusMaxPer", NULL, v);
+	}
 	json_write_int_if_present(mod, "partyAtk", gs, cs_rec, "<Atk>", NULL);
 	json_write_int_if_present(mod, "atkPerPhys", gs, cs_rec, "m_AtkPerPhysical", NULL);
 	json_write_int_if_present(mod, "atkPerMag", gs, cs_rec, "m_AtkPerMagical", NULL);
@@ -1122,8 +1142,6 @@ static bool write_local_save_mod_str(const char *path, const char *mod_json_str)
 	json_write_int_if_present(mod, "perInjection", gs, cs_rec, "m_PerInjection", NULL);
 	json_write_int_if_present(mod, "addPerHit", gs, cs_rec, "m_AddPerHit", NULL);
 	json_write_int_if_present(mod, "statusMaxPer", gs, cs_rec, "StatusMaxPer", NULL);
-
-	cJSON *it;
 	if ((it = cJSON_GetObjectItem(mod, "humanCount")) && cJSON_IsNumber(it)) gs_set_tt(gs, 33, it->valueint);
 	if ((it = cJSON_GetObjectItem(mod, "humanDead")) && cJSON_IsNumber(it)) {
 		gs_set_tt(gs, 34, it->valueint);

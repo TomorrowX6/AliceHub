@@ -1966,6 +1966,10 @@ bool PE_Load(struct page **buffer)
 			if (parent) TAILQ_INSERT_TAIL(&parent->children, parts, child_list_entry);
 			parts->pending_parent = -1;
 		}
+		parts_render_gen++;
+		PARTS_LIST_FOREACH(parts) {
+			parts_world_matrix(parts, parts->committed_matrix);
+		}
 	}
 
 	if (!parts_current->background) {

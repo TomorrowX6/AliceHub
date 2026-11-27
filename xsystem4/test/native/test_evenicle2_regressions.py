@@ -1185,7 +1185,13 @@ int main(int argc, char **argv) {
     free_string(got1_legacy);
 
     struct string *offset = make_string("BattleMotion.Offset", 19);
-    assert(aflt_fn(offset, 1, -1.0f, 0) == -1.0f);
+    // EX_INT widens to float across all games (e.g. Ixseal, Okusama, Haharanman);
+    // non-numeric EX_STRING and out-of-range indices still return fallback.
+    assert(aflt_fn(offset, 0, 0.0f, 0) == 40.0f);
+    assert(aflt_fn(offset, 1, -1.0f, 0) == 109.0f);
+    assert(aflt_fn(offset, 2, 0.0f, 0) == -2.5f);
+    assert(aflt_fn(offset, 3, -1.0f, 0) == -1.0f);
+    assert(aflt_fn(offset, 4, -1.0f, 0) == -1.0f);
     game_okusama = true;
     assert(aflt_fn(offset, 0, 0.0f, 0) == 40.0f);
     assert(aflt_fn(offset, 1, 0.0f, 0) == 109.0f);

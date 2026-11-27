@@ -266,6 +266,7 @@ struct parts {
     struct parts *world_matrix_self;
     uint64_t world_matrix_gen;
     mat4 world_matrix;
+    mat4 committed_matrix;
 };
 
 #define PARTS_FOREACH_CHILD(child, p) \
@@ -374,6 +375,7 @@ static void init_part(struct parts *p, int no, struct parts *parent) {
     p->local.multiply_color = (SDL_Color){255, 255, 255, 255};
     p->global = p->local;
     p->world_matrix_self = p;
+    glm_mat4_identity(p->committed_matrix);
     if (parent) {
         p->next_sibling = parent->first_child;
         parent->first_child = p;
@@ -473,25 +475,103 @@ static void test_monster_stand_rance03_vs_hierarchical(void) {
         assert(approx(sprite.global.pos.y, slots[i].exp_r03_y, 0.01f));
 
         // 2) Hierarchical mode (v11+/v12+: Ixseal, Rance 10, Evenicle 2, Dohna Dohna)
+        // Fresh parts start with committed_matrix = Identity until PE_UpdateComponent/UpdateMatrix runs.
         parts_hierarchical_matrix = true;
+        glm_mat4_identity(parent.committed_matrix);
+        glm_mat4_identity(offset_parent.committed_matrix);
+        glm_mat4_identity(sprite.committed_matrix);
+
         parts_render_gen++;
         parts_world_matrix(&sprite, m);
         assert(approx(m[3][0], slots[i].exp_v12_x, 0.01f));
         assert(approx(m[3][1], slots[i].exp_v12_y, 0.01f));
         assert(approx(m[0][0], slots[i].scale, 0.0001f));
         assert(approx(m[1][1], slots[i].scale, 0.0001f));
-        assert(PE_GetPartsUpperLeftPosX(3, 1) == slots[i].exp_v12_ulx);
-        assert(PE_GetPartsUpperLeftPosY(3, 1) == slots[i].exp_v12_uly);
+        // Before PE_UpdateComponent, UpperLeftPos transforms hitbox by Identity.
+        assert(PE_GetPartsUpperLeftPosX(3, 1) == 0);
+        assert(PE_GetPartsUpperLeftPosY(3, 1) == -h);
 
+        // SetPos / parts_update_global_pos_mat updates live global.pos without committing committed_matrix.
         parts_render_gen++;
         parts_update_global_pos_mat(&parent, (SDL_FPoint){0, 0}, ident);
         assert(approx(sprite.global.pos.x, slots[i].exp_v12_x, 0.01f));
         assert(approx(sprite.global.pos.y, slots[i].exp_v12_y, 0.01f));
+        assert(PE_GetPartsUpperLeftPosX(3, 1) == 0);
+        assert(PE_GetPartsUpperLeftPosY(3, 1) == -h);
 
+        // After PE_UpdateComponent / UpdateMatrix, committed_matrix holds the hierarchical world matrix.
         parts_render_gen++;
         parts_update_component_mat(&parent, ident);
         assert(approx(sprite.global.pos.x, slots[i].exp_v12_x, 0.01f));
         assert(approx(sprite.global.pos.y, slots[i].exp_v12_y, 0.01f));
+        assert(PE_GetPartsUpperLeftPosX(3, 1) == slots[i].exp_v12_ulx);
+        assert(PE_GetPartsUpperLeftPosY(3, 1) == slots[i].exp_v12_uly);
+    }
+}
+
+static void test_ixseal_full_length_create_three_enemies(void) {
+    // Ixseal C_FULL_LENGTH@Create (FUNC[18827]) creates:
+    //   enemy_slot (640/150/1130, 720) -> root_parts (-640, -720) -> area (0, 0)
+    //     -> m_cRootParts (640, 740; 1280x740, origin=8, hitbox=(-640,-740))
+    //     -> m_cFullLength
+    // and sets m_cFullLength.local = m_cRootParts.GetUpperLeftPos() + (640, 740)
+    // BEFORE PE_UpdateComponent(0) / PartsEngine.UpdateMatrix() runs.
+    const float slot_xs[3] = { 640.0f, 150.0f, 1130.0f };
+    parts_v2 = true;
+    parts_hierarchical_matrix = true;
+    root_pos = (Point){0, 0};
+
+    mat4 ident;
+    glm_mat4_identity(ident);
+
+    for (int i = 0; i < 3; i++) {
+        memset(parts_registry, 0, sizeof(parts_registry));
+        struct parts enemy_slot, root_parts, area_parts, stand_root, full_length;
+        init_part(&enemy_slot, 1, NULL);
+        init_part(&root_parts, 2, &enemy_slot);
+        init_part(&area_parts, 3, &root_parts);
+        init_part(&stand_root, 4, &area_parts);
+        init_part(&full_length, 5, &stand_root);
+
+        enemy_slot.local.pos = (SDL_FPoint){slot_xs[i], 720.0f};
+        root_parts.local.pos = (SDL_FPoint){-640.0f, -720.0f};
+        area_parts.local.pos = (SDL_FPoint){0.0f, 0.0f};
+        stand_root.local.pos = (SDL_FPoint){640.0f, 740.0f};
+        stand_root.states[0].common.w = 1280;
+        stand_root.states[0].common.h = 740;
+        stand_root.states[0].common.origin_offset = (Point){-640, -740};
+        stand_root.states[0].common.hitbox = (Rectangle){-640, -740, 1280, 740};
+
+        // Simulate SetPos calls prior to PE_UpdateComponent(0).
+        parts_render_gen++;
+        parts_update_global_pos_mat(&enemy_slot, (SDL_FPoint){0, 0}, ident);
+
+        // Before PE_UpdateComponent(0), GetUpperLeftPos transforms hitbox=(-640,-740) by Identity.
+        int ulx = PE_GetPartsUpperLeftPosX(4, 1);
+        int uly = PE_GetPartsUpperLeftPosY(4, 1);
+        assert(ulx == -640);
+        assert(uly == -740);
+
+        // C_FULL_LENGTH@Create adds (640, 740), placing m_cFullLength at local (0, 0).
+        full_length.local.pos = (SDL_FPoint){(float)(ulx + 640), (float)(uly + 740)};
+        assert(approx(full_length.local.pos.x, 0.0f, 0.001f));
+        assert(approx(full_length.local.pos.y, 0.0f, 0.001f));
+
+        // Now run PE_UpdateComponent(0) / PartsEngine.UpdateMatrix().
+        parts_render_gen++;
+        parts_update_component_mat(&enemy_slot, ident);
+
+        // All 3 enemies must land on screen at (640, 740), (150, 740), (1130, 740), never Y=1480.
+        assert(approx(full_length.global.pos.x, slot_xs[i], 0.01f));
+        assert(approx(full_length.global.pos.y, 740.0f, 0.01f));
+        mat4 m;
+        parts_world_matrix(&full_length, m);
+        assert(approx(m[3][0], slot_xs[i], 0.01f));
+        assert(approx(m[3][1], 740.0f, 0.01f));
+
+        // After PE_UpdateComponent(0), stand_root's committed_matrix matches its world transform.
+        assert(PE_GetPartsUpperLeftPosX(4, 1) == (int)slot_xs[i] - 640);
+        assert(PE_GetPartsUpperLeftPosY(4, 1) == 0);
     }
 }
 
@@ -594,6 +674,7 @@ static void test_layout_free_scroll_links_reverse_rotation_root_pos(void) {
 
 int main(void) {
     test_monster_stand_rance03_vs_hierarchical();
+    test_ixseal_full_length_create_three_enemies();
     test_layout_free_scroll_links_reverse_rotation_root_pos();
     puts("parts-transform-ok");
     return 0;
