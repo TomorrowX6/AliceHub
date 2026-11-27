@@ -1828,6 +1828,14 @@ int main(void)
     g = mods_game("haruka_en", HUB_XSYSTEM4);
     assert(g && !strcmp(g->id, "haruka") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
 
+    make_game("haruka_bb", "BeatBladesHaruka.ain");
+    g = mods_game("haruka_bb", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "haruka") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
+
+    make_game("haruka_cs", "ChoukouSenninHaruka.ain");
+    g = mods_game("haruka_cs", HUB_XSYSTEM4);
+    assert(g && !strcmp(g->id, "haruka") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));
+
     make_game("haruka_cn", "超昂闪忍遥GA.ald");
     g = mods_game("haruka_cn", HUB_XSYSTEM4);
     assert(g && !strcmp(g->id, "haruka") && g->kind == MODS_UNCENSORED && mods_game_has_uncensored(g));

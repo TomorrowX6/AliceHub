@@ -681,6 +681,8 @@ static void android_perf_pacing_fini(void)
 	android_adpf_close_session();
 	android_reset_pacer_timestamps();
 }
+#elif defined(ALICEHUB_IOS) || defined(__SWITCH__)
+static bool wait_vsync = true;
 #else
 static bool wait_vsync = false;
 #endif

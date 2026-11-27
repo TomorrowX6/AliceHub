@@ -518,7 +518,9 @@ int mixer_set_mute(int n, int m) {{ (void)n; (void)m; return 0; }}
 bool gfx_is_fullscreen(void) {{ return false; }}
 bool gfx_set_fullscreen(bool on) {{ (void)on; return true; }}
 void gfx_swap(void) {{}}
-void gfx_set_wait_vsync(bool on) {{ (void)on; }}
+static int wait_vsync_calls = 0;
+static bool last_wait_vsync = false;
+void gfx_set_wait_vsync(bool on) {{ wait_vsync_calls++; last_wait_vsync = on; }}
 void mouse_set_pos(int x, int y) {{ (void)x; (void)y; }}
 bool mouse_show_cursor(bool on) {{ (void)on; return true; }}
 void input_reset_close_hook(void) {{}}
@@ -595,7 +597,9 @@ int main(void) {{
     assert(strcmp(scr1->text, "1280x720") == 0);
     free_string(scr1);
 
-    // 2. Platform window_settings defaults & mobile minimize lock
+    // 2. Platform window_settings defaults, no-file VSync sync & mobile minimize lock
+    load_window_settings();
+    assert(wait_vsync_calls == 1 && last_wait_vsync == {"true" if expected_vsync else "false"});
     int vsync = -1, min_inact = -1;
     assert(SystemService_GetWindowSetting(WINDOW_SETTINGS_WAIT_VSYNC, &vsync));
     assert(SystemService_GetWindowSetting(WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE, &min_inact));

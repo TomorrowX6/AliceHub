@@ -18,6 +18,7 @@ static const ModsGame games[] = {
     {"haruka", MODS_UNCENSORED, {"超昂閃忍ハルカ.ain", "超昂閃忍ハルカGA.ald",
                                  "超昂闪忍遥.ain", "超昂闪忍遥GA.ald",
                                  "超昂閃忍遥.ain", "ハルカ.ain", "haruka.ain",
+                                 "BeatBladesHaruka.ain", "ChoukouSenninHaruka.ain",
                                  "挻峍慚擡僴儖僇.ain", "挻峍慚擡僴儖僇GA.ald"}},
     {"rance01", MODS_UNCENSORED, {"Rance01.ain"}},
     {"rance02", MODS_UNCENSORED, {"Rance02.ain", "ランス０２.ain", "ランス０２GA.ald",

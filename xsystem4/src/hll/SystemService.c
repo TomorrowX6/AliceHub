@@ -338,14 +338,13 @@ static void save_window_settings(void)
 static void load_window_settings(void)
 {
 	cJSON *root = load_json("WindowSetting.json");
-	if (!root)
-		return;
-	cJSON *v;
-	if ((v = cJSON_GetObjectItem(root, WAIT_VSYNC_JSON_KEY))) {
-		window_settings.wait_vsync = cJSON_IsTrue(v);
-		gfx_set_wait_vsync(window_settings.wait_vsync);
+	if (root) {
+		cJSON *v;
+		if ((v = cJSON_GetObjectItem(root, WAIT_VSYNC_JSON_KEY)))
+			window_settings.wait_vsync = cJSON_IsTrue(v);
+		cJSON_Delete(root);
 	}
-	cJSON_Delete(root);
+	gfx_set_wait_vsync(window_settings.wait_vsync);
 }
 
 static bool SystemService_SetWindowSetting(int type, int value)
