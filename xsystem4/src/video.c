@@ -537,6 +537,9 @@ void gfx_prepare_context_backup(void)
 }
 static SDL_Color clear_color = { 0, 0, 0, 255 };
 static float frame_rate;
+static bool in_gfx_swap = false;
+static bool last_swap_succeeded = false;
+static bool frame_presented_for_update_view = false;
 #ifdef __ANDROID__
 static bool wait_vsync = true;
 
@@ -1135,6 +1138,9 @@ close_sdl:
 	view = &main_surface;
 	gfx_initialized = false;
 	gfx_ctx_gen++;
+	frame_presented_for_update_view = false;
+	last_swap_succeeded = false;
+	in_gfx_swap = false;
 	wait_vsync = true;
 	if (!quit_sdl)
 		return;
@@ -1286,6 +1292,7 @@ void gfx_android_on_foreground(void)
 		s_adpf_needs_focus_refresh = false;
 	}
 	android_reset_pacer_timestamps();
+	file_note_fs_mutation();
 #endif
 }
 
@@ -1366,8 +1373,38 @@ void gfx_set_clear_color(int r, int g, int b, int a)
 	clear_color.a = max(0, min(255, a));
 }
 
+static inline bool texture_targets_view(const Texture *t)
+{
+	if (!t)
+		return false;
+	if (t == view || t == &main_surface)
+		return true;
+	if (t->handle && ((view && t->handle == view->handle) || t->handle == main_surface.handle))
+		return true;
+	return false;
+}
+
+void gfx_mark_frame_presented(void)
+{
+	frame_presented_for_update_view = last_swap_succeeded;
+}
+
+void gfx_clear_frame_presented(void)
+{
+	frame_presented_for_update_view = false;
+}
+
+bool gfx_consume_frame_presented(void)
+{
+	bool was = frame_presented_for_update_view;
+	frame_presented_for_update_view = false;
+	return was;
+}
+
 void gfx_clear(void)
 {
+	if (!in_gfx_swap)
+		frame_presented_for_update_view = false;
 	glClearColor(clear_color.r / 255.f, clear_color.g / 255.f, clear_color.b / 255.f, clear_color.a / 255.f);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
@@ -1376,6 +1413,7 @@ static mat4 mw_transform = GLM_MAT4_IDENTITY_INIT;
 
 void gfx_set_view_offset(int x, int y)
 {
+	frame_presented_for_update_view = false;
 	glm_mat4_identity(mw_transform);
 	if (!x && !y)
 		return;
@@ -1440,6 +1478,7 @@ static void gfx_refresh_viewport_if_needed(void)
 
 void gfx_swap(void)
 {
+	last_swap_succeeded = false;
 #ifdef __ANDROID__
 	bool trace_swap = resume_trace_swaps > 0;
 	if (trace_swap) {
@@ -1470,6 +1509,7 @@ void gfx_swap(void)
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glViewport(sdl.viewport.x, sdl.viewport.y, sdl.viewport.w, sdl.viewport.h);
 #endif
+	in_gfx_swap = true;
 	gfx_clear();
 
 	static mat4 wv_transform = MAT4(
@@ -1502,6 +1542,8 @@ void gfx_swap(void)
 	}
 #endif
 	gfx_render(&job);
+	in_gfx_swap = false;
+	frame_presented_for_update_view = false;
 	/* Kick off mobile tile-based GPU rasterization immediately in parallel */
 	glFlush();
 
@@ -1534,16 +1576,22 @@ void gfx_swap(void)
 	if (wait_vsync && s_last_frame_end_ns > 0 &&
 	    s_pfn_egl_pres_time && s_pfn_egl_cur_dpy && s_pfn_egl_cur_surf) {
 		/*
-		 * +15.5ms after the previous frame skips intermediate 120Hz VSync (+8.33ms)
-		 * and latches cleanly on the 60fps VSync (+16.67ms) on both 60Hz/59.94Hz and
-		 * 120Hz panels without accumulating drift or blocking CPU before SwapWindow.
+		 * Only hint presentation time on >=105Hz panels (e.g. 120Hz/144Hz that
+		 * did not switch to 60Hz). Use +12.0ms so it skips the +8.33ms intermediate
+		 * 120Hz VSync while keeping ~4.7ms headroom before SurfaceFlinger's 16.67ms
+		 * latch window. On 60Hz/90Hz panels, a future timestamp misses VSync and
+		 * halves output to 30fps/45fps.
 		 */
-		int64_t present_ns = s_last_frame_end_ns + 15500000LL;
-		if (present_ns > work_end_ns && (present_ns - work_end_ns) < 25000000LL) {
-			void *dpy = s_pfn_egl_cur_dpy();
-			void *surf = dpy ? s_pfn_egl_cur_surf(EGL_DRAW_SURFACE_ENUM) : NULL;
-			if (dpy && surf)
-				s_pfn_egl_pres_time(dpy, surf, present_ns);
+		SDL_DisplayMode dm;
+		int disp_idx = sdl.window ? SDL_GetWindowDisplayIndex(sdl.window) : -1;
+		if (disp_idx >= 0 && SDL_GetCurrentDisplayMode(disp_idx, &dm) == 0 && dm.refresh_rate >= 105) {
+			int64_t present_ns = s_last_frame_end_ns + 12000000LL;
+			if (present_ns > work_end_ns && (present_ns - work_end_ns) < 25000000LL) {
+				void *dpy = s_pfn_egl_cur_dpy();
+				void *surf = dpy ? s_pfn_egl_cur_surf(EGL_DRAW_SURFACE_ENUM) : NULL;
+				if (dpy && surf)
+					s_pfn_egl_pres_time(dpy, surf, present_ns);
+			}
 		}
 	}
 #endif
@@ -1553,6 +1601,7 @@ void gfx_swap(void)
 		draw_switch_controls();
 #endif
 	SDL_GL_SwapWindow(sdl.window);
+	last_swap_succeeded = true;
 #ifdef __ANDROID__
 	if (trace_swap)
 		trace_resume_gl_state("swap.end");
@@ -1767,6 +1816,8 @@ bool gfx_recover_gl_if_needed(void)
 #ifdef __ANDROID__
 	SDL_GL_SetSwapInterval(wait_vsync ? 1 : 0);
 #endif
+	frame_presented_for_update_view = false;
+	last_swap_succeeded = false;
 	gfx_recovering = false;
 	return true;
 }
@@ -1787,11 +1838,13 @@ void gfx_set_view(struct texture *t)
 	if (t)
 		gfx_remap_texture(t);
 	view = (t && t->handle) ? t : &main_surface;
+	frame_presented_for_update_view = false;
 }
 
 void gfx_reset_view(void)
 {
 	view = &main_surface;
+	frame_presented_for_update_view = false;
 }
 
 /*
@@ -1852,6 +1905,8 @@ void gfx_run_job(struct gfx_render_job *job)
 
 void gfx_render(struct gfx_render_job *job)
 {
+	if (!in_gfx_swap)
+		frame_presented_for_update_view = false;
 	if (!job->shader) {
 		job->shader = &default_shader;
 		gfx_prepare_job(job);
@@ -1944,6 +1999,8 @@ void gfx_init_texture_with_pixels(struct texture *t, int w, int h, void *pixels)
 
 void gfx_update_texture_with_pixels(struct texture *t, void *pixels)
 {
+	if (texture_targets_view(t))
+		frame_presented_for_update_view = false;
 	if (!gfx_remap_texture(t)) {
 		if (t && t->w > 0 && t->h > 0)
 			gfx_init_texture_with_pixels(t, t->w, t->h, pixels);
@@ -2136,6 +2193,8 @@ GLuint gfx_set_framebuffer(GLenum target, Texture *t, int x, int y, int w, int h
 		return offscreen_read_fbo;
 	}
 
+	if (texture_targets_view(t))
+		frame_presented_for_update_view = false;
 	t->opaque = false;
 	if (target == GL_DRAW_FRAMEBUFFER && pinned_draw_bound && pinned_draw_tex == t->handle) {
 		glViewport(x, y, w, h);

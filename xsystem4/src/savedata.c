@@ -350,6 +350,7 @@ bool atomic_save_commit(FILE *fp, const char *path, char *tmp_path, bool keep_ba
 		free(tmp_path);
 		return false;
 	}
+	file_note_fs_mutation();
 	free(tmp_path);
 	return true;
 }

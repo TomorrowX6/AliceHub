@@ -517,7 +517,10 @@ int mixer_set_volume(int n, int v) {{ (void)n; (void)v; return 0; }}
 int mixer_set_mute(int n, int m) {{ (void)n; (void)m; return 0; }}
 bool gfx_is_fullscreen(void) {{ return false; }}
 bool gfx_set_fullscreen(bool on) {{ (void)on; return true; }}
-void gfx_swap(void) {{}}
+static int swap_calls = 0;
+void gfx_swap(void) {{ swap_calls++; }}
+static bool mock_frame_presented = false;
+bool gfx_consume_frame_presented(void) {{ bool was = mock_frame_presented; mock_frame_presented = false; return was; }}
 static int wait_vsync_calls = 0;
 static bool last_wait_vsync = false;
 void gfx_set_wait_vsync(bool on) {{ wait_vsync_calls++; last_wait_vsync = on; }}
@@ -530,8 +533,14 @@ void input_set_close_hook(bool f) {{ (void)f; }}
 bool input_get_close_hook(void) {{ return false; }}
 void get_date(int *y, int *m, int *d, int *w) {{ *y = 2026; *m = 1; *d = 1; *w = 4; }}
 void get_time(int *h, int *m, int *s, int *ms) {{ *h = 1; *m = 2; *s = 3; *ms = 4; }}
-int save_json(const char *f, cJSON *j) {{ (void)f; (void)j; return 1; }}
-cJSON *load_json(const char *f) {{ (void)f; return NULL; }}
+static int save_json_calls = 0;
+static cJSON *mock_loaded_window_json = NULL;
+int save_json(const char *f, cJSON *j) {{ (void)f; (void)j; save_json_calls++; return 1; }}
+cJSON *load_json(const char *f) {{
+    (void)f;
+    if (!mock_loaded_window_json) return NULL;
+    return cJSON_Duplicate(mock_loaded_window_json, true);
+}}
 char *savedir_path(const char *p) {{ return strdup(p); }}
 struct page *alloc_array(int r, union vm_value *d, enum ain_data_type t, int s, bool i) {{
     (void)r; (void)d; (void)t; (void)s; (void)i; return NULL;
@@ -609,6 +618,75 @@ int main(void) {{
     assert(SystemService_SetWindowSetting(WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE, 1));
     assert(SystemService_GetWindowSetting(WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE, &min_inact));
     assert((bool)min_inact == {"true" if expected_min else "false"});
+
+    // 2b. Dirty-checked SetWindowSetting & SetWaitVSyncMode: zero disk writes / zero VSync resets on no-op!
+    save_json_calls = 0;
+    int vs_before = wait_vsync_calls;
+    for (int r = 0; r < 60; r++) {{
+        assert(SystemService_SetWindowSetting(WINDOW_SETTINGS_WAIT_VSYNC, vsync));
+        assert(SystemService_SetWindowSetting(WINDOW_SETTINGS_BACK_TO_TITLE_CONFIRM, 1));
+        assert(SystemService_SetWindowSetting(WINDOW_SETTINGS_CLOSE_GAME_CONFIRM, 1));
+        SystemService_SetWaitVSyncMode(vsync);
+    }}
+    assert(save_json_calls == 0 && wait_vsync_calls == vs_before);
+    // Changing wait_vsync triggers exactly 1 gfx_set_wait_vsync + 1 save_json; repeating is a no-op.
+    assert(SystemService_SetWindowSetting(WINDOW_SETTINGS_WAIT_VSYNC, !vsync));
+    assert(save_json_calls == 1 && wait_vsync_calls == vs_before + 1 && last_wait_vsync == !vsync);
+    assert(SystemService_SetWindowSetting(WINDOW_SETTINGS_WAIT_VSYNC, !vsync));
+    assert(save_json_calls == 1 && wait_vsync_calls == vs_before + 1);
+    SystemService_SetWaitVSyncMode(vsync);
+    assert(save_json_calls == 2 && wait_vsync_calls == vs_before + 2 && last_wait_vsync == vsync);
+    SystemService_SetWaitVSyncMode(vsync);
+    assert(save_json_calls == 2 && wait_vsync_calls == vs_before + 2);
+    // SystemServiceEx.SetWaitVSync keeps window_settings.wait_vsync in sync without writing JSON!
+    system_service_sync_wait_vsync(!vsync);
+    assert(save_json_calls == 2 && wait_vsync_calls == vs_before + 3 && last_wait_vsync == !vsync);
+    assert(SystemService_SetWindowSetting(WINDOW_SETTINGS_WAIT_VSYNC, vsync));
+    assert(save_json_calls == 3 && wait_vsync_calls == vs_before + 4 && last_wait_vsync == vsync);
+
+    // 2c. UpdateView double-swap dedup: skips redundant gfx_swap when frame already presented.
+    swap_calls = 0;
+    mock_frame_presented = true;
+    assert(SystemService_UpdateView());
+    assert(swap_calls == 0);
+    assert(SystemService_UpdateView());
+    assert(swap_calls == 1);
+
+    // 2d. AIN v14 (Dohna Dohna: no SetWaitVSyncMode) WindowSetting enum shift + stale JSON immunity.
+    struct ain *dd_ain = ain_new(14, 1);
+    ain_add_library(dd_ain, "SystemService");
+    ain = dd_ain;
+    assert(window_settings_uses_v14_layout() == true);
+    mock_loaded_window_json = cJSON_CreateObject();
+    cJSON_AddBoolToObject(mock_loaded_window_json, WAIT_VSYNC_JSON_KEY, !({"true" if expected_vsync else "false"}));
+    window_settings = window_settings_defaults();
+    save_json_calls = 0;
+    vs_before = wait_vsync_calls;
+    load_window_settings();
+    assert(window_settings.wait_vsync == {"true" if expected_vsync else "false"});
+    assert(wait_vsync_calls == vs_before + 1 && last_wait_vsync == {"true" if expected_vsync else "false"});
+    // type=2 is MinimizeByFullScreenInactive (false by default on mobile), NOT WAIT_VSYNC!
+    int dd_min = -1, dd_title = -1, dd_close = -1, dd_bad = -1;
+    assert(SystemService_GetWindowSetting(2, &dd_min));
+    assert((bool)dd_min == {"true" if expected_min else "false"});
+    assert(SystemService_SetWindowSetting(2, 0));
+    assert(window_settings.wait_vsync == {"true" if expected_vsync else "false"});
+    assert(save_json_calls == 0 && wait_vsync_calls == vs_before + 1);
+    assert(SystemService_SetWindowSetting(3, 0) && SystemService_GetWindowSetting(3, &dd_title) && dd_title == 0);
+    assert(SystemService_SetWindowSetting(4, 0) && SystemService_GetWindowSetting(4, &dd_close) && dd_close == 0);
+    assert(!SystemService_GetWindowSetting(5, &dd_bad));
+    assert(save_json_calls == 0);
+    // AIN v14 WITH SetWaitVSyncMode exported keeps standard enum layout.
+    int ss_lib = ain_get_library(dd_ain, "SystemService");
+    dd_ain->libraries[ss_lib].nr_functions = 1;
+    dd_ain->libraries[ss_lib].functions = xcalloc(1, sizeof(struct ain_hll_function));
+    dd_ain->libraries[ss_lib].functions[0].name = xstrdup("SetWaitVSyncMode");
+    assert(window_settings_uses_v14_layout() == false);
+    cJSON_Delete(mock_loaded_window_json);
+    mock_loaded_window_json = NULL;
+    ain_free(dd_ain);
+    ain = NULL;
+    window_settings = window_settings_defaults();
 
     // 3. Mutate all static states, then invoke _ModuleFini and verify full cleanup/reset.
     struct string *k = cstr_to_string("k1");
@@ -1171,6 +1249,109 @@ int main(void) {{
             ["-lz", "-lm"],
         )
         self.assertEqual(out.strip(), "OK")
+
+    def test_savedir_lookup_cache_and_invalidation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            save_dir = Path(tmp) / "SaveData"
+            save_dir.mkdir()
+            for name in ("Save001.asd", "Save002.asd", "Save003.asd", "Save100.asd", "Save200.asd", "SystemData.asd"):
+                (save_dir / name).write_bytes(b"ASD")
+
+            harness = r"""
+#include <assert.h>
+#include <dirent.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "xsystem4.h"
+#include "system4/file.h"
+
+struct config config;
+struct ain *ain;
+bool game_dohnadohna = true;
+
+static int g_opendir_calls = 0;
+DIR *__real_opendir(const char *name);
+DIR *__wrap_opendir(const char *name) {
+    g_opendir_calls++;
+    return __real_opendir(name);
+}
+
+int main(int argc, char **argv) {
+    assert(argc == 2);
+    memset(&config, 0, sizeof(config));
+    config.save_dir = argv[1];
+
+    // 1. Simulate Dohna Dohna's 1,200 synchronous ExistSaveFile calls (600 slots x 2):
+    //    must perform strictly ONE opendir() across all 1,200 queries!
+    g_opendir_calls = 0;
+    int found = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        for (int slot = 0; slot < 600; slot++) {
+            char name[32];
+            if (pass == 1 && slot == 1)
+                snprintf(name, sizeof(name), "save%03d.ASD", slot); // mixed-case icase lookup
+            else
+                snprintf(name, sizeof(name), "Save%03d.asd", slot);
+            bool ex = savedir_file_exists(name);
+            bool expect = (slot == 1 || slot == 2 || slot == 3 || slot == 100 || slot == 200);
+            assert(ex == expect);
+            if (ex) found++;
+        }
+    }
+    assert(found == 10);
+    assert(g_opendir_calls == 1);
+
+    // 2. savedir_path() icase resolution hits the cached snapshot with 0 extra opendir() calls.
+    char *p1 = savedir_path("save001.ASD");
+    assert(p1 != NULL && strstr(p1, "Save001.asd") != NULL);
+    free(p1);
+    assert(g_opendir_calls == 1);
+
+    // 3. In-process write via file_open_utf8 invalidates immediately (0ms wait).
+    char *p50 = savedir_path("Save050.asd");
+    FILE *fp = file_open_utf8(p50, "wb");
+    assert(fp != NULL);
+    fwrite("OK", 1, 2, fp);
+    fclose(fp);
+    assert(savedir_file_exists("Save050.asd") == true);
+    assert(g_opendir_calls == 2);
+    assert(savedir_file_exists("Save051.asd") == false);
+    assert(g_opendir_calls == 2);
+
+    // 4. In-process delete via remove_utf8 invalidates immediately.
+    assert(remove_utf8(p50) == 0);
+    free(p50);
+    assert(savedir_file_exists("Save050.asd") == false);
+    assert(g_opendir_calls == 3);
+
+    // 5. External unlink() inside TTL window is immediately caught on cache hit and invalidates!
+    char *p2 = savedir_path("Save002.asd");
+    assert(unlink(p2) == 0);
+    free(p2);
+    assert(savedir_file_exists("Save002.asd") == false);
+    assert(savedir_file_exists("Save003.asd") == true);
+    assert(g_opendir_calls == 4);
+
+    // 6. Explicit savedir_cache_invalidate() refreshes cleanly.
+    savedir_cache_invalidate();
+    assert(savedir_file_exists("SystemData.asd") == true);
+    assert(g_opendir_calls == 5);
+
+    puts("OK");
+    return 0;
+}
+"""
+            out = compile_and_run(
+                harness,
+                [ROOT / "src/util.c", *LIBSYS4_CORE],
+                ["-Wl,--wrap=opendir", "-lz", "-lm"],
+                [str(save_dir)],
+            )
+            self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":

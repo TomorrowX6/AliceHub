@@ -15,6 +15,7 @@
  */
 
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -82,6 +83,29 @@ static char *normalize_to_nfc(const char *str)
 
 #endif
 
+static _Atomic uint64_t g_file_mutation_gen = 1;
+
+uint64_t file_mutation_gen(void)
+{
+	return atomic_load_explicit(&g_file_mutation_gen, memory_order_acquire);
+}
+
+void file_note_fs_mutation(void)
+{
+	atomic_fetch_add_explicit(&g_file_mutation_gen, 1, memory_order_release);
+}
+
+static inline bool mode_mutates_fs(const char *mode)
+{
+	if (!mode)
+		return false;
+	for (const char *p = mode; *p; p++) {
+		if (*p == 'w' || *p == 'a' || *p == '+')
+			return true;
+	}
+	return false;
+}
+
 #ifdef _WIN32
 static int make_dir(const char *path, possibly_unused int mode)
 {
@@ -140,6 +164,8 @@ int remove_utf8(const char *path)
 	wchar_t *wpath = utf8_to_wchar(path);
 	int r = _wremove(wpath);
 	free(wpath);
+	if (r == 0)
+		file_note_fs_mutation();
 	return r;
 }
 
@@ -148,6 +174,8 @@ int rmdir_utf8(const char *path)
 	wchar_t *wpath = utf8_to_wchar(path);
 	int r = _wrmdir(wpath);
 	free(wpath);
+	if (r == 0)
+		file_note_fs_mutation();
 	return r;
 }
 
@@ -159,6 +187,8 @@ FILE *file_open_utf8(const char *path, const char *mode)
 
 	FILE *f = _wfopen(wpath, wmode);
 	free(wpath);
+	if (f && mode_mutates_fs(mode))
+		file_note_fs_mutation();
 	return f;
 }
 
@@ -246,17 +276,26 @@ char *realpath_utf8(const char *upath)
 
 int remove_utf8(const char *path)
 {
-	return remove(path);
+	int r = remove(path);
+	if (r == 0)
+		file_note_fs_mutation();
+	return r;
 }
 
 int rmdir_utf8(const char *path)
 {
-	return rmdir(path);
+	int r = rmdir(path);
+	if (r == 0)
+		file_note_fs_mutation();
+	return r;
 }
 
 FILE *file_open_utf8(const char *path, const char *mode)
 {
-	return fopen(path, mode);
+	FILE *f = fopen(path, mode);
+	if (f && mode_mutates_fs(mode))
+		file_note_fs_mutation();
+	return f;
 }
 
 #ifdef __SWITCH__
@@ -555,14 +594,20 @@ int mkdir_p(const char *path)
 	if (slash && slash > _path && slash[-1] == ':')
 		p = slash + 1;
 #endif
+	bool created = false;
 	for (; *p; p++) {
 		if (*p == '/') {
 			// Temporarily truncate
 			*p = '\0';
 
 			if (make_dir(_path, mode) != 0) {
-				if (errno != EEXIST)
+				if (errno != EEXIST) {
+					if (created)
+						file_note_fs_mutation();
 					return -1;
+				}
+			} else {
+				created = true;
 			}
 
 			*p = '/';
@@ -570,9 +615,16 @@ int mkdir_p(const char *path)
 	}
 
 	if (make_dir(_path, mode) != 0) {
-		if (errno != EEXIST)
+		if (errno != EEXIST) {
+			if (created)
+				file_note_fs_mutation();
 			return -1;
+		}
+	} else {
+		created = true;
 	}
 
+	if (created)
+		file_note_fs_mutation();
 	return 0;
 }

@@ -1134,6 +1134,36 @@ static bool build_mul_filter(struct parts_construction_process *cproc, struct pa
 	return true;
 }
 
+static bool blur_op_is_full_texture(const struct parts_construction_process *cproc,
+		const struct parts_cp_filter *op)
+{
+	if (!cproc->common.texture.handle || op->blur <= 0)
+		return false;
+	if (op->full_size)
+		return true;
+	return op->x == 0 && op->y == 0
+		&& op->w == cproc->common.texture.w
+		&& op->h == cproc->common.texture.h;
+}
+
+static bool build_blur_filter_pair(struct parts_construction_process *cproc,
+		struct parts_cp_filter *op1, bool vert1,
+		struct parts_cp_filter *op2, bool vert2)
+{
+	if (!cproc->common.texture.handle)
+		return false;
+	int w = cproc->common.texture.w;
+	int h = cproc->common.texture.h;
+	if (w <= 0 || h <= 0)
+		return true;
+	Texture tmp = {0};
+	gfx_init_texture_blank(&tmp, w, h);
+	gfx_blur_rgb_to_fresh(&tmp, &cproc->common.texture, op1->blur, vert1);
+	gfx_blur_rgb_to_fresh(&cproc->common.texture, &tmp, op2->blur, vert2);
+	gfx_delete_texture(&tmp);
+	return true;
+}
+
 static bool build_blur_filter(struct parts_construction_process *cproc, struct parts_cp_filter *op, bool vertical)
 {
 	if (!cproc->common.texture.handle)
@@ -1147,11 +1177,17 @@ static bool build_blur_filter(struct parts_construction_process *cproc, struct p
 	if (w <= 0 || h <= 0 || op->blur <= 0)
 		return true;
 
-	// Blur samples the source repeatedly. Sampling the same texture that is
-	// attached to the draw framebuffer is undefined (a framebuffer feedback
-	// loop), even if we unbind/rebind the FBO between draws. In particular,
-	// GLES drivers can turn Dohna Dohna's blurred dungeon background into
-	// black/streaky garbage. Keep an immutable source for the whole filter.
+	if (x == 0 && y == 0 && w == cproc->common.texture.w && h == cproc->common.texture.h) {
+		Texture dst = {0};
+		gfx_init_texture_blank(&dst, w, h);
+		gfx_blur_rgb_to_fresh(&dst, &cproc->common.texture, op->blur, vertical);
+		gfx_delete_texture(&cproc->common.texture);
+		cproc->common.texture = dst;
+		return true;
+	}
+
+	// Sub-rect blur keeps an immutable copy of the source so sampling never
+	// creates a GLES framebuffer feedback loop while preserving outside pixels.
 	Texture source = {0};
 	gfx_init_texture_blank(&source, cproc->common.texture.w, cproc->common.texture.h);
 	gfx_copy_with_alpha_map(&source, 0, 0, &cproc->common.texture, 0, 0, source.w, source.h);
@@ -1641,13 +1677,27 @@ bool parts_build_construction_process(struct parts *parts,
 				goto done;
 			break;
 		case PARTS_CP_HBLUR_FILTER:
-			if (!build_blur_filter(cproc, &op->filter, false))
+		case PARTS_CP_VBLUR_FILTER: {
+			bool vert1 = (op->type == PARTS_CP_VBLUR_FILTER);
+			struct parts_cp_op *next_op = TAILQ_NEXT(op, entry);
+			if (next_op && (next_op->type == PARTS_CP_HBLUR_FILTER || next_op->type == PARTS_CP_VBLUR_FILTER)
+					&& blur_op_is_full_texture(cproc, &op->filter)
+					&& blur_op_is_full_texture(cproc, &next_op->filter)) {
+				bool vert2 = (next_op->type == PARTS_CP_VBLUR_FILTER);
+				if (!build_blur_filter_pair(cproc, &op->filter, vert1, &next_op->filter, vert2))
+					goto done;
+				op = next_op;
+				break;
+			}
+			GLuint prev_handle = cproc->common.texture.handle;
+			if (blur_op_is_full_texture(cproc, &op->filter))
+				gfx_end_draw_target();
+			if (!build_blur_filter(cproc, &op->filter, vert1))
 				goto done;
+			if (cproc->common.texture.handle != prev_handle)
+				gfx_begin_draw_target(&cproc->common.texture);
 			break;
-		case PARTS_CP_VBLUR_FILTER:
-			if (!build_blur_filter(cproc, &op->filter, true))
-				goto done;
-			break;
+		}
 		case PARTS_CP_V14:
 			if (!build_v14(cproc, &op->v14))
 				goto done;

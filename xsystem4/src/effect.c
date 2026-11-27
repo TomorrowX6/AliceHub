@@ -401,6 +401,7 @@ int effect_update(float rate)
 	}
 
 	gfx_swap();
+	gfx_mark_frame_presented();
 	return 1;
 }
 

@@ -47,7 +47,7 @@ struct copy_data {
 	float threshold;
 	float threshold2;
 	GLuint dst_texture;
-	int blur_dx, blur_dy, blur_radius;
+	int blur_dx, blur_dy, blur_radius, blur_mode;
 };
 
 #define ROTATE_DATA(dst, _sx, _sy, _w, _h)		\
@@ -90,6 +90,7 @@ struct box_blur_shader {
 	GLint rect_max;
 	GLint blur_dir;
 	GLint blur_radius;
+	GLint blur_mode;
 };
 static struct box_blur_shader box_blur_shader;
 
@@ -153,6 +154,7 @@ static const GLchar box_blur_frag_src[] =
 	"uniform ivec2 rect_max;\n"
 	"uniform ivec2 blur_dir;\n"
 	"uniform int blur_radius;\n"
+	"uniform int blur_mode;\n"
 	"in vec2 tex_coord;\n"
 	"out vec4 frag_color;\n"
 	"void main() {\n"
@@ -173,7 +175,14 @@ static const GLchar box_blur_frag_src[] =
 	"\t\t\tsum += texelFetch(tex, base + blur_dir * i, 0);\n"
 	"\t\t}\n"
 	"\t}\n"
-	"\tfrag_color = sum / (float(blur_radius) * 2.0 + 1.0);\n"
+	"\tvec4 blurred = sum / (float(blur_radius) * 2.0 + 1.0);\n"
+	"\tif (blur_mode == 1) {\n"
+	"\t\tfloat src_a = (base.x >= 0 && base.y >= 0 && base.x < tex_size.x && base.y < tex_size.y)\n"
+	"\t\t\t? texelFetch(tex, base, 0).a : 0.0;\n"
+	"\t\tfrag_color = vec4(blurred.rgb, src_a);\n"
+	"\t} else {\n"
+	"\t\tfrag_color = blurred;\n"
+	"\t}\n"
 	"}\n";
 
 static GLuint compile_inline_shader(const char *label, GLenum type, const GLchar *body)
@@ -210,6 +219,7 @@ static void prepare_box_blur_shader(possibly_unused struct gfx_render_job *job, 
 			clamp_i64_to_glint((int64_t)d->sy + d->h));
 	glUniform2i(box_blur_shader.blur_dir, d->blur_dx, d->blur_dy);
 	glUniform1i(box_blur_shader.blur_radius, d->blur_radius);
+	glUniform1i(box_blur_shader.blur_mode, d->blur_mode);
 }
 
 static void load_box_blur_shader(void)
@@ -242,6 +252,7 @@ static void load_box_blur_shader(void)
 	box_blur_shader.rect_max = glGetUniformLocation(program, "rect_max");
 	box_blur_shader.blur_dir = glGetUniformLocation(program, "blur_dir");
 	box_blur_shader.blur_radius = glGetUniformLocation(program, "blur_radius");
+	box_blur_shader.blur_mode = glGetUniformLocation(program, "blur_mode");
 }
 
 // load shaders
@@ -1240,6 +1251,7 @@ static void run_box_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int
 	data.blur_dx = blur_dx;
 	data.blur_dy = blur_dy;
 	data.blur_radius = blur;
+	data.blur_mode = 0;
 	run_copy_shader(&box_blur_shader.s, dst, blur_src, &data);
 
 	if (tmp.handle)
@@ -1265,6 +1277,33 @@ void gfx_copy_amap_width_blur(Texture *dst, int dx, int dy, Texture *src, int sx
 void gfx_copy_amap_height_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur)
 {
 	run_box_blur(dst, dx, dy, src, sx, sy, w, h, blur, 0, 1, true);
+}
+
+void gfx_blur_rgb_to_fresh(Texture *dst, Texture *src, int blur, bool vertical)
+{
+	if (!dst || !src || src->w <= 0 || src->h <= 0 || dst->w != src->w || dst->h != src->h)
+		return;
+	if ((!gfx_remap_texture(dst) && !dst->handle) || (!gfx_remap_texture(src) && !src->handle))
+		return;
+	if (src->handle == dst->handle) {
+		run_box_blur(dst, 0, 0, src, 0, 0, src->w, src->h, blur, vertical ? 0 : 1, vertical ? 1 : 0, false);
+		return;
+	}
+	if (blur <= 0) {
+		gfx_copy_with_alpha_map(dst, 0, 0, src, 0, 0, src->w, src->h);
+		return;
+	}
+	GLboolean was_blend = glIsEnabled(GL_BLEND);
+	if (was_blend)
+		glDisable(GL_BLEND);
+	struct copy_data data = COPY_DATA(0, 0, 0, 0, src->w, src->h);
+	data.blur_dx = vertical ? 0 : 1;
+	data.blur_dy = vertical ? 1 : 0;
+	data.blur_radius = blur;
+	data.blur_mode = 1;
+	run_copy_shader(&box_blur_shader.s, dst, src, &data);
+	if (was_blend)
+		glEnable(GL_BLEND);
 }
 
 void gfx_copy_with_alpha_map(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)

@@ -21,6 +21,12 @@
 #include <errno.h>
 #include <time.h>
 #include <ctype.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 #include "system4.h"
 #include "system4/file.h"
@@ -340,9 +346,407 @@ char *gamedir_path_icase(const char *path)
 	return resolved;
 }
 
+#define SAVEDIR_CACHE_SLOTS 4
+#define SAVEDIR_CACHE_TTL_MS 250u
+
+struct savedir_cache_entry {
+	char *name;
+	uint32_t hash_icase;
+};
+
+struct savedir_cache_slot {
+	char *dir_path;
+	bool dir_missing;
+	uint64_t mutation_gen;
+	uint64_t last_validated_ms;
+	uint64_t last_used_seq;
+	ustat dir_stat;
+	struct savedir_cache_entry *entries;
+	size_t nr_entries;
+	int32_t *buckets;
+	size_t bucket_cap;
+};
+
+static struct savedir_cache_slot savedir_cache[SAVEDIR_CACHE_SLOTS];
+static uint64_t savedir_cache_seq = 0;
+
+#ifdef _WIN32
+static SRWLOCK savedir_cache_lock = SRWLOCK_INIT;
+static inline void savedir_lock(void) { AcquireSRWLockExclusive(&savedir_cache_lock); }
+static inline void savedir_unlock(void) { ReleaseSRWLockExclusive(&savedir_cache_lock); }
+#else
+static pthread_mutex_t savedir_cache_lock = PTHREAD_MUTEX_INITIALIZER;
+static inline void savedir_lock(void) { pthread_mutex_lock(&savedir_cache_lock); }
+static inline void savedir_unlock(void) { pthread_mutex_unlock(&savedir_cache_lock); }
+#endif
+
+static uint64_t savedir_monotonic_ms(void)
+{
+#ifdef _WIN32
+	return (uint64_t)GetTickCount64();
+#else
+	struct timespec ts;
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
+		return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000L);
+	return 0;
+#endif
+}
+
+static bool savedir_stat_eq(const ustat *a, const ustat *b)
+{
+	if (a->st_dev != b->st_dev || a->st_ino != b->st_ino
+			|| a->st_size != b->st_size
+			|| a->st_mtime != b->st_mtime
+			|| a->st_ctime != b->st_ctime)
+		return false;
+#if defined(__APPLE__)
+	if (a->st_mtimespec.tv_nsec != b->st_mtimespec.tv_nsec
+			|| a->st_ctimespec.tv_nsec != b->st_ctimespec.tv_nsec)
+		return false;
+#elif defined(__linux__) || defined(__ANDROID__)
+	if (a->st_mtim.tv_nsec != b->st_mtim.tv_nsec
+			|| a->st_ctim.tv_nsec != b->st_ctim.tv_nsec)
+		return false;
+#endif
+	return true;
+}
+
+static uint32_t savedir_hash_ascii_icase(const char *s)
+{
+	uint32_t h = 2166136261u;
+	for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+		unsigned char c = *p;
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c - 'A' + 'a');
+		h ^= c;
+		h *= 16777619u;
+	}
+	return h;
+}
+
+static void savedir_slot_reset(struct savedir_cache_slot *slot)
+{
+	free(slot->dir_path);
+	for (size_t i = 0; i < slot->nr_entries; i++)
+		free(slot->entries[i].name);
+	free(slot->entries);
+	free(slot->buckets);
+	memset(slot, 0, sizeof(*slot));
+}
+
+static void savedir_slot_populate(struct savedir_cache_slot *slot, const char *parent_dir,
+		uint64_t cur_gen, uint64_t now_ms)
+{
+	savedir_slot_reset(slot);
+	slot->dir_path = xstrdup(parent_dir);
+	slot->mutation_gen = cur_gen;
+	slot->last_validated_ms = now_ms;
+
+	ustat st;
+	if (stat_utf8(parent_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
+		slot->dir_missing = true;
+		return;
+	}
+	slot->dir_stat = st;
+
+	UDIR *d = opendir_utf8(parent_dir);
+	if (!d) {
+		slot->dir_missing = true;
+		return;
+	}
+
+	size_t cap = 0;
+	char *d_name;
+	while ((d_name = readdir_utf8(d)) != NULL) {
+		if (!strcmp(d_name, ".") || !strcmp(d_name, "..")) {
+			free(d_name);
+			continue;
+		}
+		if (slot->nr_entries == cap) {
+			size_t ncap = cap ? cap * 2 : 64;
+			slot->entries = xrealloc(slot->entries, ncap * sizeof(*slot->entries));
+			cap = ncap;
+		}
+		slot->entries[slot->nr_entries].name = d_name;
+		slot->entries[slot->nr_entries].hash_icase = savedir_hash_ascii_icase(d_name);
+		slot->nr_entries++;
+	}
+	closedir_utf8(d);
+
+	if (slot->nr_entries > 0) {
+		size_t bcap = 16;
+		while (bcap < slot->nr_entries * 2)
+			bcap <<= 1;
+		slot->buckets = xmalloc(bcap * sizeof(*slot->buckets));
+		for (size_t i = 0; i < bcap; i++)
+			slot->buckets[i] = -1;
+		slot->bucket_cap = bcap;
+		size_t mask = bcap - 1;
+		for (size_t i = 0; i < slot->nr_entries; i++) {
+			size_t idx = slot->entries[i].hash_icase & mask;
+			while (slot->buckets[idx] != -1)
+				idx = (idx + 1) & mask;
+			slot->buckets[idx] = (int32_t)i;
+		}
+	}
+}
+
+static bool savedir_split_parent_base(const char *resolved, char **parent_out, const char **base_out)
+{
+	const char *slash = strrchr(resolved, '/');
+	if (!slash || slash[1] == '\0')
+		return false;
+	const char *base = slash + 1;
+	if (!strcmp(base, ".") || !strcmp(base, ".."))
+		return false;
+
+	size_t plen = (size_t)(slash - resolved);
+	while (plen > 1 && resolved[plen - 1] == '/'
+#ifdef __SWITCH__
+			&& !(plen >= 2 && resolved[plen - 2] == ':')
+#endif
+			) {
+		plen--;
+	}
+
+	char *parent;
+	if (plen == 0) {
+		parent = xstrdup("/");
+	} else if (plen == 2 && isalpha((unsigned char)resolved[0]) && resolved[1] == ':') {
+		parent = xmalloc(4);
+		memcpy(parent, resolved, 3);
+		parent[3] = '\0';
+	}
+#ifdef __SWITCH__
+	else if (plen > 0 && resolved[plen - 1] == ':') {
+		parent = xmalloc(plen + 2);
+		memcpy(parent, resolved, plen + 1);
+		parent[plen + 1] = '\0';
+	}
+#endif
+	else {
+		parent = xmalloc(plen + 1);
+		memcpy(parent, resolved, plen);
+		parent[plen] = '\0';
+	}
+
+	*parent_out = parent;
+	*base_out = base;
+	return true;
+}
+
+static bool savedir_cache_lookup(const char *resolved, char **matched_out, bool *dir_missing_out)
+{
+	*matched_out = NULL;
+	if (dir_missing_out)
+		*dir_missing_out = false;
+
+	char *parent_dir = NULL;
+	const char *base_name = NULL;
+	if (!savedir_split_parent_base(resolved, &parent_dir, &base_name))
+		return false;
+
+	savedir_lock();
+	uint64_t cur_gen = file_mutation_gen();
+	uint64_t now_ms = savedir_monotonic_ms();
+
+	struct savedir_cache_slot *slot = NULL;
+	for (int i = 0; i < SAVEDIR_CACHE_SLOTS; i++) {
+		if (savedir_cache[i].dir_path && !strcmp(savedir_cache[i].dir_path, parent_dir)) {
+			slot = &savedir_cache[i];
+			break;
+		}
+	}
+
+	bool valid = false;
+	if (slot && slot->mutation_gen == cur_gen) {
+		if (now_ms > 0 && now_ms >= slot->last_validated_ms
+				&& (now_ms - slot->last_validated_ms) < SAVEDIR_CACHE_TTL_MS) {
+			valid = true;
+		} else {
+			ustat st;
+			int rc = stat_utf8(parent_dir, &st);
+			if (slot->dir_missing) {
+				valid = (rc != 0 || !S_ISDIR(st.st_mode));
+			} else {
+				valid = (rc == 0 && S_ISDIR(st.st_mode) && savedir_stat_eq(&slot->dir_stat, &st));
+			}
+			if (valid)
+				slot->last_validated_ms = now_ms;
+		}
+	}
+
+	if (!valid) {
+		if (!slot) {
+			slot = &savedir_cache[0];
+			for (int i = 0; i < SAVEDIR_CACHE_SLOTS; i++) {
+				if (!savedir_cache[i].dir_path) {
+					slot = &savedir_cache[i];
+					break;
+				}
+				if (savedir_cache[i].last_used_seq < slot->last_used_seq)
+					slot = &savedir_cache[i];
+			}
+		}
+		savedir_slot_populate(slot, parent_dir, cur_gen, now_ms);
+	}
+
+	slot->last_used_seq = ++savedir_cache_seq;
+	if (dir_missing_out)
+		*dir_missing_out = slot->dir_missing;
+
+	if (!slot->dir_missing && slot->nr_entries > 0 && slot->buckets) {
+		uint32_t h = savedir_hash_ascii_icase(base_name);
+		size_t mask = slot->bucket_cap - 1;
+		size_t idx = h & mask;
+		const char *exact = NULL;
+		const char *icase = NULL;
+		while (slot->buckets[idx] != -1) {
+			struct savedir_cache_entry *e = &slot->entries[slot->buckets[idx]];
+			if (e->hash_icase == h) {
+				if (!strcmp(e->name, base_name)) {
+					exact = e->name;
+					break;
+				}
+				if (!icase && !strcasecmp(e->name, base_name))
+					icase = e->name;
+			}
+			idx = (idx + 1) & mask;
+		}
+		const char *found = exact ? exact : icase;
+		if (found)
+			*matched_out = path_join(parent_dir, found);
+	}
+
+	savedir_unlock();
+	free(parent_dir);
+	return true;
+}
+
+void savedir_cache_invalidate(void)
+{
+	file_note_fs_mutation();
+}
+
+static char *resolve_savedir_path(const char *path, bool *exists_out)
+{
+	if (exists_out)
+		*exists_out = false;
+	if (!config.save_dir || !config.save_dir[0]) {
+		char *p = resolve_path(config.save_dir ? config.save_dir : ".", path, false);
+		if (exists_out)
+			*exists_out = p && file_exists(p);
+		return p;
+	}
+
+	const char *target = path ? path : "";
+	const char *stripped_rel = NULL;
+	if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
+		target = stripped_rel;
+
+	char *utf_primary = unix_path_with(target, false);
+	char *resolved_primary = join_dir_and_rel(config.save_dir, utf_primary);
+
+	char *matched = NULL;
+	bool dir_missing = false;
+	if (!savedir_cache_lookup(resolved_primary, &matched, &dir_missing)) {
+		free(utf_primary);
+		free(resolved_primary);
+		char *p = resolve_path(config.save_dir, path, false);
+		if (exists_out)
+			*exists_out = p && file_exists(p);
+		return p;
+	}
+
+	if (matched) {
+		free(utf_primary);
+		if (!exists_out) {
+			free(resolved_primary);
+			return matched;
+		}
+		if (file_exists(matched)) {
+			*exists_out = true;
+			free(resolved_primary);
+			return matched;
+		}
+		// External deletion inside the TTL window: invalidate immediately.
+		file_note_fs_mutation();
+		free(matched);
+		return resolved_primary;
+	}
+
+	if (sys4_text_is_gbk) {
+		char *utf_legacy = unix_path_with(target, true);
+		char *resolved_legacy = join_dir_and_rel(config.save_dir, utf_legacy);
+		if (strcmp(resolved_legacy, resolved_primary) != 0) {
+			char *legacy_match = NULL;
+			bool legacy_missing = false;
+			if (savedir_cache_lookup(resolved_legacy, &legacy_match, &legacy_missing) && legacy_match) {
+				free(utf_legacy);
+				free(resolved_legacy);
+				free(utf_primary);
+				if (!exists_out) {
+					free(resolved_primary);
+					return legacy_match;
+				}
+				if (file_exists(legacy_match)) {
+					*exists_out = true;
+					free(resolved_primary);
+					return legacy_match;
+				}
+				file_note_fs_mutation();
+				free(legacy_match);
+				return resolved_primary;
+			}
+#ifdef __SWITCH__
+			if (legacy_missing && strchr(utf_legacy, '/')) {
+				char *icase = path_get_icase(resolved_legacy);
+				if (icase) {
+					free(utf_legacy);
+					free(resolved_legacy);
+					free(utf_primary);
+					free(resolved_primary);
+					if (exists_out)
+						*exists_out = true;
+					return icase;
+				}
+			}
+#endif
+		}
+		free(utf_legacy);
+		free(resolved_legacy);
+	}
+
+#ifdef __SWITCH__
+	if (dir_missing && strchr(utf_primary, '/')) {
+		char *icase = path_get_icase(resolved_primary);
+		if (icase) {
+			free(utf_primary);
+			free(resolved_primary);
+			if (exists_out)
+				*exists_out = true;
+			return icase;
+		}
+	}
+#endif
+
+	free(utf_primary);
+	return resolved_primary;
+}
+
 char *savedir_path(const char *path)
 {
-	return resolve_path(config.save_dir, path, false);
+	return resolve_savedir_path(path, NULL);
+}
+
+bool savedir_file_exists(const char *path)
+{
+	if (!path || !*path)
+		return false;
+	bool exists = false;
+	char *resolved = resolve_savedir_path(path, &exists);
+	free(resolved);
+	return exists;
 }
 
 static void get_local_tm(struct tm *tm_out, long *nsec_out)
