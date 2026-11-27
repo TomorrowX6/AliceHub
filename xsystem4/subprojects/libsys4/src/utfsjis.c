@@ -1683,7 +1683,11 @@ char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
 					all_hw = false;
 				na_end++;
 			}
-			if (all_hw && cjk_dialog_is_sjis_hw_kana_run(s, na_end)) {
+			bool crosses_gbk_pair = ((size_t)(na_end - s) & 1u) != 0
+				&& na_end < end
+				&& gbk_display_pair_bounded(na_end - 1, end)
+				&& gbk_lookup(na_end[-1], na_end[0]) > 0;
+			if (all_hw && !crosses_gbk_pair && cjk_dialog_is_sjis_hw_kana_run(s, na_end)) {
 				for (const uint8_t *p = s; p < na_end; p++)
 					encode_utf8_bmp(0xff60 + (*p - 0xa0), &dstp);
 				s = na_end;

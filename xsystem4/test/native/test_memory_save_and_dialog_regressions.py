@@ -777,11 +777,22 @@ int main(void)
         "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xef\xbe\x8c\xef\xbd\xa7\xef\xbd\xb2\xef\xbe\x99");
 
     const uint8_t mixed_hw_err[] = {
-        // セーブ ｴﾗｰ (odd-length half-width katakana)
-        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0xb4, 0xd7, 0xb0, 0x00
+        // セーブ ｴﾗｰ.asd (odd-length half-width katakana followed by ASCII separator '.')
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0xb4, 0xd7, 0xb0, '.', 'a', 's', 'd', 0x00
     };
     check_decode("mixed_hw_kana_odd_err", mixed_hw_err, sizeof(mixed_hw_err) - 1,
-        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xef\xbd\xb4\xef\xbe\x97\xef\xbd\xb0");
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xef\xbd\xb4\xef\xbe\x97\xef\xbd\xb0.asd");
+
+    const uint8_t mixed_gbk_ascii_trail[] = {
+        // セーブ 【 遊戲.asd 】 の保存に失敗 (遊 = df 5b has ASCII-range GBK trail byte '[')
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ', 0x81, 0x79, ' ',
+        0xdf, 0x5b, 0x91, 0xf2, '.', 'a', 's', 'd', ' ', 0x81, 0x7a, ' ',
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73, 0x00
+    };
+    check_decode("mixed_gbk_ascii_trail_youxi", mixed_gbk_ascii_trail,
+        sizeof(mixed_gbk_ascii_trail) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xe3\x80\x90 \xe9\x81\x8a\xe6\x88\xb2.asd \xe3\x80\x91 "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97");
 
     const uint8_t mixed_gb2312_in_hw_range[] = {
         // セーブ 【 中文.asd 】 の保存に失敗 (中文 = d6 d0 ce c4 is all 0xA1..0xDF but MUST stay 中文)
