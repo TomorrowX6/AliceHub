@@ -202,8 +202,10 @@ static struct cg *dcf_get_base_cg(const char *name, struct archive *ar)
 	}
 	struct string *tmp = (ar && ar->conv ? ar->conv : make_string)(name, strlen(name));
 	dcf_depth++;
-	struct cg *cg = cg_load_base_by_name(tmp->text);
-	if (!cg && ar) {
+	struct cg *cg = NULL;
+	if (cg_has_base_loader_by_name()) {
+		cg = cg_load_base_by_name(tmp->text);
+	} else if (ar) {
 		char *basename = archive_basename(tmp->text);
 		struct archive_data *data = archive_get_by_basename(ar, basename);
 		free(basename);

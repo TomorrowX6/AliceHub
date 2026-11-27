@@ -46,6 +46,7 @@ struct copy_data {
 	float threshold;
 	float threshold2;
 	GLuint dst_texture;
+	int blur_dx, blur_dy, blur_radius;
 };
 
 #define ROTATE_DATA(dst, _sx, _sy, _w, _h)		\
@@ -82,6 +83,15 @@ static struct copy_shader amap_saturate_shader;
 static struct copy_shader blend_rmap_color_shader;
 static struct copy_shader dilate_shader;
 
+struct box_blur_shader {
+	Shader s;
+	GLint rect_min;
+	GLint rect_max;
+	GLint blur_dir;
+	GLint blur_radius;
+};
+static struct box_blur_shader box_blur_shader;
+
 static void prepare_copy_shader(struct gfx_render_job *job, void *data)
 {
 	struct copy_shader *s = (struct copy_shader*)job->shader;
@@ -113,6 +123,107 @@ static void prepare_copy_straight_alpha_shader(possibly_unused struct gfx_render
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, d->dst_texture);
 	glActiveTexture(GL_TEXTURE0);
+}
+
+static const GLchar draw_glsl_preamble[] =
+#ifdef USE_GLES
+	"#version 300 es\n"
+	"precision highp float;\n"
+	"precision highp int;\n"
+	"precision highp sampler2D;\n";
+#else
+	"#version 140\n";
+#endif
+
+static const GLchar box_blur_vert_src[] =
+	"uniform mat4 world_transform;\n"
+	"uniform mat4 view_transform;\n"
+	"in vec4 vertex_pos;\n"
+	"in vec2 vertex_uv;\n"
+	"out vec2 tex_coord;\n"
+	"void main() {\n"
+	"\tgl_Position = view_transform * world_transform * vertex_pos;\n"
+	"\ttex_coord = vertex_uv;\n"
+	"}\n";
+
+static const GLchar box_blur_frag_src[] =
+	"uniform sampler2D tex;\n"
+	"uniform ivec2 rect_min;\n"
+	"uniform ivec2 rect_max;\n"
+	"uniform ivec2 blur_dir;\n"
+	"uniform int blur_radius;\n"
+	"in vec2 tex_coord;\n"
+	"out vec4 frag_color;\n"
+	"void main() {\n"
+	"\tivec2 tex_size = textureSize(tex, 0);\n"
+	"\tivec2 base = ivec2(floor(tex_coord * vec2(tex_size)));\n"
+	"\tint lo = (blur_dir.x != 0) ? max(-blur_radius, rect_min.x - base.x)\n"
+	"\t                           : max(-blur_radius, rect_min.y - base.y);\n"
+	"\tint hi = (blur_dir.x != 0) ? min(blur_radius, rect_max.x - 1 - base.x)\n"
+	"\t                           : min(blur_radius, rect_max.y - 1 - base.y);\n"
+	"\tvec4 sum = vec4(0.0);\n"
+	"\tfor (int i = lo; i <= hi; i++) {\n"
+	"\t\tivec2 p = clamp(base + blur_dir * i, ivec2(0), tex_size - ivec2(1));\n"
+	"\t\tsum += texelFetch(tex, p, 0);\n"
+	"\t}\n"
+	"\tfrag_color = sum / (float(blur_radius) * 2.0 + 1.0);\n"
+	"}\n";
+
+static GLuint compile_inline_shader(const char *label, GLenum type, const GLchar *body)
+{
+	const GLchar *src[2] = { draw_glsl_preamble, body };
+	GLuint sh = glCreateShader(type);
+	glShaderSource(sh, 2, src, NULL);
+	glCompileShader(sh);
+	GLint ok = GL_FALSE;
+	glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		char log[512] = {0};
+		glGetShaderInfoLog(sh, sizeof(log) - 1, NULL, log);
+		ERROR("Failed to compile inline shader %s: %s", label, log);
+	}
+	return sh;
+}
+
+static void prepare_box_blur_shader(possibly_unused struct gfx_render_job *job, void *data)
+{
+	struct copy_data *d = data;
+	glUniform2i(box_blur_shader.rect_min, d->sx, d->sy);
+	glUniform2i(box_blur_shader.rect_max, d->sx + d->w, d->sy + d->h);
+	glUniform2i(box_blur_shader.blur_dir, d->blur_dx, d->blur_dy);
+	glUniform1i(box_blur_shader.blur_radius, d->blur_radius);
+}
+
+static void load_box_blur_shader(void)
+{
+	GLuint program = glCreateProgram();
+	GLuint vs = compile_inline_shader("box_blur.v", GL_VERTEX_SHADER, box_blur_vert_src);
+	GLuint fs = compile_inline_shader("box_blur.f", GL_FRAGMENT_SHADER, box_blur_frag_src);
+	glAttachShader(program, vs);
+	glAttachShader(program, fs);
+	glLinkProgram(program);
+	glDetachShader(program, vs);
+	glDetachShader(program, fs);
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+	GLint ok = GL_FALSE;
+	glGetProgramiv(program, GL_LINK_STATUS, &ok);
+	if (!ok) {
+		char log[512] = {0};
+		glGetProgramInfoLog(program, sizeof(log) - 1, NULL, log);
+		ERROR("Failed to link inline box_blur shader: %s", log);
+	}
+	box_blur_shader.s.program = program;
+	box_blur_shader.s.world_transform = glGetUniformLocation(program, "world_transform");
+	box_blur_shader.s.view_transform = glGetUniformLocation(program, "view_transform");
+	box_blur_shader.s.texture = glGetUniformLocation(program, "tex");
+	box_blur_shader.s.vertex_pos = glGetAttribLocation(program, "vertex_pos");
+	box_blur_shader.s.vertex_uv = glGetAttribLocation(program, "vertex_uv");
+	box_blur_shader.s.prepare = prepare_box_blur_shader;
+	box_blur_shader.rect_min = glGetUniformLocation(program, "rect_min");
+	box_blur_shader.rect_max = glGetUniformLocation(program, "rect_max");
+	box_blur_shader.blur_dir = glGetUniformLocation(program, "blur_dir");
+	box_blur_shader.blur_radius = glGetUniformLocation(program, "blur_radius");
 }
 
 // load shaders
@@ -178,6 +289,9 @@ static void draw_load_shaders(void)
 
 	// shader that dilates every pixel (for bold/outline text rendering)
 	load_copy_shader(&dilate_shader, "shaders/render.v.glsl", "shaders/dilate.f.glsl");
+
+	// single-pass separable box blur shader
+	load_box_blur_shader();
 }
 
 static void draw_on_gl_reset(possibly_unused void *user)
@@ -1061,105 +1175,76 @@ void gfx_copy_reverse_LR_with_alpha_map(Texture *dst, int dx, int dy, Texture *s
 	restore_blend_mode();
 }
 
-static void run_rgb_blur_tap(Texture *dst, Texture *src, struct copy_data *data, GLfloat weight)
+static void run_box_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy,
+		int w, int h, int blur, int blur_dx, int blur_dy, bool amap)
 {
-	data->r = data->g = data->b = weight;
-	data->a = 1.0f;
-	run_copy_shader(&blend_amap_alpha_bright_shader.s, dst, src, data);
+	if (!dst || !src || w <= 0 || h <= 0)
+		return;
+	if ((!gfx_remap_texture(dst) && !dst->handle) || (!gfx_remap_texture(src) && !src->handle))
+		return;
+
+	Texture tmp = {0};
+	Texture *blur_src = src;
+	int blur_sx = sx;
+	int blur_sy = sy;
+	if (src->handle == dst->handle) {
+		if (sx < 0 || sy < 0 ||
+				(int64_t)sx + w > src->w ||
+				(int64_t)sy + h > src->h) {
+			gfx_init_texture_rgba(&tmp, w, h, (SDL_Color){0, 0, 0, 0});
+		} else {
+			gfx_init_texture_blank(&tmp, w, h);
+		}
+		gfx_copy_with_alpha_map(&tmp, 0, 0, src, sx, sy, w, h);
+		blur_src = &tmp;
+		blur_sx = 0;
+		blur_sy = 0;
+	}
+
+	if (blur <= 0) {
+		if (amap)
+			gfx_copy_amap(dst, dx, dy, blur_src, blur_sx, blur_sy, w, h);
+		else
+			gfx_copy(dst, dx, dy, blur_src, blur_sx, blur_sy, w, h);
+		if (tmp.handle)
+			gfx_delete_texture(&tmp);
+		return;
+	}
+
+	if (amap)
+		glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_ONE, GL_ZERO);
+	else
+		glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ZERO, GL_ONE);
+
+	struct copy_data data = COPY_DATA(dx, dy, blur_sx, blur_sy, w, h);
+	data.blur_dx = blur_dx;
+	data.blur_dy = blur_dy;
+	data.blur_radius = blur;
+	run_copy_shader(&box_blur_shader.s, dst, blur_src, &data);
+
+	if (tmp.handle)
+		gfx_delete_texture(&tmp);
+	restore_blend_mode();
 }
 
 void gfx_copy_width_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur)
 {
-	GLfloat weight = 1.0f / (blur * 2 + 1);
-
-	glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ZERO, GL_ONE);
-
-	struct copy_data data = COPY_DATA(dx, dy, sx, sy, w, h);
-	run_rgb_blur_tap(dst, src, &data, weight);
-
-	glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
-
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx, dy, sx + i, sy, w - i, h);
-		run_rgb_blur_tap(dst, src, &data, weight);
-	}
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx + i, dy, sx, sy, w - i, h);
-		run_rgb_blur_tap(dst, src, &data, weight);
-	}
-
-	restore_blend_mode();
+	run_box_blur(dst, dx, dy, src, sx, sy, w, h, blur, 1, 0, false);
 }
 
 void gfx_copy_height_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur)
 {
-	GLfloat weight = 1.0f / (blur * 2 + 1);
-
-	glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ZERO, GL_ONE);
-
-	struct copy_data data = COPY_DATA(dx, dy, sx, sy, w, h);
-	run_rgb_blur_tap(dst, src, &data, weight);
-
-	glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ZERO, GL_ONE);
-
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx, dy, sx, sy + i, w, h - i);
-		run_rgb_blur_tap(dst, src, &data, weight);
-	}
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx, dy + i, sx, sy, w, h - i);
-		run_rgb_blur_tap(dst, src, &data, weight);
-	}
-
-	restore_blend_mode();
+	run_box_blur(dst, dx, dy, src, sx, sy, w, h, blur, 0, 1, false);
 }
 
 void gfx_copy_amap_width_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur)
 {
-	GLfloat f_rate = 1.0 / (blur * 2 + 1);
-	glBlendColor(f_rate, f_rate, f_rate, f_rate);
-
-	glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_CONSTANT_COLOR, GL_ZERO);
-
-	struct copy_data data = COPY_DATA(dx, dy, sx, sy, w, h);
-	run_copy_shader(&copy_shader.s, dst, src, &data);
-
-	glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_CONSTANT_COLOR, GL_ONE);
-
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx, dy, sx + i, sy, w - i, h);
-		run_copy_shader(&copy_shader.s, dst, src, &data);
-	}
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx + i, dy, sx, sy, w - i, h);
-		run_copy_shader(&copy_shader.s, dst, src, &data);
-	}
-
-	restore_blend_mode();
+	run_box_blur(dst, dx, dy, src, sx, sy, w, h, blur, 1, 0, true);
 }
 
 void gfx_copy_amap_height_blur(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h, int blur)
 {
-	GLfloat f_rate = 1.0 / (blur * 2 + 1);
-	glBlendColor(f_rate, f_rate, f_rate, f_rate);
-
-	glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_CONSTANT_COLOR, GL_ZERO);
-
-	struct copy_data data = COPY_DATA(dx, dy, sx, sy, w, h);
-	run_copy_shader(&copy_shader.s, dst, src, &data);
-
-	glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_CONSTANT_COLOR, GL_ONE);
-
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx, dy, sx, sy + i, w, h - i);
-		run_copy_shader(&copy_shader.s, dst, src, &data);
-	}
-	for (int i = 1; i <= blur; i++) {
-		struct copy_data data = COPY_DATA(dx, dy + i, sx, sy, w, h - i);
-		run_copy_shader(&copy_shader.s, dst, src, &data);
-	}
-
-	restore_blend_mode();
+	run_box_blur(dst, dx, dy, src, sx, sy, w, h, blur, 0, 1, true);
 }
 
 void gfx_copy_with_alpha_map(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h)

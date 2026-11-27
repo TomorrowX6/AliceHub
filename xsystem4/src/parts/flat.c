@@ -149,21 +149,6 @@ void parts_flat_layer_state_free(struct flat_layer_state *s)
 
 #define PARTS_FLAT_IDLE_CACHE_MAX 64
 
-struct parts_flat_asset {
-	char *name;
-	size_t name_len;
-	int ref;
-	struct flat *flat;
-	size_t nr_libraries;
-	Texture *base_textures;
-	struct flat_stop_motion_frames *stop_motion_frames;
-	int end_frame;
-	int width;
-	int height;
-	struct parts_flat_asset *prev;
-	struct parts_flat_asset *next;
-};
-
 static struct parts_flat_asset *flat_asset_head = NULL;
 static struct parts_flat_asset *flat_asset_tail = NULL;
 static int flat_asset_idle_count = 0;
@@ -181,16 +166,41 @@ static void flat_asset_unlink(struct parts_flat_asset *a)
 	a->prev = a->next = NULL;
 }
 
+static void flat_asset_destroy(struct parts_flat_asset *a);
+
 static void parts_flat_on_gl_reset(void *user)
 {
 	(void)user;
-	for (struct parts_flat_asset *a = flat_asset_head; a; a = a->next) {
-		if (!a->base_textures)
-			continue;
-		for (size_t i = 0; i < a->nr_libraries; i++) {
-			if (a->base_textures[i].handle)
-				gfx_remap_texture(&a->base_textures[i]);
+	struct parts_flat_asset *a = flat_asset_head;
+	while (a) {
+		struct parts_flat_asset *next = a->next;
+		bool any_remap_failed = false;
+		for (size_t i = 0; i < a->nr_talt_atlases; i++) {
+			if (a->talt_atlases[i].handle &&
+					(!gfx_remap_texture(&a->talt_atlases[i]) || !a->talt_atlases[i].handle)) {
+				any_remap_failed = true;
+			}
 		}
+		if (a->base_textures) {
+			for (size_t i = 0; i < a->nr_libraries; i++) {
+				if (a->base_atlas_idx && a->base_atlas_idx[i] >= 0) {
+					int aidx = a->base_atlas_idx[i];
+					if ((size_t)aidx < a->nr_talt_atlases) {
+						a->base_textures[i].handle = a->talt_atlases[aidx].handle;
+						a->base_textures[i].ctx_gen = a->talt_atlases[aidx].ctx_gen;
+					}
+				} else if (a->base_textures[i].handle &&
+						(!gfx_remap_texture(&a->base_textures[i]) || !a->base_textures[i].handle)) {
+					any_remap_failed = true;
+				}
+			}
+		}
+		if (a->ref == 0 && any_remap_failed) {
+			flat_asset_unlink(a);
+			flat_asset_idle_count--;
+			flat_asset_destroy(a);
+		}
+		a = next;
 	}
 }
 
@@ -209,15 +219,31 @@ static void flat_asset_push_front(struct parts_flat_asset *a)
 static void flat_asset_destroy(struct parts_flat_asset *a)
 {
 	if (a->base_textures) {
-		for (size_t i = 0; i < a->nr_libraries; i++)
-			gfx_delete_texture(&a->base_textures[i]);
+		for (size_t i = 0; i < a->nr_libraries; i++) {
+			if (!a->base_atlas_idx || a->base_atlas_idx[i] < 0)
+				gfx_delete_texture(&a->base_textures[i]);
+		}
 		free(a->base_textures);
+	}
+	free(a->base_rects);
+	free(a->base_atlas_idx);
+	if (a->talt_atlases) {
+		for (size_t i = 0; i < a->nr_talt_atlases; i++)
+			gfx_delete_texture(&a->talt_atlases[i]);
+		free(a->talt_atlases);
 	}
 	if (a->stop_motion_frames) {
 		for (size_t i = 0; i < a->nr_libraries; i++)
 			free(a->stop_motion_frames[i].lib_indices);
 		free(a->stop_motion_frames);
 	}
+	free(a->root_timeline_lib_idx);
+	if (a->lib_timeline_lib_idx) {
+		for (size_t i = 0; i < a->nr_libraries; i++)
+			free(a->lib_timeline_lib_idx[i]);
+		free(a->lib_timeline_lib_idx);
+	}
+	free(a->emitter_cg_lib_idx);
 	if (a->flat)
 		flat_free(a->flat);
 	free(a->name);
@@ -414,7 +440,9 @@ static bool flat_advance_children(struct flat *fl,
 			continue;
 		}
 
-		int lib_idx = parts_flat_find_library(fl, timelines[i].library_name->text);
+		int lib_idx = (key_stack && key_stack->timeline_lib_idx)
+				? key_stack->timeline_lib_idx[i]
+				: parts_flat_find_library(fl, timelines[i].library_name->text);
 		if (lib_idx < 0)
 			continue;
 		struct flat_library *lib = &fl->libraries[lib_idx];
@@ -460,10 +488,18 @@ static bool flat_advance_children(struct flat *fl,
 			key_stack->instances[d] = 0;
 			pushed = true;
 		}
+		const int *saved_tl_lib_idx = key_stack ? key_stack->timeline_lib_idx : NULL;
+		if (key_stack) {
+			key_stack->timeline_lib_idx = (key_stack->asset && key_stack->asset->lib_timeline_lib_idx
+					&& (size_t)lib_idx < key_stack->asset->nr_libraries)
+					? key_stack->asset->lib_timeline_lib_idx[lib_idx] : NULL;
+		}
 		if (flat_advance_layer(fl, state->children[i],
 				lib->timeline.timelines, lib->timeline.nr_timelines, key_stack)) {
 			changed = true;
 		}
+		if (key_stack)
+			key_stack->timeline_lib_idx = saved_tl_lib_idx;
 		if (pushed)
 			key_stack->count--;
 	}
@@ -541,18 +577,27 @@ int parts_flat_stop_motion_get_cg_lib(struct parts_flat *f, int sm_lib_idx, int 
 }
 
 // TALT stores named rectangles in shared images instead of individual LIBL CGs.
-// Materialize each rectangle as an owned texture so every renderer (including
-// stop motion and particles) can use the same library indices and dimensions.
-static void parts_flat_load_atlases(struct flat *flat, Texture *textures, size_t library_index)
+// Upload each TALT atlas once and reference its handle + UV sub-rect per library
+// entry, while preserving each entry's logical sub-rect dimensions and opacity.
+static void parts_flat_load_atlases(struct parts_flat_asset *a, size_t library_index)
 {
+	struct flat *flat = a->flat;
+	a->nr_talt_atlases = flat->nr_talt_entries;
+	if (a->nr_talt_atlases > 0)
+		a->talt_atlases = xcalloc(a->nr_talt_atlases, sizeof(Texture));
+
 	for (size_t i = 0; i < flat->nr_talt_entries; i++) {
 		struct talt_entry *entry = &flat->talt_entries[i];
+		if (entry->nr_meta == 0)
+			continue;
 		struct cg *atlas = NULL;
 		if (entry->off <= flat->data_size && entry->size >= 16
 				&& entry->size <= flat->data_size - entry->off)
 			atlas = cg_load_buffer(flat->data + entry->off, entry->size);
 		if (!atlas)
 			WARNING("flat: failed to load TALT image %zu", i);
+		else
+			gfx_init_texture_with_cg(&a->talt_atlases[i], atlas);
 		for (size_t j = 0; j < entry->nr_meta; j++, library_index++) {
 			struct talt_metadata *meta = &entry->metadata[j];
 			struct flat_library *lib = &flat->libraries[library_index];
@@ -566,7 +611,7 @@ static void parts_flat_load_atlases(struct flat *flat, Texture *textures, size_t
 			free_string(lib->name);
 			lib->name = make_string((char *)flat->data + meta->unknown1_off, meta->unknown1_size);
 			if (flat->elna.present) {
-				for (size_t k = 0; k < lib->name->size; k++)
+				for (size_t k = 0; k < (size_t)lib->name->size; k++)
 					lib->name->text[k] ^= 0x55;
 			}
 			if (!atlas)
@@ -578,17 +623,133 @@ static void parts_flat_load_atlases(struct flat *flat, Texture *textures, size_t
 				WARNING("flat: invalid TALT rectangle for '%s'", display_sjis0(lib->name->text));
 				continue;
 			}
-			uint8_t *pixels = xmalloc((size_t)w * h * 4);
-			for (uint32_t row = 0; row < h; row++) {
-				const uint8_t *source = (uint8_t *)atlas->pixels
-						+ ((size_t)(y + row) * atlas->metrics.w + x) * 4;
-				memcpy(pixels + (size_t)row * w * 4, source, (size_t)w * 4);
+			bool sub_opaque = !atlas->metrics.has_alpha;
+			if (!sub_opaque && atlas->pixels
+					&& (int)w >= config.view_width && (int)h >= config.view_height) {
+				sub_opaque = true;
+				for (uint32_t row = 0; row < h && sub_opaque; row++) {
+					const uint8_t *src_row = (const uint8_t *)atlas->pixels
+							+ ((size_t)(y + row) * atlas->metrics.w + x) * 4;
+					for (uint32_t col = 0; col < w; col++) {
+						if (src_row[col * 4 + 3] != 255) {
+							sub_opaque = false;
+							break;
+						}
+					}
+				}
 			}
-			gfx_init_texture_with_pixels(&textures[library_index], w, h, pixels);
-			free(pixels);
+			a->base_textures[library_index] = (Texture){
+				.handle = a->talt_atlases[i].handle,
+				.w = (int)w,
+				.h = (int)h,
+				.opaque = sub_opaque,
+				.ctx_gen = a->talt_atlases[i].ctx_gen,
+			};
+			a->base_rects[library_index] = (Rectangle){ (int)x, (int)y, (int)w, (int)h };
+			a->base_atlas_idx[library_index] = (int)i;
 		}
 		cg_free(atlas);
 	}
+}
+
+static uint32_t flat_str_hash(const char *text, size_t len)
+{
+	uint32_t h = 2166136261u;
+	for (size_t i = 0; i < len; i++) {
+		h ^= (uint8_t)text[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
+static int flat_lib_hash_find(const struct flat *fl, const int *buckets, size_t mask,
+		const struct string *name)
+{
+	if (!name || !buckets)
+		return -1;
+	size_t len = (size_t)name->size;
+	size_t slot = flat_str_hash(name->text, len) & mask;
+	for (;;) {
+		int idx = buckets[slot];
+		if (idx < 0)
+			return -1;
+		const struct string *cand = fl->libraries[idx].name;
+		if (cand && (size_t)cand->size == len && memcmp(cand->text, name->text, len) == 0)
+			return idx;
+		slot = (slot + 1) & mask;
+	}
+}
+
+static int *flat_resolve_timeline_array(const struct flat *fl,
+		const struct flat_timeline *timelines, size_t nr_timelines,
+		const int *buckets, size_t mask)
+{
+	if (nr_timelines == 0)
+		return NULL;
+	int *out = xmalloc(nr_timelines * sizeof(int));
+	for (size_t i = 0; i < nr_timelines; i++) {
+		if (timelines[i].type == FLAT_TIMELINE_GRAPHIC && timelines[i].library_name)
+			out[i] = flat_lib_hash_find(fl, buckets, mask, timelines[i].library_name);
+		else
+			out[i] = -1;
+	}
+	return out;
+}
+
+static void flat_build_lib_index_cache(struct parts_flat_asset *a)
+{
+	struct flat *fl = a->flat;
+	int *buckets = NULL;
+	size_t mask = 0;
+	if (fl->nr_libraries > 0) {
+		size_t cap = 16;
+		while (cap < fl->nr_libraries * 2)
+			cap <<= 1;
+		mask = cap - 1;
+		buckets = xmalloc(cap * sizeof(int));
+		for (size_t i = 0; i < cap; i++)
+			buckets[i] = -1;
+		for (size_t i = 0; i < fl->nr_libraries; i++) {
+			const struct string *name = fl->libraries[i].name;
+			if (!name)
+				continue;
+			size_t len = (size_t)name->size;
+			size_t slot = flat_str_hash(name->text, len) & mask;
+			for (;;) {
+				int existing = buckets[slot];
+				if (existing < 0) {
+					buckets[slot] = (int)i;
+					break;
+				}
+				const struct string *cand = fl->libraries[existing].name;
+				if (cand && (size_t)cand->size == len
+						&& memcmp(cand->text, name->text, len) == 0)
+					break; // preserve first-match semantics of parts_flat_find_library
+				slot = (slot + 1) & mask;
+			}
+		}
+	}
+
+	a->root_timeline_lib_idx = flat_resolve_timeline_array(
+			fl, fl->timelines, fl->nr_timelines, buckets, mask);
+	if (a->nr_libraries > 0) {
+		a->lib_timeline_lib_idx = xcalloc(a->nr_libraries, sizeof(int *));
+		a->emitter_cg_lib_idx = xmalloc(a->nr_libraries * sizeof(int));
+		for (size_t i = 0; i < a->nr_libraries; i++) {
+			a->emitter_cg_lib_idx[i] = -1;
+			if (fl->libraries[i].type == FLAT_LIB_TIMELINE) {
+				a->lib_timeline_lib_idx[i] = flat_resolve_timeline_array(
+						fl,
+						fl->libraries[i].timeline.timelines,
+						fl->libraries[i].timeline.nr_timelines,
+						buckets, mask);
+			} else if (fl->libraries[i].type == FLAT_LIB_EMITTER) {
+				a->emitter_cg_lib_idx[i] = flat_lib_hash_find(
+						fl, buckets, mask, fl->libraries[i].emitter.library_name);
+			}
+		}
+	}
+	free(buckets);
 }
 
 static struct parts_flat_asset *flat_asset_load(struct string *filename)
@@ -625,6 +786,10 @@ static struct parts_flat_asset *flat_asset_load(struct string *filename)
 	}
 
 	a->base_textures = xcalloc(a->nr_libraries, sizeof(Texture));
+	a->base_rects = xcalloc(a->nr_libraries, sizeof(Rectangle));
+	a->base_atlas_idx = xmalloc(a->nr_libraries * sizeof(int));
+	for (size_t i = 0; i < a->nr_libraries; i++)
+		a->base_atlas_idx[i] = -1;
 	a->stop_motion_frames = xcalloc(a->nr_libraries, sizeof(struct flat_stop_motion_frames));
 	for (size_t i = 0; i < nr_libl; i++) {
 		struct flat_library *lib = &fl->libraries[i];
@@ -636,12 +801,14 @@ static struct parts_flat_asset *flat_asset_load(struct string *filename)
 			continue;
 		}
 		gfx_init_texture_with_cg(&a->base_textures[i], cg);
+		a->base_rects[i] = (Rectangle){ 0, 0, a->base_textures[i].w, a->base_textures[i].h };
 		cg_free(cg);
 		// Clear pointer into dfile->data before archive_free_data(dfile).
 		lib->cg.data = NULL;
 		lib->cg.size = 0;
 	}
-	parts_flat_load_atlases(fl, a->base_textures, nr_libl);
+	parts_flat_load_atlases(a, nr_libl);
+	flat_build_lib_index_cache(a);
 	for (size_t i = 0; i < fl->nr_libraries; i++) {
 		if (fl->libraries[i].type == FLAT_LIB_STOP_MOTION)
 			build_stop_motion_frames(fl, a->stop_motion_frames, (int)i);
@@ -726,7 +893,26 @@ void parts_flat_recover_widget_skin(struct parts_flat *f, bool suspended)
 		if (index < 0 || (size_t)index >= f->asset->nr_libraries)
 			continue;
 		Texture *base = &f->asset->base_textures[index];
-		if (!gfx_remap_texture(base)) {
+		int aidx = f->asset->base_atlas_idx ? f->asset->base_atlas_idx[index] : -1;
+		if (aidx >= 0 && (size_t)aidx < f->asset->nr_talt_atlases) {
+			Texture *atlas = &f->asset->talt_atlases[aidx];
+			if (!gfx_remap_texture(atlas)) {
+				if (!tried_load) {
+					source = flat_asset_load(f->name);
+					tried_load = true;
+				}
+				if (source && (size_t)aidx < source->nr_talt_atlases) {
+					*atlas = source->talt_atlases[aidx];
+					source->talt_atlases[aidx].handle = 0;
+				}
+			}
+			for (size_t k = 0; k < f->asset->nr_libraries; k++) {
+				if (f->asset->base_atlas_idx[k] == aidx) {
+					f->asset->base_textures[k].handle = atlas->handle;
+					f->asset->base_textures[k].ctx_gen = atlas->ctx_gen;
+				}
+			}
+		} else if (!gfx_remap_texture(base)) {
 			if (!tried_load) {
 				source = flat_asset_load(f->name);
 				tried_load = true;
@@ -789,7 +975,10 @@ bool parts_flat_update(struct parts_flat *f, int passed_time)
 	// Consume pending forward seek (from GoFramePartsFlat).
 	if (f->pending_seek_delta > 0) {
 		for (int i = 0; i < f->pending_seek_delta; i++) {
-			struct flat_key_stack key_stack = {0};
+			struct flat_key_stack key_stack = {
+				.asset = f->asset,
+				.timeline_lib_idx = f->asset ? f->asset->root_timeline_lib_idx : NULL,
+			};
 			flat_advance_layer(f->flat, f->root_state,
 					f->flat->timelines, f->flat->nr_timelines, &key_stack);
 		}
@@ -801,7 +990,10 @@ bool parts_flat_update(struct parts_flat *f, int passed_time)
 	// One advance after load / seek.
 	if (f->needs_advance) {
 		f->needs_advance = false;
-		struct flat_key_stack key_stack = {0};
+		struct flat_key_stack key_stack = {
+			.asset = f->asset,
+			.timeline_lib_idx = f->asset ? f->asset->root_timeline_lib_idx : NULL,
+		};
 		bool changed = flat_advance_layer(f->flat, f->root_state,
 				f->flat->timelines, f->flat->nr_timelines, &key_stack);
 		f->elapsed = 0;
@@ -821,7 +1013,10 @@ bool parts_flat_update(struct parts_flat *f, int passed_time)
 
 	bool any_changed = false;
 	for (int i = 0; i < delta; i++) {
-		struct flat_key_stack key_stack = {0};
+		struct flat_key_stack key_stack = {
+			.asset = f->asset,
+			.timeline_lib_idx = f->asset ? f->asset->root_timeline_lib_idx : NULL,
+		};
 		if (flat_advance_layer(f->flat, f->root_state,
 				f->flat->timelines, f->flat->nr_timelines, &key_stack))
 			any_changed = true;
@@ -880,6 +1075,7 @@ void parts_flat_build_layer_matrix(const struct flat_key_data_graphic *key,
 static bool flat_layer_hittest(struct parts_flat *f,
 		struct flat_layer_state *state,
 		struct flat_timeline *timelines, size_t nr_timelines,
+		const int *timeline_lib_idx,
 		mat4 parent_m, float fx, float fy, int depth)
 {
 	if (depth >= FLAT_MAX_ANCESTOR_DEPTH)
@@ -895,7 +1091,9 @@ static bool flat_layer_hittest(struct parts_flat *f,
 		if (local < 0 || local >= tl->frame_count)
 			continue;
 
-		int lib_idx = parts_flat_find_library(f->flat, tl->library_name->text);
+		int lib_idx = timeline_lib_idx
+				? timeline_lib_idx[i]
+				: parts_flat_find_library(f->flat, tl->library_name->text);
 		if (lib_idx < 0 || (size_t)lib_idx >= f->flat->nr_libraries)
 			continue;
 		struct flat_library *lib = &f->flat->libraries[lib_idx];
@@ -917,9 +1115,12 @@ static bool flat_layer_hittest(struct parts_flat *f,
 			if (lib->type == FLAT_LIB_TIMELINE) {
 				struct flat_layer_state *child = (state && i < state->nr_timelines)
 						? state->children[i] : NULL;
+				const int *child_lib_idx = (f->asset && f->asset->lib_timeline_lib_idx
+						&& (size_t)lib_idx < f->asset->nr_libraries)
+						? f->asset->lib_timeline_lib_idx[lib_idx] : NULL;
 				if (flat_layer_hittest(f, child,
 						lib->timeline.timelines, lib->timeline.nr_timelines,
-						m, fx, fy, depth + 1))
+						child_lib_idx, m, fx, fy, depth + 1))
 					return true;
 				continue;
 			}
@@ -973,6 +1174,7 @@ bool parts_flat_hittest(struct parts_flat *f, float x, float y)
 	glm_mat4_identity(root);
 	return flat_layer_hittest(f, f->root_state,
 			f->flat->timelines, f->flat->nr_timelines,
+			f->asset ? f->asset->root_timeline_lib_idx : NULL,
 			root, fx, fy, 0);
 }
 
@@ -1227,48 +1429,63 @@ static void eval_quadratic_bezier_arclen(vec2 p0, vec2 p1, vec2 p2, int step_idx
 		glm_vec2_zero(out);
 		return;
 	}
-	vec2 pts[1024];
-	const float inv_1024 = 1.0f / 1024.0f;
-	for (int k = 0; k < 1024; k++) {
-		float s = (float)k * inv_1024;
-		float om = 1.0f - s;
-		float b0 = om * om;
-		float b1 = 2.0f * s * om;
-		float b2 = s * s;
-		pts[k][0] = b0 * p0[0] + b1 * p1[0] + b2 * p2[0];
-		pts[k][1] = b0 * p0[1] + b1 * p1[1] + b2 * p2[1];
+	if (step_idx <= 0) {
+		glm_vec2_copy(p0, out);
+		return;
 	}
 
-	float seg_lens[1023];
+	// 64-segment forward-differenced cumulative arc-length table over the
+	// same [0, 1023/1024] parameter domain as the 1024-step reference.
+	enum { BEZIER_ARCLEN_STEPS = 64 };
+	const float s_max = 1023.0f / 1024.0f;
+	const float h = s_max / (float)BEZIER_ARCLEN_STEPS;
+	float ax = p1[0] - p0[0], ay = p1[1] - p0[1];
+	float cx = p0[0] - 2.0f * p1[0] + p2[0];
+	float cy = p0[1] - 2.0f * p1[1] + p2[1];
+	float dx = 2.0f * h * ax + h * h * cx;
+	float dy = 2.0f * h * ay + h * h * cy;
+	float ddx = 2.0f * h * h * cx;
+	float ddy = 2.0f * h * h * cy;
+
+	float cum_len[BEZIER_ARCLEN_STEPS + 1];
+	cum_len[0] = 0.0f;
 	float total_len = 0.0f;
-	for (int k = 0; k < 1023; k++) {
-		float dx = pts[k + 1][0] - pts[k][0];
-		float dy = pts[k + 1][1] - pts[k][1];
-		seg_lens[k] = sqrtf(dx * dx + dy * dy);
-		total_len += seg_lens[k];
+	for (int k = 0; k < BEZIER_ARCLEN_STEPS; k++) {
+		total_len += sqrtf(dx * dx + dy * dy);
+		cum_len[k + 1] = total_len;
+		dx += ddx;
+		dy += ddy;
 	}
 
-	float unit_len = total_len * inv_1024;
-	float target_len = (float)step_idx * unit_len;
-	float accum = 0.0f;
-	for (int k = 0; k < 1023; k++) {
-		accum += seg_lens[k];
-		if (target_len == accum) {
-			glm_vec2_copy(pts[k + 1], out);
-			return;
-		}
-		if (accum > target_len) {
-			if (k == 1022 || unit_len == 0.0f || (pts[k][0] == 0.0f && pts[k][1] == 0.0f)) {
-				glm_vec2_copy(pts[k + 1], out);
-			} else {
-				float frac = (target_len - accum) / unit_len;
-				out[0] = pts[k + 1][0] + (pts[k][0] - pts[k + 1][0]) * frac;
-				out[1] = pts[k + 1][1] + (pts[k][1] - pts[k + 1][1]) * frac;
-			}
-			return;
-		}
+	if (total_len == 0.0f) {
+		glm_vec2_copy(p0, out);
+		return;
 	}
-	glm_vec2_zero(out);
+
+	float s;
+	if (step_idx == 1024) {
+		s = s_max;
+	} else {
+		float target_len = total_len * ((float)step_idx * (1.0f / 1024.0f));
+		int lo = 0, hi = BEZIER_ARCLEN_STEPS;
+		while (lo + 1 < hi) {
+			int mid = (lo + hi) >> 1;
+			if (cum_len[mid] < target_len)
+				lo = mid;
+			else
+				hi = mid;
+		}
+		float seg_len = cum_len[lo + 1] - cum_len[lo];
+		float frac = seg_len > 0.0f ? (target_len - cum_len[lo]) / seg_len : 0.0f;
+		s = ((float)lo + frac) * h;
+	}
+
+	float om = 1.0f - s;
+	float b0 = om * om;
+	float b1 = 2.0f * s * om;
+	float b2 = s * s;
+	out[0] = b0 * p0[0] + b1 * p1[0] + b2 * p2[0];
+	out[1] = b0 * p0[1] + b1 * p1[1] + b2 * p2[1];
 }
 
 static void emitter_calc_trajectory(int age, struct flat_emitter *em,
@@ -1367,7 +1584,10 @@ bool parts_flat_emitter_get_align_offset(struct parts_flat *f, int emitter_lib_i
 	if (f->flat->hdr.fps <= 0)
 		return false;
 
-	int cg_lib_idx = parts_flat_find_library(f->flat, em->library_name->text);
+	int cg_lib_idx = (f->asset && f->asset->emitter_cg_lib_idx
+			&& emitter_lib_idx >= 0 && (size_t)emitter_lib_idx < f->asset->nr_libraries)
+			? f->asset->emitter_cg_lib_idx[emitter_lib_idx]
+			: parts_flat_find_library(f->flat, em->library_name->text);
 	if (cg_lib_idx < 0 || (size_t)cg_lib_idx >= f->flat->nr_libraries)
 		return false;
 	if (f->flat->libraries[cg_lib_idx].type == FLAT_LIB_STOP_MOTION) {
@@ -1412,7 +1632,10 @@ void parts_flat_foreach_emitter_particle(struct parts_flat *f, int emitter_lib_i
 		return;
 
 	// Resolve the particle CG.
-	int lib_idx = parts_flat_find_library(fl, em->library_name->text);
+	int lib_idx = (f->asset && f->asset->emitter_cg_lib_idx
+			&& emitter_lib_idx >= 0 && (size_t)emitter_lib_idx < f->asset->nr_libraries)
+			? f->asset->emitter_cg_lib_idx[emitter_lib_idx]
+			: parts_flat_find_library(fl, em->library_name->text);
 	if (lib_idx < 0)
 		return;
 	if (fl->libraries[lib_idx].type == FLAT_LIB_STOP_MOTION) {
@@ -1974,10 +2197,12 @@ void PE_ClearChangeFlatSound(int parts_no, int state)
 	(void)state;
 }
 
-static void flat_set_enable_layer_recursive(struct flat *fl, struct flat_layer_state *s,
+static void flat_set_enable_layer_recursive(struct parts_flat *f, struct flat_layer_state *s,
 		struct flat_timeline *timelines, size_t nr_timelines,
+		const int *timeline_lib_idx,
 		const char *name, bool enable, int depth)
 {
+	struct flat *fl = f ? f->flat : NULL;
 	if (!fl || !s || !timelines || depth > FLAT_MAX_ANCESTOR_DEPTH)
 		return;
 	size_t n = min(s->nr_timelines, nr_timelines);
@@ -1986,12 +2211,17 @@ static void flat_set_enable_layer_recursive(struct flat *fl, struct flat_layer_s
 			s->disabled_timelines[i] = !enable;
 		if (timelines[i].type == FLAT_TIMELINE_GRAPHIC && s->children && s->children[i]
 				&& timelines[i].library_name) {
-			int lib_idx = parts_flat_find_library(fl, timelines[i].library_name->text);
+			int lib_idx = timeline_lib_idx
+					? timeline_lib_idx[i]
+					: parts_flat_find_library(fl, timelines[i].library_name->text);
 			if (lib_idx >= 0 && fl->libraries[lib_idx].type == FLAT_LIB_TIMELINE) {
-				flat_set_enable_layer_recursive(fl, s->children[i],
+				const int *child_lib_idx = (f->asset && f->asset->lib_timeline_lib_idx
+						&& (size_t)lib_idx < f->asset->nr_libraries)
+						? f->asset->lib_timeline_lib_idx[lib_idx] : NULL;
+				flat_set_enable_layer_recursive(f, s->children[i],
 						fl->libraries[lib_idx].timeline.timelines,
 						fl->libraries[lib_idx].timeline.nr_timelines,
-						name, enable, depth + 1);
+						child_lib_idx, name, enable, depth + 1);
 			}
 		}
 	}
@@ -2007,15 +2237,19 @@ void PE_SetFlatEnableLayer(int parts_no, struct string *name, bool enable, int s
 	struct parts_flat *f = &parts->states[state].flat;
 	if (!f->flat || !f->root_state)
 		return;
-	flat_set_enable_layer_recursive(f->flat, f->root_state, f->flat->timelines,
-			f->flat->nr_timelines, name->text, enable, 0);
+	flat_set_enable_layer_recursive(f, f->root_state, f->flat->timelines,
+			f->flat->nr_timelines,
+			f->asset ? f->asset->root_timeline_lib_idx : NULL,
+			name->text, enable, 0);
 	parts_dirty(parts);
 }
 
-static bool flat_is_enable_layer_recursive(struct flat *fl, struct flat_layer_state *s,
+static bool flat_is_enable_layer_recursive(struct parts_flat *f, struct flat_layer_state *s,
 		struct flat_timeline *timelines, size_t nr_timelines,
+		const int *timeline_lib_idx,
 		const char *name, bool *found, int depth)
 {
+	struct flat *fl = f ? f->flat : NULL;
 	if (!fl || !s || !timelines || depth > FLAT_MAX_ANCESTOR_DEPTH)
 		return true;
 	size_t n = min(s->nr_timelines, nr_timelines);
@@ -2026,12 +2260,17 @@ static bool flat_is_enable_layer_recursive(struct flat *fl, struct flat_layer_st
 		}
 		if (timelines[i].type == FLAT_TIMELINE_GRAPHIC && s->children && s->children[i]
 				&& timelines[i].library_name) {
-			int lib_idx = parts_flat_find_library(fl, timelines[i].library_name->text);
+			int lib_idx = timeline_lib_idx
+					? timeline_lib_idx[i]
+					: parts_flat_find_library(fl, timelines[i].library_name->text);
 			if (lib_idx >= 0 && fl->libraries[lib_idx].type == FLAT_LIB_TIMELINE) {
-				bool res = flat_is_enable_layer_recursive(fl, s->children[i],
+				const int *child_lib_idx = (f->asset && f->asset->lib_timeline_lib_idx
+						&& (size_t)lib_idx < f->asset->nr_libraries)
+						? f->asset->lib_timeline_lib_idx[lib_idx] : NULL;
+				bool res = flat_is_enable_layer_recursive(f, s->children[i],
 						fl->libraries[lib_idx].timeline.timelines,
 						fl->libraries[lib_idx].timeline.nr_timelines,
-						name, found, depth + 1);
+						child_lib_idx, name, found, depth + 1);
 				if (*found)
 					return res;
 			}
@@ -2051,8 +2290,10 @@ bool PE_IsFlatEnableLayer(int parts_no, struct string *name, int state)
 	if (!f->flat || !f->root_state)
 		return false;
 	bool found = false;
-	return flat_is_enable_layer_recursive(f->flat, f->root_state, f->flat->timelines,
-			f->flat->nr_timelines, name->text, &found, 0);
+	return flat_is_enable_layer_recursive(f, f->root_state, f->flat->timelines,
+			f->flat->nr_timelines,
+			f->asset ? f->asset->root_timeline_lib_idx : NULL,
+			name->text, &found, 0);
 }
 
 int PE_GetFlatGameViewWidth(int parts_no, int state)

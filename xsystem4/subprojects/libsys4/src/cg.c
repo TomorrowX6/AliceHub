@@ -46,6 +46,16 @@ void cg_set_base_loader_by_id(cg_base_loader_by_id_fn fn)
 	cg_base_loader_by_id = fn;
 }
 
+bool cg_has_base_loader_by_name(void)
+{
+	return cg_base_loader_by_name != NULL;
+}
+
+bool cg_has_base_loader_by_id(void)
+{
+	return cg_base_loader_by_id != NULL;
+}
+
 struct cg *cg_load_base_by_name(const char *name)
 {
 	return (cg_base_loader_by_name && name) ? cg_base_loader_by_name(name) : NULL;

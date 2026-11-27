@@ -56,6 +56,12 @@ static void suspend_state(struct parts_state *state)
 {
 	switch (state->type) {
 	case PARTS_CG:
+		if (state->cg.cg_asset) {
+			parts_cg_suspend(&state->cg);
+			break;
+		}
+		suspend_texture(state, &state->common.texture);
+		break;
 	case PARTS_NUMERAL:
 	case PARTS_CONSTRUCTION_PROCESS:
 		suspend_texture(state, &state->common.texture);
@@ -109,6 +115,10 @@ void parts_state_resume_textures(struct parts_state *state)
 		}
 		free(b->data);
 		free(b);
+	}
+	if (state->type == PARTS_CG && !state->cg.cg_asset && !state->common.texture.handle
+			&& (state->cg.name || state->cg.no > 0)) {
+		parts_cg_resume(&state->cg);
 	}
 	if (state->type == PARTS_ANIMATION && state->anim.nr_frames)
 		state->common.texture = state->anim.frames[state->anim.current_frame];

@@ -18,6 +18,9 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <pthread.h>
+#endif
 #include <turbojpeg.h>
 #include <webp/decode.h>
 #include "little_endian.h"
@@ -90,71 +93,173 @@ bool ajp_get_metrics(const uint8_t *data, size_t size, struct cg_metrics *dst)
 	return true;
 }
 
-static uint8_t *read_mask(uint8_t *pixels, uint8_t *mask_data, struct ajp_header *ajp)
+#ifndef _WIN32
+#define AJP_TLS_SCRATCH_MAX (512u * 1024u)
+
+struct ajp_tls {
+	tjhandle tj;
+	uint8_t *scratch;
+	size_t scratch_cap;
+};
+
+static pthread_key_t ajp_tls_key;
+static pthread_once_t ajp_tls_once = PTHREAD_ONCE_INIT;
+static bool ajp_tls_key_ready = false;
+
+static void ajp_tls_destructor(void *ptr)
 {
-	(void)pixels;
-	if (ajp->mask_size == 0)
+	struct ajp_tls *tls = (struct ajp_tls *)ptr;
+	if (!tls)
+		return;
+	if (tls->tj)
+		tjDestroy(tls->tj);
+	free(tls->scratch);
+	free(tls);
+}
+
+static void ajp_tls_key_init(void)
+{
+	if (pthread_key_create(&ajp_tls_key, ajp_tls_destructor) == 0)
+		ajp_tls_key_ready = true;
+}
+
+static struct ajp_tls *ajp_get_tls(void)
+{
+	pthread_once(&ajp_tls_once, ajp_tls_key_init);
+	if (!ajp_tls_key_ready)
 		return NULL;
+	struct ajp_tls *tls = (struct ajp_tls *)pthread_getspecific(ajp_tls_key);
+	if (!tls) {
+		tls = calloc(1, sizeof(*tls));
+		if (!tls)
+			return NULL;
+		if (pthread_setspecific(ajp_tls_key, tls) != 0) {
+			free(tls);
+			return NULL;
+		}
+	}
+	return tls;
+}
+
+static tjhandle ajp_acquire_decompressor(struct ajp_tls *tls, bool *owned_out)
+{
+	if (tls) {
+		if (!tls->tj)
+			tls->tj = tjInitDecompress();
+		*owned_out = false;
+		return tls->tj;
+	}
+	*owned_out = true;
+	return tjInitDecompress();
+}
+
+static void ajp_reset_decompressor(struct ajp_tls *tls, tjhandle h, bool owned)
+{
+	if (!h)
+		return;
+	if (!owned && tls && tls->tj == h)
+		tls->tj = NULL;
+	tjDestroy(h);
+}
+
+static uint8_t *ajp_acquire_scratch(struct ajp_tls *tls, size_t size, bool *heap_out)
+{
+	if (tls && size <= AJP_TLS_SCRATCH_MAX) {
+		if (size > tls->scratch_cap) {
+			uint8_t *grown = realloc(tls->scratch, size);
+			if (!grown) {
+				*heap_out = true;
+				return xmalloc(size);
+			}
+			tls->scratch = grown;
+			tls->scratch_cap = size;
+		}
+		*heap_out = false;
+		return tls->scratch;
+	}
+	*heap_out = true;
+	return xmalloc(size);
+}
+#else
+struct ajp_tls {
+	int unused;
+};
+
+static struct ajp_tls *ajp_get_tls(void)
+{
+	return NULL;
+}
+
+static tjhandle ajp_acquire_decompressor(struct ajp_tls *tls, bool *owned_out)
+{
+	(void)tls;
+	*owned_out = true;
+	return tjInitDecompress();
+}
+
+static void ajp_reset_decompressor(struct ajp_tls *tls, tjhandle h, bool owned)
+{
+	(void)tls;
+	(void)owned;
+	if (h)
+		tjDestroy(h);
+}
+
+static uint8_t *ajp_acquire_scratch(struct ajp_tls *tls, size_t size, bool *heap_out)
+{
+	(void)tls;
+	*heap_out = true;
+	return xmalloc(size);
+}
+#endif
+
+static void apply_mask(uint8_t *rgba, const uint8_t *mask_data, const struct ajp_header *ajp)
+{
+	if (ajp->mask_size == 0)
+		return;
+	size_t npix = (size_t)ajp->width * (size_t)ajp->height;
 	if (ajp->mask_size >= 4 && pms8_checkfmt(mask_data)) {
-		return pms_extract_mask(mask_data, ajp->mask_size);
+		uint8_t *mask = pms_extract_mask(mask_data, ajp->mask_size);
+		if (!mask)
+			return;
+		for (size_t i = 0; i < npix; i++) {
+			rgba[i * 4 + 3] = mask[i];
+		}
+		free(mask);
 	} else if (ajp->mask_size >= 12 && webp_checkfmt(mask_data)) {
 		int w = 0, h = 0;
 		uint8_t *tmp = WebPDecodeRGBA(mask_data, ajp->mask_size, &w, &h);
 		if (!tmp || w <= 0 || h <= 0 || (uint32_t)w != ajp->width || (uint32_t)h != ajp->height) {
 			WARNING("Unexpected AJP mask size");
 			WebPFree(tmp);
-			return NULL;
+			return;
 		}
-		// discard pixel data
-		size_t npix = (size_t)ajp->width * (size_t)ajp->height;
-		uint8_t *mask = xmalloc(npix);
 		for (size_t i = 0; i < npix; i++) {
-			mask[i] = tmp[i*4+3];
+			rgba[i * 4 + 3] = tmp[i * 4 + 3];
 		}
 		WebPFree(tmp);
-		return mask;
 	} else if (mask_data[0] == 0x78) {
 		// compressed
-		size_t uncompressed_size = (size_t)ajp->width * (size_t)ajp->height;
-		uint8_t *mask = xmalloc(uncompressed_size);
-		if (!zlib_decompress_exact(mask, uncompressed_size, mask_data, ajp->mask_size)) {
+		uint8_t *mask = xmalloc(npix);
+		if (!zlib_decompress_exact(mask, npix, mask_data, ajp->mask_size)) {
 			WARNING("uncompress failed");
 			free(mask);
-			return NULL;
+			return;
 		}
-		return mask;
+		for (size_t i = 0; i < npix; i++) {
+			rgba[i * 4 + 3] = mask[i];
+		}
+		free(mask);
 	} else if (ajp->mask_size >= 4) {
 		WARNING("Unsupported AJP mask format: %02x %02x %02x %02x",
 				mask_data[0], mask_data[1], mask_data[2], mask_data[3]);
 	}
-
-	return NULL;
-}
-
-static uint8_t *load_mask(uint8_t *pixels, uint8_t *mask_data, struct ajp_header *ajp)
-{
-	size_t npix = (size_t)ajp->width * (size_t)ajp->height;
-	uint8_t *mask = read_mask(pixels, mask_data, ajp);
-	if (!mask) {
-		mask = xmalloc(npix);
-		memset(mask, 0xFF, npix);
-	}
-
-	uint8_t *out = xmalloc(npix * 4);
-	for (size_t i = 0; i < npix; i++) {
-		out[i*4+0] = pixels[i*3+0];
-		out[i*4+1] = pixels[i*3+1];
-		out[i*4+2] = pixels[i*3+2];
-		out[i*4+3] = mask[i];
-	}
-	free(pixels);
-	free(mask);
-	return out;
 }
 
 void ajp_extract(const uint8_t *data, size_t size, struct cg *cg)
 {
 	uint8_t *buf = NULL, *jpeg_data = NULL, *mask_data = NULL;
+	bool jpeg_heap = false, tj_owned = false;
 	int width = 0, height = 0, subsamp = 0;
 	struct ajp_header ajp;
 	if (!data || size < 36 || !ajp_checkfmt(data))
@@ -176,42 +281,59 @@ void ajp_extract(const uint8_t *data, size_t size, struct cg *cg)
 
 	ajp_init_metrics(&ajp, &cg->metrics);
 
-	jpeg_data = xmalloc(ajp.jpeg_size);
-	mask_data = xmalloc(ajp.mask_size ? ajp.mask_size : 1);
-	memcpy(jpeg_data, data + ajp.jpeg_off, ajp.jpeg_size);
-	if (ajp.mask_size > 0)
-		memcpy(mask_data, data + ajp.mask_off, ajp.mask_size);
-	ajp_decrypt(jpeg_data, ajp.jpeg_size);
-	ajp_decrypt(mask_data, ajp.mask_size);
-
-	tjhandle decompressor = tjInitDecompress();
-	if (!decompressor) {
-		free(jpeg_data);
-		free(mask_data);
+	struct ajp_tls *tls = ajp_get_tls();
+	tjhandle decompressor = ajp_acquire_decompressor(tls, &tj_owned);
+	if (!decompressor)
 		return;
-	}
-	if (tjDecompressHeader2(decompressor, jpeg_data, ajp.jpeg_size, &width, &height, &subsamp) < 0 ||
+
+	jpeg_data = ajp_acquire_scratch(tls, ajp.jpeg_size, &jpeg_heap);
+	memcpy(jpeg_data, data + ajp.jpeg_off, ajp.jpeg_size);
+	ajp_decrypt(jpeg_data, ajp.jpeg_size);
+
+	int hdr_rc = tjDecompressHeader2(decompressor, jpeg_data, ajp.jpeg_size, &width, &height, &subsamp);
+	if (hdr_rc < 0 ||
 	    width <= 0 || height <= 0 || width > 32768 || height > 32768 ||
 	    (uint32_t)width != ajp.width || (uint32_t)height != ajp.height) {
 		WARNING("AJP JPEG header invalid or dimension mismatch (%dx%d vs. %ux%u)",
 			width, height, ajp.width, ajp.height);
+		if (hdr_rc < 0) {
+			ajp_reset_decompressor(tls, decompressor, tj_owned);
+			decompressor = NULL;
+		}
 		goto cleanup;
 	}
 
-	buf = xmalloc((size_t)width * (size_t)height * 3);
-	if (tjDecompress2(decompressor, jpeg_data, ajp.jpeg_size, buf, width, 0, height, TJPF_RGB, TJFLAG_FASTDCT) < 0) {
-		WARNING("JPEG decompression failed: %s", tjGetErrorStr());
+	buf = xmalloc((size_t)width * (size_t)height * 4);
+	if (tjDecompress2(decompressor, jpeg_data, ajp.jpeg_size, buf, width, 0, height, TJPF_RGBA, TJFLAG_FASTDCT) < 0) {
+		WARNING("JPEG decompression failed: %s", tjGetErrorStr2(decompressor));
 		free(buf);
+		ajp_reset_decompressor(tls, decompressor, tj_owned);
+		decompressor = NULL;
 		goto cleanup;
 	}
 
-	buf = load_mask(buf, mask_data, &ajp);
+	if (jpeg_heap) {
+		free(jpeg_data);
+		jpeg_data = NULL;
+		jpeg_heap = false;
+	}
+
+	if (ajp.mask_size > 0) {
+		bool mask_heap = false;
+		mask_data = ajp_acquire_scratch(tls, ajp.mask_size, &mask_heap);
+		memcpy(mask_data, data + ajp.mask_off, ajp.mask_size);
+		ajp_decrypt(mask_data, ajp.mask_size);
+		apply_mask(buf, mask_data, &ajp);
+		if (mask_heap)
+			free(mask_data);
+	}
 
 	cg->type = ALCG_AJP;
 	cg->pixels = buf;
 
 cleanup:
-	free(jpeg_data);
-	free(mask_data);
-	tjDestroy(decompressor);
+	if (jpeg_heap)
+		free(jpeg_data);
+	if (tj_owned && decompressor)
+		tjDestroy(decompressor);
 }

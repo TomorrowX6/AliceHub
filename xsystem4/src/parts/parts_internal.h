@@ -137,10 +137,15 @@ struct parts_common {
 	int alpha_w, alpha_h;
 };
 
+struct parts_cg_asset;
+
 struct parts_cg {
 	struct parts_common common;
 	int no;
 	struct string *name;
+	struct parts_cg_asset *cg_asset;
+	uint64_t load_gen;
+	uint64_t async_gen;
 };
 
 struct parts_text {
@@ -418,7 +423,27 @@ struct flat_stop_motion_frames {
 	int count;
 };
 
-struct parts_flat_asset;
+struct parts_flat_asset {
+	char *name;
+	size_t name_len;
+	int ref;
+	struct flat *flat;
+	size_t nr_libraries;
+	Texture *base_textures;
+	Rectangle *base_rects;      // per-library UV sub-rect within atlas (or full texture)
+	int *base_atlas_idx;        // per-library index into talt_atlases, or -1 if standalone
+	Texture *talt_atlases;      // owned shared TALT atlas textures (deleted once on destroy)
+	size_t nr_talt_atlases;
+	struct flat_stop_motion_frames *stop_motion_frames;
+	int *root_timeline_lib_idx; // pre-resolved library index for flat->timelines[i]
+	int **lib_timeline_lib_idx; // per FLAT_LIB_TIMELINE library: pre-resolved timeline indices
+	int *emitter_cg_lib_idx;    // per FLAT_LIB_EMITTER library: pre-resolved CG/stop-motion index
+	int end_frame;
+	int width;
+	int height;
+	struct parts_flat_asset *prev;
+	struct parts_flat_asset *next;
+};
 
 struct parts_flat {
 	struct parts_common common;
@@ -793,6 +818,11 @@ void parts_state_discard_texture_backups(struct parts_state *state);
 int parts_copy_texture_pixels(struct parts_state *state, Texture *texture, struct parts_texture_pixels *out);
 bool parts_cg_set(struct parts *parts, struct parts_cg *cg, struct string *cg_name);
 bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no);
+void parts_cg_suspend(struct parts_cg *cg);
+void parts_cg_resume(struct parts_cg *cg);
+bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state);
+bool PE_IsThreadLoading(int parts_no, int state);
+bool PE_IsExistWorkerThread(void);
 bool parts_uses_mixed_display_text(void);
 char *parts_prepare_display_text(const char *text);
 void parts_text_append(struct parts *parts, struct parts_text *t, struct string *text);
@@ -952,6 +982,8 @@ struct flat_key_stack {
 	int locals[FLAT_MAX_ANCESTOR_DEPTH];
 	unsigned instances[FLAT_MAX_ANCESTOR_DEPTH];
 	int count;
+	struct parts_flat_asset *asset;
+	const int *timeline_lib_idx;
 };
 
 typedef void (*flat_emitter_particle_fn)(const struct flat_emitter_particle *p,

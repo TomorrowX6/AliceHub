@@ -672,23 +672,43 @@ static bool mainex_load(struct page **in)
 
 static struct string *child_name_cstr(struct ex *ex, const char *path, bool leaf, int target, int *count)
 {
-	*count = 0;
-	if (!ex || !path) return NULL;
+	if (count)
+		*count = 0;
+	if (!ex || !path)
+		return NULL;
+	if (target < 0 && !count)
+		return NULL;
+	int n = 0;
 	struct string *found = NULL;
 	if (!*path) {
 		for (unsigned i = 0; i < ex->nr_blocks; i++) {
-			if ((ex->blocks[i].val.type != EX_TREE) != leaf) continue;
-			if ((*count)++ == target) found = ex->blocks[i].name;
+			if ((ex->blocks[i].val.type != EX_TREE) != leaf)
+				continue;
+			if (n++ == target) {
+				found = ex->blocks[i].name;
+				if (!count)
+					return found;
+			}
 		}
+		if (count)
+			*count = n;
 		return found;
 	}
 	struct ex_value *v = ex_get(ex, path);
-	if (!v || v->type != EX_TREE || v->tree->is_leaf) return NULL;
+	if (!v || v->type != EX_TREE || v->tree->is_leaf)
+		return NULL;
 	for (unsigned i = 0; i < v->tree->nr_children; i++) {
 		struct ex_tree *node = &v->tree->children[i];
-		if (node->is_leaf != leaf) continue;
-		if ((*count)++ == target) found = leaf ? node->leaf.name : node->name;
+		if (node->is_leaf != leaf)
+			continue;
+		if (n++ == target) {
+			found = leaf ? node->leaf.name : node->name;
+			if (!count)
+				return found;
+		}
 	}
+	if (count)
+		*count = n;
 	return found;
 }
 
@@ -711,8 +731,7 @@ static bool get_name(struct string *path, int index, struct string **out, int id
 	const char *subpath = "";
 	if (!resolve_ex(path, id, &ex, &subpath))
 		return false;
-	int count;
-	struct string *name = child_name_cstr(ex, subpath, leaf, index, &count);
+	struct string *name = child_name_cstr(ex, subpath, leaf, index, NULL);
 	if (!name) return false;
 	if (*out)
 		free_string(*out);
@@ -725,16 +744,49 @@ static bool name_list(struct string *path, struct page **out, int id, bool leaf)
 	struct ex *ex = NULL;
 	const char *subpath = "";
 	if (!out || !resolve_ex(path, id, &ex, &subpath)) return false;
-	int count;
-	child_name_cstr(ex, subpath, leaf, -1, &count);
+
+	struct ex_tree *tree = NULL;
+	int count = 0;
+	if (!*subpath) {
+		for (unsigned i = 0; i < ex->nr_blocks; i++) {
+			if ((ex->blocks[i].val.type != EX_TREE) == leaf)
+				count++;
+		}
+	} else {
+		struct ex_value *v = ex_get(ex, subpath);
+		if (v && v->type == EX_TREE && !v->tree->is_leaf) {
+			tree = v->tree;
+			for (unsigned i = 0; i < tree->nr_children; i++) {
+				if (tree->children[i].is_leaf == leaf)
+					count++;
+			}
+		}
+	}
+
 	union vm_value dim = { .i = count };
 	struct page *page = alloc_array(1, &dim, AIN_ARRAY_STRING, -1, false);
-	for (int i = 0; i < count; i++) {
-		int unused;
-		struct string *s = child_name_cstr(ex, subpath, leaf, i, &unused);
-		int slot = page->values[i].i;
-		free_string(heap[slot].s);
-		heap[slot].s = s ? string_dup(s) : string_ref(&EMPTY_STRING);
+	if (count > 0) {
+		int idx = 0;
+		if (!*subpath) {
+			for (unsigned i = 0; i < ex->nr_blocks; i++) {
+				if ((ex->blocks[i].val.type != EX_TREE) != leaf)
+					continue;
+				struct string *s = ex->blocks[i].name;
+				int slot = page->values[idx++].i;
+				free_string(heap[slot].s);
+				heap[slot].s = s ? string_dup(s) : string_ref(&EMPTY_STRING);
+			}
+		} else if (tree) {
+			for (unsigned i = 0; i < tree->nr_children; i++) {
+				struct ex_tree *node = &tree->children[i];
+				if (node->is_leaf != leaf)
+					continue;
+				struct string *s = leaf ? node->leaf.name : node->name;
+				int slot = page->values[idx++].i;
+				free_string(heap[slot].s);
+				heap[slot].s = s ? string_dup(s) : string_ref(&EMPTY_STRING);
+			}
+		}
 	}
 	if (*out) { delete_page_vars(*out); free_page(*out); }
 	*out = page;

@@ -82,6 +82,8 @@ typedef struct cg *(*cg_base_loader_by_id_fn)(struct archive *src_ar, int id);
 
 void cg_set_base_loader_by_name(cg_base_loader_by_name_fn fn);
 void cg_set_base_loader_by_id(cg_base_loader_by_id_fn fn);
+bool cg_has_base_loader_by_name(void);
+bool cg_has_base_loader_by_id(void);
 struct cg *cg_load_base_by_name(const char *name);
 struct cg *cg_load_base_by_id(struct archive *src_ar, int id);
 
