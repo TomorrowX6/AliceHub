@@ -1259,6 +1259,28 @@ static void test_load_archive_gen_invalidates_live_cache_and_async_dedup(void) {
     PE_ReleaseParts(762);
     assert(mock_delete_count == del_before_762 + 1);
 
+    // Suspend -> LoadArchive replacement -> Resume must update part dimensions & hitbox
+    // on BOTH fresh-load and cache-hit resume paths while preserving custom surface_area.
+    atomic_store(&mock_cg_archive_gen, 1);
+    assert(PE_SetPartsCG(766, s_ovr, 0, 1));
+    assert(PE_SetPartsCG(767, s_ovr, 0, 1));
+    assert(parts_try_get(766)->states[0].common.w == 32 && parts_try_get(766)->states[0].common.h == 32);
+    assert(parts_try_get(766)->states[0].common.hitbox.w == 32 && parts_try_get(766)->states[0].common.hitbox.h == 32);
+    parts_try_get(767)->states[0].common.surface_area = (Rectangle){ 2, 3, 20, 22 };
+    PE_SuspendTexture(766);
+    PE_SuspendTexture(767);
+    atomic_store(&mock_cg_archive_gen, 2);
+    // 766 resumes via fresh load (48x48)
+    PE_ResumeTexture(766);
+    assert(parts_try_get(766)->states[0].common.w == 48 && parts_try_get(766)->states[0].common.h == 48);
+    assert(parts_try_get(766)->states[0].common.hitbox.w == 48 && parts_try_get(766)->states[0].common.hitbox.h == 48);
+    // 767 resumes via gen-2 cache hit (48x48) and preserves custom surface_area
+    PE_ResumeTexture(767);
+    assert(parts_try_get(767)->states[0].common.w == 48 && parts_try_get(767)->states[0].common.h == 48);
+    assert(parts_try_get(767)->states[0].common.surface_area.x == 2 && parts_try_get(767)->states[0].common.surface_area.y == 3);
+    assert(parts_try_get(767)->states[0].common.surface_area.w == 20 && parts_try_get(767)->states[0].common.surface_area.h == 22);
+    assert(parts_try_get(767)->states[0].common.hitbox.w == 20 && parts_try_get(767)->states[0].common.hitbox.h == 22);
+
     free_string(s_ovr);
     free_string(s_idle);
     free_string(s_async);

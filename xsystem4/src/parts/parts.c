@@ -656,7 +656,7 @@ void parts_cg_suspend(struct parts_cg *cg)
 	cg->common.texture = (Texture){0};
 }
 
-void parts_cg_resume(struct parts_cg *cg)
+void parts_cg_resume(struct parts *parts, struct parts_cg *cg)
 {
 	if (!cg || cg->cg_asset || cg->common.texture.handle)
 		return;
@@ -671,6 +671,14 @@ void parts_cg_resume(struct parts_cg *cg)
 		parts_cg_asset_ref(asset);
 		cg->cg_asset = asset;
 		cg->common.texture = asset->texture;
+		if (cg->common.w != asset->w || cg->common.h != asset->h) {
+			if (parts)
+				parts_set_dims(parts, &cg->common, asset->w, asset->h);
+			else {
+				cg->common.w = asset->w;
+				cg->common.h = asset->h;
+			}
+		}
 		return;
 	}
 	struct cg *loaded = NULL;
@@ -694,6 +702,14 @@ void parts_cg_resume(struct parts_cg *cg)
 	cg->common.texture = asset->texture;
 	if (cg_no > 0)
 		cg->no = cg_no;
+	if (cg->common.w != asset->w || cg->common.h != asset->h) {
+		if (parts)
+			parts_set_dims(parts, &cg->common, asset->w, asset->h);
+		else {
+			cg->common.w = asset->w;
+			cg->common.h = asset->h;
+		}
+	}
 }
 
 static void parts_cg_cache_clear(void)
@@ -1323,7 +1339,7 @@ void parts_state_reset(struct parts_state *state, enum parts_type type)
 
 struct parts_cg *parts_get_cg(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_CG) {
 		parts_state_reset(&parts->states[state], PARTS_CG);
 	}
@@ -1332,7 +1348,7 @@ struct parts_cg *parts_get_cg(struct parts *parts, int state)
 
 struct parts_text *parts_get_text(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_TEXT) {
 		parts_state_reset(&parts->states[state], PARTS_TEXT);
 	}
@@ -1341,7 +1357,7 @@ struct parts_text *parts_get_text(struct parts *parts, int state)
 
 struct parts_animation *parts_get_animation(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_ANIMATION) {
 		parts_state_reset(&parts->states[state], PARTS_ANIMATION);
 	}
@@ -1350,7 +1366,7 @@ struct parts_animation *parts_get_animation(struct parts *parts, int state)
 
 struct parts_numeral *parts_get_numeral(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_NUMERAL) {
 		parts_state_reset(&parts->states[state], PARTS_NUMERAL);
 	}
@@ -1359,7 +1375,7 @@ struct parts_numeral *parts_get_numeral(struct parts *parts, int state)
 
 struct parts_gauge *parts_get_hgauge(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_HGAUGE) {
 		parts_state_reset(&parts->states[state], PARTS_HGAUGE);
 	}
@@ -1368,7 +1384,7 @@ struct parts_gauge *parts_get_hgauge(struct parts *parts, int state)
 
 struct parts_gauge *parts_get_vgauge(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_VGAUGE) {
 		parts_state_reset(&parts->states[state], PARTS_VGAUGE);
 	}
@@ -1377,7 +1393,7 @@ struct parts_gauge *parts_get_vgauge(struct parts *parts, int state)
 
 struct parts_construction_process *parts_get_construction_process(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_CONSTRUCTION_PROCESS) {
 		parts_state_reset(&parts->states[state], PARTS_CONSTRUCTION_PROCESS);
 	}
@@ -1386,7 +1402,7 @@ struct parts_construction_process *parts_get_construction_process(struct parts *
 
 struct parts_flash *parts_get_flash(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_FLASH) {
 		parts_state_reset(&parts->states[state], PARTS_FLASH);
 	}
@@ -1395,7 +1411,7 @@ struct parts_flash *parts_get_flash(struct parts *parts, int state)
 
 struct parts_flat *parts_get_flat(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_FLAT) {
 		parts_state_reset(&parts->states[state], PARTS_FLAT);
 	}

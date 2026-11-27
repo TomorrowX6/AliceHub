@@ -813,13 +813,13 @@ struct parts_texture_pixels {
 };
 
 void parts_state_reset(struct parts_state *state, enum parts_type type);
-void parts_state_resume_textures(struct parts_state *state);
+void parts_state_resume_textures(struct parts *parts, struct parts_state *state);
 void parts_state_discard_texture_backups(struct parts_state *state);
 int parts_copy_texture_pixels(struct parts_state *state, Texture *texture, struct parts_texture_pixels *out);
 bool parts_cg_set(struct parts *parts, struct parts_cg *cg, struct string *cg_name);
 bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no);
 void parts_cg_suspend(struct parts_cg *cg);
-void parts_cg_resume(struct parts_cg *cg);
+void parts_cg_resume(struct parts *parts, struct parts_cg *cg);
 void parts_cg_async_flush_part(int parts_no);
 void parts_cg_async_flush_all(void);
 bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state);
