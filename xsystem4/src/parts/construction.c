@@ -1567,13 +1567,14 @@ bool parts_build_construction_process(struct parts *parts,
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
 	bool ok = false;
 	bool is_rgb_tex = false;
+	bool preserve_blur_target = false;
 	struct parts_cp_op *first_op = TAILQ_FIRST(&cproc->ops);
 	if (first_op && (first_op->type == PARTS_CP_CREATE ||
 	                 first_op->type == PARTS_CP_CREATE_PIXEL_ONLY ||
 	                 first_op->type == PARTS_CP_CG)) {
 		cproc->needs_pixel_snapshot = false;
 	} else if (first_op && cproc->common.texture.handle) {
-		is_rgb_tex = cproc->common.texture.opaque;
+		preserve_blur_target = true;
 		gfx_begin_draw_target(&cproc->common.texture);
 	}
 	struct parts_cp_op *op;
@@ -1581,6 +1582,7 @@ bool parts_build_construction_process(struct parts *parts,
 		switch (op->type) {
 		case PARTS_CP_CREATE:
 			is_rgb_tex = false;
+			preserve_blur_target = false;
 			gfx_end_draw_target();
 			if (!build_create(parts, cproc, &op->create))
 				goto done;
@@ -1591,10 +1593,12 @@ bool parts_build_construction_process(struct parts *parts,
 			if (!build_create_pixel_only(parts, cproc, &op->create))
 				goto done;
 			is_rgb_tex = true;
+			preserve_blur_target = true;
 			gfx_begin_draw_target(&cproc->common.texture);
 			break;
 		case PARTS_CP_CG:
 			is_rgb_tex = false;
+			preserve_blur_target = false;
 			gfx_end_draw_target();
 			if (!build_cg(parts, cproc, &op->cg))
 				goto done;
@@ -1699,9 +1703,9 @@ bool parts_build_construction_process(struct parts *parts,
 				break;
 			}
 			GLuint prev_handle = cproc->common.texture.handle;
-			if (!is_rgb_tex && blur_op_is_full_texture(cproc, &op->filter))
+			if (!preserve_blur_target && blur_op_is_full_texture(cproc, &op->filter))
 				gfx_end_draw_target();
-			if (!build_blur_filter_ex(cproc, &op->filter, vert1, is_rgb_tex))
+			if (!build_blur_filter_ex(cproc, &op->filter, vert1, preserve_blur_target))
 				goto done;
 			if (cproc->common.texture.handle != prev_handle)
 				gfx_begin_draw_target(&cproc->common.texture);
