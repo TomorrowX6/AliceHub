@@ -19,7 +19,8 @@ struct extracted_path {
 };
 static void init_locale(void)
 {
-    setlocale(LC_CTYPE, "en_US.UTF-8");
+    if (!setlocale(LC_CTYPE, "UTF-8") && !setlocale(LC_CTYPE, "C.UTF-8"))
+        setlocale(LC_CTYPE, "en_US.UTF-8");
 }
 
 char *ah_archive_decode(const uint8_t *bytes, size_t size, const char *encoding)
@@ -76,8 +77,12 @@ int ah_archive_extract(const char *file, AHModArchiveEntry accept, AHModArchiveP
             if (archive_read_data_skip(a) < ARCHIVE_WARN) goto archive_error;
             continue;
         }
-        const char *raw = archive_entry_pathname(entry);
-        if (!raw || !*raw) continue;
+        const char *raw = archive_entry_pathname_utf8(entry);
+        if (!raw || !*raw) raw = archive_entry_pathname(entry);
+        if (!raw || !*raw) {
+            if (archive_read_data_skip(a) < ARCHIVE_WARN) goto archive_error;
+            continue;
+        }
         path = accept(context, (const uint8_t *)raw, strlen(raw),
                       archive_entry_size_is_set(entry) ? archive_entry_size(entry) : -1);
         if (progress(context, total)) { message = "Extraction cancelled"; goto cleanup; }
@@ -85,7 +90,8 @@ int ah_archive_extract(const char *file, AHModArchiveEntry accept, AHModArchiveP
             if (archive_read_data_skip(a) < ARCHIVE_WARN) goto archive_error;
             continue;
         }
-        const char *hardlink = archive_entry_hardlink(entry);
+        const char *hardlink = archive_entry_hardlink_utf8(entry);
+        if (!hardlink || !*hardlink) hardlink = archive_entry_hardlink(entry);
         if (hardlink) {
             struct extracted_path *source = paths;
             while (source && strcmp(source->name, hardlink)) source = source->next;

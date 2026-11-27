@@ -228,9 +228,20 @@ private struct LibraryGameDestination: View {
 
     var body: some View {
         let installations = entry.matchingInstallations(in: library.games)
-        if let active = LibraryEntry.installation(in: installations, selectedID: selectedID) {
+        let resolvedSelection = entry.catalog.map { library.selectedInstallation(for: $0.id) } ?? selectedID
+        let selectionBinding = Binding<String?>(
+            get: { resolvedSelection },
+            set: { newValue in
+                if let catalog = entry.catalog {
+                    library.setSelectedInstallation(newValue, for: catalog.id)
+                } else {
+                    selectedID = newValue
+                }
+            }
+        )
+        if let active = LibraryEntry.installation(in: installations, selectedID: resolvedSelection) {
             GameDetailView(game: active, library: library, download: download, catalog: entry.catalog,
-                           installations: installations, selectedID: $selectedID)
+                           installations: installations, selectedID: selectionBinding)
                 .id(active.id)
         } else if let catalog = entry.catalog {
             OnlineGameDetailView(game: catalog, library: library, download: download)

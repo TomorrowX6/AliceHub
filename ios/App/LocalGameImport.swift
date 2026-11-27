@@ -270,6 +270,17 @@ enum LocalGameImport {
         return source.deletingPathExtension().lastPathComponent
     }
 
+    private static func isArchiveGameRoot(_ url: URL) -> Bool {
+        guard let launch = try? GameLibrary.launchInfo(url) else { return false }
+        switch launch.engine {
+        case .system4:
+            guard let local = try? names(url) else { return false }
+            return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini" || !system4Code(local).isEmpty
+        case .system3, .legacySystem3:
+            return true
+        }
+    }
+
     static func stageArchive(_ source: URL, in work: URL, onProgress: @escaping (Int64, String) -> Void = { _, _ in })
         throws -> (root: URL, name: String) {
         var extracted: Int64 = 0
@@ -283,7 +294,7 @@ enum LocalGameImport {
         }
         func find(_ stage: URL, depth: Int) throws -> (URL, URL)? {
             let dirs = try directories(stage, forGameDiscovery: true)
-            if let root = dirs.first(where: GameLibrary.isGame) {
+            if let root = dirs.first(where: isArchiveGameRoot) ?? dirs.first(where: GameLibrary.isGame) {
                 let installSet = root.deletingLastPathComponent()
                 if leaf(root) == "installdata", leaf(installSet) == "installset" {
                     let outer = installSet.deletingLastPathComponent()

@@ -67,12 +67,12 @@ struct OnlineGame: Identifiable {
 
     static func hasLocalChineseMarkers(in directory: URL) -> Bool {
         guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: [.isRegularFileKey]
+            at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
         ) else { return false }
         let regularFiles = contents.filter { item in
             (try? item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
-        return GameLibrary.hasLocalChineseMarkers(regularFiles: regularFiles)
+        return GameLibrary.hasLocalChineseMarkers(regularFiles: regularFiles, directoryContents: contents)
     }
 
     static func hasChinese(for game: Game) -> Bool {

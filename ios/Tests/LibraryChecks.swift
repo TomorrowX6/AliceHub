@@ -73,6 +73,7 @@ struct LibraryChecks {
         defer { try? files.removeItem(at: root) }
         try checkRelaunch(root.appendingPathComponent("Relaunch"))
         try checkSystem4BootEntries(root.appendingPathComponent("BootEntries"))
+        try checkSengokuRanceCNAndSelection(root.appendingPathComponent("SengokuRanceCN"))
         let rance = root.appendingPathComponent("R6汉硬1.10")
         let data = rance.appendingPathComponent("dAtA")
         try files.createDirectory(at: data, withIntermediateDirectories: true)
@@ -901,6 +902,24 @@ struct LibraryChecks {
         library.importFolder(unknown)
         awaitImport()
         precondition(library.error == nil && installed("Unknown Installer Scope/install.exe") && installed("Unknown Installer Scope/backup.bak"))
+
+        let iniWrapper = root.appendingPathComponent("Ini Wrapper Archive")
+        try fixture(iniWrapper, "System40.ini", "GameName = \"Wrapper\"\n")
+        try fixture(iniWrapper, "RealGame/System40.ini", "GameName = \"Real\"\nCodeName = \"AliceCN.ain\"\n")
+        try fixture(iniWrapper, "RealGame/AliceCN.ain", "ain")
+        try fixture(iniWrapper, "RealGame/dummy.dat", "payload")
+        try importArchive(makeArchive(iniWrapper, name: "IniWrapper.zip"), expected: "RealGame")
+        precondition(installed("RealGame/AliceCN.ain"))
+
+        let standaloneWithBonus = root.appendingPathComponent("Standalone With Bonus")
+        try fixture(standaloneWithBonus, "MainGame.ain", "main")
+        try fixture(standaloneWithBonus, "BonusDemo/System40.ini", "GameName = \"Bonus\"\nCodeName = \"Demo.ain\"\n")
+        try fixture(standaloneWithBonus, "BonusDemo/Demo.ain", "demo")
+        try importArchive(makeArchive(standaloneWithBonus, name: "StandaloneMain.zip"), expected: "StandaloneMain")
+        precondition(installed("StandaloneMain/MainGame.ain"))
+        for catalogID in ["kichikuou", "rance02", "ixseal", "galzoo"] {
+            library.setSelectedInstallation(nil, for: catalogID)
+        }
         print("PASS: multi-disc folder and archive assembly, patch priority and AIN guard, installer cleanup, companion data, source preservation")
     }
 
@@ -1190,6 +1209,153 @@ struct LibraryChecks {
         try Data().write(to: bilingualInstall.appendingPathComponent("CHS.TBL"))
         precondition(GameLibrary.system4BootEntries(bilingualInstall) == configuredEntries + ["Unconfigured.CHS"])
         print("System 4 launch entry checks passed")
+    }
+
+    static func checkSengokuRanceCNAndSelection(_ root: URL) throws {
+        let files = FileManager.default
+        let documents = root.appendingPathComponent("Documents")
+        let library = GameLibrary(documents: documents)
+        func writeFile(_ base: URL, _ path: String, _ contents: String = "") throws {
+            let file = base.appendingPathComponent(path)
+            try files.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(contents.utf8).write(to: file)
+        }
+        func awaitImport() {
+            let deadline = Date().addingTimeInterval(10)
+            while library.importing && Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
+            precondition(!library.importing, "Import timed out")
+        }
+
+        let opaqueSrCn = root.appendingPathComponent("OpaqueMojibakeSR")
+        try writeFile(opaqueSrCn, "System40.ini", "GameName = \"战国兰斯中文版\"\nCodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n")
+        try writeFile(opaqueSrCn, "AliceCN.ain", "ain")
+        try writeFile(opaqueSrCn, "愴崙儔儞僗GA.ald", "ga")
+        try writeFile(opaqueSrCn, "愴崙儔儞僗GB.ald", "gb")
+        try writeFile(opaqueSrCn, "NSPic/cg10001.QNT", "qnt1")
+        try writeFile(opaqueSrCn, "NSPic/cg10079.qnt", "qnt2")
+        try writeFile(opaqueSrCn, "fuckvs.dll", "dll")
+
+        let rawSrCn = Game(url: opaqueSrCn)
+        precondition(rawSrCn.artworkKey == "sengokurance" && rawSrCn.hasLocalChineseMarkers)
+
+        let stagedSrCnDir = root.appendingPathComponent("StagedSRCN")
+        try LocalGameImport.stageFolder(opaqueSrCn, to: stagedSrCnDir)
+        precondition(files.fileExists(atPath: stagedSrCnDir.appendingPathComponent("NSPic/cg10001.QNT").path))
+        precondition(files.fileExists(atPath: stagedSrCnDir.appendingPathComponent("NSPic/cg10079.qnt").path))
+        precondition(!files.fileExists(atPath: stagedSrCnDir.appendingPathComponent("fuckvs.dll").path))
+        precondition(files.fileExists(atPath: stagedSrCnDir.appendingPathComponent("戦国ランスGA.ald").path))
+        precondition(files.fileExists(atPath: stagedSrCnDir.appendingPathComponent("戦国ランスGB.ald").path))
+        precondition(!files.fileExists(atPath: stagedSrCnDir.appendingPathComponent("愴崙儔儞僗GA.ald").path))
+        let stagedSrCn = Game(url: stagedSrCnDir)
+        precondition(stagedSrCn.artworkKey == "sengokurance" && stagedSrCn.hasLocalChineseMarkers)
+
+        let nsPicOnlyDir = root.appendingPathComponent("OpaqueSRNsPicOnly")
+        try writeFile(nsPicOnlyDir, "System40.ini", "CodeName = \"戦国ランス.ain\"\n")
+        try writeFile(nsPicOnlyDir, "戦国ランス.ain", "ain")
+        try writeFile(nsPicOnlyDir, "nspic/cg10001.QNT", "qnt")
+        let nsPicOnlyGame = Game(url: nsPicOnlyDir)
+        precondition(nsPicOnlyGame.artworkKey == "sengokurance" && nsPicOnlyGame.hasLocalChineseMarkers)
+
+        let fakeNsPicFileDir = root.appendingPathComponent("FakeNsPicFile")
+        try writeFile(fakeNsPicFileDir, "System40.ini", "CodeName = \"戦国ランス.ain\"\n")
+        try writeFile(fakeNsPicFileDir, "戦国ランス.ain", "ain")
+        try writeFile(fakeNsPicFileDir, "NSPic", "not-a-dir")
+        precondition(!Game(url: fakeNsPicFileDir).hasLocalChineseMarkers)
+
+        let fakeNsPicLinkDir = root.appendingPathComponent("FakeNsPicLink")
+        try writeFile(fakeNsPicLinkDir, "System40.ini", "CodeName = \"戦国ランス.ain\"\n")
+        try writeFile(fakeNsPicLinkDir, "戦国ランス.ain", "ain")
+        try files.createSymbolicLink(
+            at: fakeNsPicLinkDir.appendingPathComponent("NSPic"),
+            withDestinationURL: nsPicOnlyDir.appendingPathComponent("nspic")
+        )
+        precondition(!Game(url: fakeNsPicLinkDir).hasLocalChineseMarkers)
+
+        let galzooCnDir = root.appendingPathComponent("OpaqueGalzooCN")
+        try writeFile(galzooCnDir, "System40.ini", "CodeName = \"AliceCN.ain\"\n")
+        try writeFile(galzooCnDir, "AliceCN.ain", "ain")
+        try writeFile(galzooCnDir, "GALZOOGA.ald", "ga")
+        let galzooCnGame = Game(url: galzooCnDir)
+        precondition(galzooCnGame.artworkKey == "galzoo" && galzooCnGame.hasLocalChineseMarkers)
+
+        library.setSelectedInstallation(nil, for: "sengokurance")
+        defer { library.setSelectedInstallation(nil, for: "sengokurance") }
+        precondition(library.selectedInstallation(for: "sengokurance") == nil)
+
+        let jpSource = root.appendingPathComponent("SengokuRance-JP")
+        try writeFile(jpSource, "System40.ini", "CodeName = \"戦国ランス.ain\"\n")
+        try writeFile(jpSource, "戦国ランス.ain", "ain")
+        library.importFolder(jpSource)
+        awaitImport()
+        precondition(library.error == nil)
+        precondition(library.selectedInstallation(for: "sengokurance") == "SengokuRance-JP")
+
+        let cnSource = root.appendingPathComponent("SengokuRance-CN")
+        try files.copyItem(at: opaqueSrCn, to: cnSource)
+        library.importFolder(cnSource)
+        awaitImport()
+        precondition(library.error == nil)
+        precondition(library.selectedInstallation(for: "sengokurance") == "SengokuRance-CN")
+
+        let reopened = GameLibrary(documents: documents)
+        precondition(reopened.selectedInstallation(for: "sengokurance") == "SengokuRance-CN")
+        reopened.setSelectedInstallation("SengokuRance-JP", for: "sengokurance")
+        precondition(GameLibrary(documents: documents).selectedInstallation(for: "sengokurance") == "SengokuRance-JP")
+
+        guard let installedCn = reopened.games.first(where: { $0.id == "SengokuRance-CN" }),
+              let installedJp = reopened.games.first(where: { $0.id == "SengokuRance-JP" }) else {
+            preconditionFailure("Expected both Sengoku Rance installations")
+        }
+        reopened.delete(installedCn)
+        precondition(reopened.selectedInstallation(for: "sengokurance") == "SengokuRance-JP")
+        reopened.delete(installedJp)
+        precondition(reopened.selectedInstallation(for: "sengokurance") == nil)
+
+        let mojibakeIniDir = root.appendingPathComponent("MojibakeCodeName")
+        try writeFile(mojibakeIniDir, "System40.ini", "CodeName = \"愴崙儔儞僗.ain\"\n")
+        try writeFile(mojibakeIniDir, "戦国ランス.ain", "ain")
+        try writeFile(mojibakeIniDir, "AliceCN.ain", "cn")
+        precondition(GameLibrary.system4BootEntries(mojibakeIniDir) == ["System40.ini", "AliceCN.ain"])
+
+        let mojibakeFileDir = root.appendingPathComponent("MojibakeScriptFile")
+        try writeFile(mojibakeFileDir, "Custom.ini", "CodeName = \"戦国ランス.ain\"\n")
+        try writeFile(mojibakeFileDir, "System40.ini", "CodeName = \"AliceCN.ain\"\n")
+        try writeFile(mojibakeFileDir, "愴崙儔儞僗.ain", "ain")
+        try writeFile(mojibakeFileDir, "AliceCN.ain", "cn")
+        precondition(GameLibrary.system4BootEntries(mojibakeFileDir) == ["Custom.ini", "System40.ini"])
+
+        let lowerIniDir = root.appendingPathComponent("LowercaseDsrIni")
+        try writeFile(lowerIniDir, "system40.ini", "GameName = \"大战国兰斯\"\nCodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n")
+        try writeFile(lowerIniDir, "DaiSengoku.ain", "ain")
+        let lowerIniGame = Game(url: lowerIniDir)
+        precondition(library.saveDirectoryName(for: lowerIniGame) == "LowercaseDsrIni\(GameLibrary.daiSengokuSaveDirSuffix)")
+
+        let priorityIniDir = root.appendingPathComponent("PriorityDsrIni")
+        try writeFile(priorityIniDir, "system40.ini", "CodeName = \"AliceCN.ain\"\nSaveFolder = \"SaveData\"\n")
+        try writeFile(priorityIniDir, "AliceStart.ini", "CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n")
+        try writeFile(priorityIniDir, "AliceCN.ain", "ain")
+        precondition(library.saveDirectoryName(for: Game(url: priorityIniDir)) == "PriorityDsrIni")
+
+        let lowerAliceStartDir = root.appendingPathComponent("LowercaseAliceStartDsr")
+        try writeFile(lowerAliceStartDir, "alicestart.ini", "CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n")
+        try writeFile(lowerAliceStartDir, "DaiSengoku.ain", "ain")
+        precondition(library.saveDirectoryName(for: Game(url: lowerAliceStartDir)) == "LowercaseAliceStartDsr\(GameLibrary.daiSengokuSaveDirSuffix)")
+
+        // Pre-upgrade lowercase-INI DaiSengoku install with existing unsuffixed saves preserves legacy saves when unambiguous.
+        let legacyLowerDsrDir = root.appendingPathComponent("LegacyLowerDsr")
+        try writeFile(legacyLowerDsrDir, "system40.ini", "CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n")
+        try writeFile(legacyLowerDsrDir, "DaiSengoku.ain", "ain")
+        let legacyUnsuffixedSave = documents.appendingPathComponent("Saves/LegacyLowerDsr/Save001.asd")
+        try files.createDirectory(at: legacyUnsuffixedSave.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("legacy-dsr".utf8).write(to: legacyUnsuffixedSave)
+        precondition(library.saveDirectoryName(for: Game(url: legacyLowerDsrDir)) == "LegacyLowerDsr")
+        // Once vanilla AliceCN.ain coexists (shared boot entries), DaiSengoku isolates to __SaveDataDSR.
+        try writeFile(legacyLowerDsrDir, "AliceCN.ain", "ain")
+        precondition(library.saveDirectoryName(for: Game(url: legacyLowerDsrDir)) == "LegacyLowerDsr\(GameLibrary.daiSengokuSaveDirSuffix)")
+
+        print("PASS: Sengoku Rance CN staging/classification, NSPic markers, persisted installation selection, mojibake CodeName boot entries, and case-insensitive SaveFolder isolation")
     }
 
     static func checkGamepadProfiles() {

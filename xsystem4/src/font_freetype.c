@@ -179,9 +179,19 @@ static bool ft_font_get_glyph(struct font_size *size, struct glyph *glyph, uint3
 
 	// render bitmap
 	bool half_width = is_half_width(code);
-	struct font_ft *font = ft_font_for_char((struct font_ft*)size->font, code);
+	struct font_ft *primary = (struct font_ft*)size->font;
+	struct font_ft *font = ft_font_for_char(primary, code);
 	ft_font_set_size(font, size->size);
-	if (FT_Load_Char(font->font, code, FT_LOAD_RENDER)) {
+	FT_Error err = FT_Load_Char(font->font, code, FT_LOAD_RENDER);
+#ifdef ALICEHUB_IOS
+	if (err && primary->fallback && font != primary->fallback
+			&& FT_Get_Char_Index(primary->fallback->font, code)) {
+		font = primary->fallback;
+		ft_font_set_size(font, size->size);
+		err = FT_Load_Char(font->font, code, FT_LOAD_RENDER);
+	}
+#endif
+	if (err) {
 		WARNING("Failed to load glyph for codepoint 0x%x", code);
 		return false;
 	}
@@ -194,7 +204,13 @@ static bool ft_font_get_glyph(struct font_size *size, struct glyph *glyph, uint3
 				x_ppem = 1;
 			if (!FT_Set_Pixel_Sizes(font->font, x_ppem, size->size)) {
 				font->current_size = 0;
-				FT_Load_Char(font->font, code, FT_LOAD_RENDER);
+				if (FT_Load_Char(font->font, code, FT_LOAD_RENDER)) {
+					ft_font_set_size(font, size->size);
+					if (FT_Load_Char(font->font, code, FT_LOAD_RENDER)) {
+						WARNING("Failed to reload glyph for codepoint 0x%x", code);
+						return false;
+					}
+				}
 			}
 		}
 	}
@@ -256,15 +272,28 @@ static float ft_font_size_char_kerning(struct font_size *size, uint32_t code,
 
 	FT_UInt index = FT_Get_Char_Index(font->font, code);
 
-	FT_Fixed advance;
-	FT_Get_Advance(font->font, index, FT_LOAD_DEFAULT, &advance);
+	FT_Fixed advance = 0;
+	FT_Error err = FT_Get_Advance(font->font, index, FT_LOAD_DEFAULT, &advance);
+#ifdef ALICEHUB_IOS
+	if (err && primary->fallback && font != primary->fallback) {
+		FT_UInt fb_index = FT_Get_Char_Index(primary->fallback->font, code);
+		if (fb_index) {
+			font = primary->fallback;
+			index = fb_index;
+			ft_font_set_size(font, size->size);
+			err = FT_Get_Advance(font->font, index, FT_LOAD_DEFAULT, &advance);
+		}
+	}
+#endif
+	if (err)
+		return 0.f;
 
 	if (!FT_HAS_KERNING(font->font) || ft_font_for_char(primary, code_next) != font) {
 		return advance / 65536.f;
 	}
 
 	FT_UInt next_index = FT_Get_Char_Index(font->font, code_next);
-	FT_Vector delta;
+	FT_Vector delta = {0, 0};
 	FT_Get_Kerning(font->font, index, next_index, FT_KERNING_DEFAULT, &delta);
 
 	return (advance / 65536.f) + (delta.x / 64.f);

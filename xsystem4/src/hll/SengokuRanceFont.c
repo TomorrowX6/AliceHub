@@ -498,6 +498,18 @@ static void SengokuRanceFont_ModuleInit(void)
 	current_text_properties = default_text_properties;
 }
 
+#ifdef ALICEHUB_IOS
+void sengoku_rance_font_end_session(void)
+{
+	if (sr_tp_table) {
+		ht_foreach_value(sr_tp_table, free);
+		ht_free_int(sr_tp_table);
+		sr_tp_table = NULL;
+	}
+	current_text_properties = default_text_properties;
+}
+#endif
+
 HLL_LIBRARY(SengokuRanceFont,
 	    HLL_EXPORT(_ModuleInit, SengokuRanceFont_ModuleInit),
 	    //HLL_EXPORT(AlphaComposite, SengokuRanceFont_AlphaComposite),

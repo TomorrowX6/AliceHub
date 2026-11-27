@@ -272,9 +272,10 @@ final class OnlineGameDownloadModel: ObservableObject {
         let games = library.gamesDirectory
         let activity = BackgroundActivity(title: game.displayTitle(in: .current)) { installer.cancel() }
         DispatchQueue.global(qos: .userInitiated).async {
+            var installedURL: URL?
             var result: Error?
             do {
-                _ = try installer.install(game, manifest: manifest, in: games) { message, completed, total in
+                installedURL = try installer.install(game, manifest: manifest, in: games) { message, completed, total in
                     activity.update(fraction: total > 0 ? Double(completed) / Double(total) : nil, detail: message)
                     DispatchQueue.main.async {
                         self.progressText = message; self.completed = completed; self.total = total
@@ -291,6 +292,9 @@ final class OnlineGameDownloadModel: ObservableObject {
             activity.end(wasPaused ? .paused : message.map { .failed($0) } ?? .succeeded)
             DispatchQueue.main.async {
                 self.running = false; self.installer = nil; self.failure = message; self.succeeded = message == nil
+                if let installedURL, message == nil {
+                    library.setSelectedInstallation(installedURL.lastPathComponent, for: game.id)
+                }
                 library.refresh()
                 if autoResume {
                     self.paused = (game, manifest)
