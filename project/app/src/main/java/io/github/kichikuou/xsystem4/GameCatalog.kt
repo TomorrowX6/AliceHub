@@ -6870,6 +6870,76 @@ object GameCatalog {
                 it.name.equals("GlobalSave.asd", ignoreCase = true) ||
                     it.name.equals("GlobalSaveData.asd", ignoreCase = true)
             }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.equals("Haharanman_Collection.sav", ignoreCase = true) ||
+                        it.name.equals("Haharanman_User.sav", ignoreCase = true) ||
+                        it.name.lowercase().startsWith("haharanman_")
+                }
+            ) {
+                return ID_HAHARANMAN
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    val lower = it.name.lowercase()
+                    lower == "nightrmemmodeinfo.asd" ||
+                        lower == "nightrcommongamedata.asd" ||
+                        lower.startsWith("nightraf") ||
+                        lower.startsWith("nightr_")
+                }
+            ) {
+                return ID_YORUGAKURU
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    val lower = ArchiveExtractor.repairSjisAsGbkMojibake(it.name).lowercase()
+                    lower == "pc3.sav" ||
+                        lower == "pc3user.sav" ||
+                        lower == "pc3conf.sav" ||
+                        lower == "pc3enquete.sav" ||
+                        lower.startsWith("パステルチャイム３_") ||
+                        lower.startsWith("パステルチャイム3_") ||
+                        lower.endsWith("_pc3.sav") ||
+                        lower.endsWith("_pc3user.sav") ||
+                        lower.endsWith("_pc3conf.sav")
+                }
+            ) {
+                return ID_PASCHA3
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.lowercase().startsWith("tsuma3so_junai_")
+                }
+            ) {
+                return ID_TSUMAMIGUI3JUN
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.lowercase().startsWith("tsuma3so_netorare_")
+                }
+            ) {
+                return ID_TSUMAMIGUI3NTR
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.equals("Tuma3Extra.sav", ignoreCase = true) ||
+                        it.name.equals("Tuma3User.sav", ignoreCase = true) ||
+                        it.name.equals("Tuma3Enquete.sav", ignoreCase = true)
+                }
+            ) {
+                return ID_TSUMAMIGUI3
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.equals("MemModeInfo.asd", ignoreCase = true) ||
+                        it.name.equals("CommonGameData.asd", ignoreCase = true)
+                }
+            ) {
+                val hints = listOfNotNull(dirName, displayName)
+                val looksNtr = hints.any { hint ->
+                    if (isOkusamaJunAlias(hint)) return@any false
+                    if (isOkusamaNtrAlias(hint)) return@any true
+                    val lowerHint = ArchiveExtractor.repairSjisAsGbkMojibake(hint).lowercase()
+                    lowerHint.contains("ntr") ||
+                        lowerHint.contains("夺爱") ||
+                        lowerHint.contains("奪愛") ||
+                        lowerHint.contains("寝取")
+                }
+                return if (looksNtr) ID_OKUSAMANTR else ID_OKUSAMAJUN
+            }
             val hasPrefixedE2Af = saveFiles.any { f ->
                 val lowerRepaired = ArchiveExtractor.repairSjisAsGbkMojibake(f.name).lowercase()
                 isEvenicle2Alias(lowerRepaired) && (

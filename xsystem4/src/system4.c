@@ -1682,7 +1682,15 @@ int main(int argc, char *argv[])
 	switch_menu4_load_display(config.save_dir);
 #endif
 	apply_game_specific_hacks(ain);
-	parts_set_mixed_display_text(game_maman);
+	parts_set_mixed_display_text(
+		game_maman
+		|| game_haharanman
+		|| game_escalayer_reboot
+		|| game_pascha3
+		|| game_night_remaster
+		|| game_evenicle2_rance
+		|| game_rance01
+	);
 	init_mai_word_table();
 	init_text_dict();
 	if (config.msgskip_delay)

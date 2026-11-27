@@ -110,6 +110,11 @@ private class SaveFileAdapter(
         val lower = ArchiveExtractor.repairSjisAsGbkMojibake(fileName).lowercase(Locale.ROOT)
         return when {
             lower in GLOBAL_SAVE_FILES ||
+                lower.endsWith("_pc3.sav") || lower.endsWith("_pc3user.sav") ||
+                lower.endsWith("_pc3conf.sav") || lower.endsWith("_pc3enquete.sav") ||
+                lower.endsWith("_ｃｇモード.asd") || lower.endsWith("_回想モード.asd") ||
+                lower.endsWith("_音楽モード.asd") || lower.endsWith("_共有.asd") ||
+                lower.endsWith("_システム共通データ.asd") ||
                 GameCatalog.isHarukaSystemSaveFileName(fileName) ||
                 lower.endsWith(".msgskip") -> UiKit.Tone.PRIMARY
             lower.endsWith(".log") -> UiKit.Tone.WARNING
@@ -121,12 +126,34 @@ private class SaveFileAdapter(
         val GLOBAL_SAVE_FILES = setOf(
             "globalsave.asd", "globalsavedata.asd", "collection.asd", "msgskip.asd",
             "afcgmode.asd", "afcommon.asd", "afconfig.asd", "afbgmmode.asd",
+            "afinfo.asd", "afmemmode.asd",
+            "esca.sav", "escauser.sav", "escaenquete.sav",
+            "escalayerreboot_afcgmode.asd", "escalayerreboot_afcommon.asd",
+            "escalayerreboot_afconfig.asd", "escalayerreboot_afbgmmode.asd",
+            "escalayerreboot_afinfo.asd", "escalayerreboot_afmemmode.asd",
             "ixseal_afcgmode.asd", "ixseal_afcommon.asd", "ixseal_afconfig.asd",
             "ixseal_afbgmmode.asd", "ixseal_afinfo.asd", "ixseal_afmemmode.asd",
             "ixseal_extra.sav",
             "maman_afcgmode.asd", "maman_afcommon.asd", "maman_afconfig.asd",
             "maman_afbgmmode.asd", "maman_afinfo.asd", "maman_afmemmode.asd",
             "maman_extra.sav", "maman_user.sav",
+            "haharanman_afcgmode.asd", "haharanman_afcommon.asd", "haharanman_afconfig.asd",
+            "haharanman_afbgmmode.asd", "haharanman_afinfo.asd", "haharanman_afmemmode.asd",
+            "haharanman_collection.sav", "haharanman_user.sav", "haharanman_enquete.sav",
+            "pc3.sav", "pc3user.sav", "pc3conf.sav", "pc3enquete.sav",
+            "nightrmemmodeinfo.asd", "nightrcommongamedata.asd",
+            "nightrafcgmode.asd", "nightrafcommon.asd", "nightrafconfig.asd",
+            "nightrafbgmmode.asd", "nightrafinfo.asd", "nightrafmemmode.asd",
+            "tuma3extra.sav", "tuma3user.sav", "tuma3enquete.sav",
+            "tsuma3so_junai_afcgmode.asd", "tsuma3so_junai_afcommon.asd",
+            "tsuma3so_junai_afconfig.asd", "tsuma3so_junai_afbgmmode.asd",
+            "tsuma3so_junai_afinfo.asd", "tsuma3so_junai_afmemmode.asd",
+            "tsuma3so_junai_extra.sav", "tsuma3so_junai_user.sav",
+            "tsuma3so_netorare_afcgmode.asd", "tsuma3so_netorare_afcommon.asd",
+            "tsuma3so_netorare_afconfig.asd", "tsuma3so_netorare_afbgmmode.asd",
+            "tsuma3so_netorare_afinfo.asd", "tsuma3so_netorare_afmemmode.asd",
+            "tsuma3so_netorare_extra.sav", "tsuma3so_netorare_user.sav",
+            "memmodeinfo.asd", "commongamedata.asd",
             "妻しぼりsys.asd", "嵢偟傏傝sys.asd", "tsumashiborisys.asd",
             "config.asd", "progress.asd", "joypad.asd",
             "keyfile.dat", "msgskipflag.sav",
@@ -1335,18 +1362,37 @@ class SaveManagerActivity : ThemedActivity() {
         val lower = ArchiveExtractor.repairSjisAsGbkMojibake(name).lowercase(Locale.ROOT)
         return when {
             lower == "globalsave.asd" || lower == "globalsavedata.asd" ||
-                lower == "afcommon.asd" || lower == "progress.asd" ||
+                lower == "afcommon.asd" || lower.endsWith("_afcommon.asd") ||
+                lower == "nightrafcommon.asd" || lower == "commongamedata.asd" ||
+                lower == "nightrcommongamedata.asd" || lower == "progress.asd" ||
                 lower == "妻しぼりsys.asd" || lower == "tsumashiborisys.asd" ||
-                lower == "共有.asd" -> getString(R.string.save_tag_global)
-            lower == "collection.asd" -> getString(R.string.save_tag_collection)
+                lower == "共有.asd" || lower.endsWith("_共有.asd") -> getString(R.string.save_tag_global)
+            lower == "collection.asd" || lower == "esca.sav" || lower == "pc3.sav" ||
+                lower.endsWith("_pc3.sav") || lower == "tuma3extra.sav" ||
+                lower.endsWith("_extra.sav") || lower.endsWith("_collection.sav") -> getString(R.string.save_tag_collection)
             lower == "msgskip.asd" || lower == "已读文本跳过.asd" ||
                 lower == "既読スキップ.asd" || lower == "msgskipflag.sav" ||
                 lower.endsWith(".msgskip") ->
                 getString(R.string.save_tag_msgskip)
-            lower == "afcgmode.asd" || lower == "afbgmmode.asd" ||
-                lower == "ｃｇモード.asd" || lower == "回想モード.asd" || lower == "音楽モード.asd" -> getString(R.string.save_tag_afcg)
-            lower == "gameenquete.asd" -> getString(R.string.save_tag_enquete)
-            lower == "commonsystemdata.sav" || GameCatalog.isHarukaSystemSaveFileName(name) || lower == "afconfig.asd" ||
+            lower == "afcgmode.asd" || lower == "afbgmmode.asd" || lower == "afmemmode.asd" ||
+                lower.endsWith("_afcgmode.asd") || lower.endsWith("_afbgmmode.asd") ||
+                lower.endsWith("_afmemmode.asd") || lower == "nightrafcgmode.asd" ||
+                lower == "nightrafbgmmode.asd" || lower == "nightrafmemmode.asd" ||
+                lower == "memmodeinfo.asd" || lower == "nightrmemmodeinfo.asd" ||
+                lower == "ｃｇモード.asd" || lower == "回想モード.asd" || lower == "音楽モード.asd" ||
+                lower.endsWith("_ｃｇモード.asd") || lower.endsWith("_回想モード.asd") ||
+                lower.endsWith("_音楽モード.asd") -> getString(R.string.save_tag_afcg)
+            lower == "gameenquete.asd" || lower == "escaenquete.sav" ||
+                lower == "pc3enquete.sav" || lower.endsWith("_pc3enquete.sav") ||
+                lower == "tuma3enquete.sav" || lower.endsWith("_enquete.sav") -> getString(R.string.save_tag_enquete)
+            lower == "commonsystemdata.sav" || GameCatalog.isHarukaSystemSaveFileName(name) ||
+                lower == "afconfig.asd" || lower == "afinfo.asd" ||
+                lower.endsWith("_afconfig.asd") || lower.endsWith("_afinfo.asd") ||
+                lower == "nightrafconfig.asd" || lower == "nightrafinfo.asd" ||
+                lower == "escauser.sav" || lower == "pc3user.sav" || lower == "pc3conf.sav" ||
+                lower.endsWith("_pc3user.sav") || lower.endsWith("_pc3conf.sav") ||
+                lower == "tuma3user.sav" || lower.endsWith("_user.sav") ||
+                lower == "システム共通データ.asd" || lower.endsWith("_システム共通データ.asd") ||
                 lower == "config.asd" || lower == "joypad.asd" ||
                 lower == "keyfile.dat" ||
                 lower == "3dsetting.asd" || lower == "volume.sav" ->

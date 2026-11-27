@@ -421,4 +421,118 @@ public class MamanAndMultiModTest {
         assertEquals("vanilla-progress", readText(new File(restoredSaveDir, "Save001.asd")));
         assertEquals("daisengoku-progress", readText(dsrSlot));
     }
+
+    @Test
+    public void siblingGamesStandaloneSaveDirClassification() throws Exception {
+        File hhrSave = makeDir(
+                "HhrSaveUnknown",
+                "Haharanman_Collection.sav",
+                "Haharanman_User.sav",
+                "Haharanman_AFConfig.asd",
+                "Haharanman_AFCommon.asd",
+                "3DConfig.vsf"
+        );
+        assertEquals(
+                GameCatalog.ID_HAHARANMAN,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", hhrSave, null)
+        );
+
+        File ykSave = makeDir(
+                "YkSaveUnknown",
+                "NightRMemModeInfo.asd",
+                "NightRCommonGameData.asd",
+                "NightRAFConfig.asd",
+                "NightRAFCommon.asd",
+                "3DConfig.vsf"
+        );
+        assertEquals(
+                GameCatalog.ID_YORUGAKURU,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", ykSave, null)
+        );
+
+        File pascha3UnprefixedSave = makeDir(
+                "Pascha3SaveUnknown",
+                "PC3.sav",
+                "PC3User.sav",
+                "PC3Conf.sav",
+                "ＣＧモード.asd",
+                "共有.asd"
+        );
+        assertEquals(
+                GameCatalog.ID_PASCHA3,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", pascha3UnprefixedSave, null)
+        );
+
+        File pascha3PrefixedSave = makeDir(
+                "Pascha3PrefixedSaveUnknown",
+                "パステルチャイム３_ＣＧモード.asd",
+                "パステルチャイム３_共有.asd"
+        );
+        assertEquals(
+                GameCatalog.ID_PASCHA3,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", pascha3PrefixedSave, null)
+        );
+
+        File tsuma3Save = makeDir(
+                "Tsuma3SaveUnknown",
+                "Tuma3Extra.sav",
+                "Tuma3User.sav",
+                "AFInfo.asd",
+                "AFCommon.asd",
+                "3DConfig.vsf"
+        );
+        assertEquals(
+                GameCatalog.ID_TSUMAMIGUI3,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", tsuma3Save, null)
+        );
+
+        File tsuma3JunSave = makeDir(
+                "Tsuma3JunSaveUnknown",
+                "Tsuma3SO_Junai_Extra.sav",
+                "Tsuma3SO_Junai_AFConfig.asd",
+                "3DConfig.vsf"
+        );
+        assertEquals(
+                GameCatalog.ID_TSUMAMIGUI3JUN,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", tsuma3JunSave, null)
+        );
+
+        File tsuma3NtrSave = makeDir(
+                "Tsuma3NtrSaveUnknown",
+                "Tsuma3SO_Netorare_Extra.sav",
+                "Tsuma3SO_Netorare_AFConfig.asd",
+                "3DConfig.vsf"
+        );
+        assertEquals(
+                GameCatalog.ID_TSUMAMIGUI3NTR,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", tsuma3NtrSave, null)
+        );
+
+        File okusamaSave = makeDir(
+                "OkusamaSaveUnknown",
+                "MemModeInfo.asd",
+                "CommonGameData.asd",
+                "AFInfo.asd",
+                "AFCommon.asd"
+        );
+        assertEquals(
+                GameCatalog.ID_OKUSAMAJUN,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", okusamaSave, null)
+        );
+        assertEquals(
+                GameCatalog.ID_OKUSAMANTR,
+                GameCatalog.INSTANCE.classifyDirectory(null, "OkusamaNtr", okusamaSave, null)
+        );
+        assertEquals(
+                GameCatalog.ID_OKUSAMANTR,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", okusamaSave, "太太的恢复术 夺爱")
+        );
+
+        // GlobalSave.asd must still win as Rance 10 if present alongside other files.
+        File r10Guard = makeDir("R10GuardSave", "GlobalSave.asd", "MemModeInfo.asd");
+        assertEquals(
+                GameCatalog.ID_RANCE10,
+                GameCatalog.INSTANCE.classifyDirectory(null, "UnknownSaveFolder", r10Guard, null)
+        );
+    }
 }
