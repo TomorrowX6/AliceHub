@@ -60,6 +60,7 @@ fun discoverSaveTargets(
 
     val found = LinkedHashMap<String, SaveTarget>()
     var resolvedPreferredDirName = preferredDirName
+    var scopedDefaultDirName: String? = null
     val gameList = GameList(activity)
     try {
         for (i in 0 until gameList.size) {
@@ -94,7 +95,6 @@ fun discoverSaveTargets(
             }
 
         val gid = scopedGameId
-        var scopedDefaultDirName: String? = null
         if (!gid.isNullOrBlank()) {
             var hasNonAmbiguousTarget = false
             val iter = found.entries.iterator()
