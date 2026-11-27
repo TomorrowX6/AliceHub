@@ -309,12 +309,13 @@ static int commit_switch_save(const char *tmp_path, const char *path)
 
 bool atomic_save_commit(FILE *fp, const char *path, char *tmp_path, bool keep_backup)
 {
+	bool volatile_mem = savedir_is_memory_save_path(path);
 	bool ok = !ferror(fp) && fflush(fp) == 0;
 #ifdef _WIN32
-	if (ok && _commit(_fileno(fp)) != 0)
+	if (ok && !volatile_mem && _commit(_fileno(fp)) != 0)
 		ok = false;
 #else
-	if (ok && fsync(fileno(fp)) != 0 && errno != EINVAL && errno != EROFS)
+	if (ok && !volatile_mem && fsync(fileno(fp)) != 0 && errno != EINVAL && errno != EROFS)
 		ok = false;
 #endif
 	if (fclose(fp) != 0)
@@ -326,7 +327,7 @@ bool atomic_save_commit(FILE *fp, const char *path, char *tmp_path, bool keep_ba
 		return false;
 	}
 
-	if (keep_backup && file_exists(path) && file_size(path) > 16) {
+	if (!volatile_mem && keep_backup && file_exists(path) && file_size(path) > 16) {
 		char *bak = make_backup_path(path);
 		file_copy(path, bak);
 		free(bak);

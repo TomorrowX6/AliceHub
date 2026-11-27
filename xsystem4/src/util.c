@@ -15,6 +15,9 @@
  */
 
 #include <stdarg.h>
+#include <stdatomic.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +29,10 @@
 #include <windows.h>
 #else
 #include <pthread.h>
+#ifndef __SWITCH__
+#include <signal.h>
+#include <unistd.h>
+#endif
 #endif
 
 #include "system4.h"
@@ -640,21 +647,513 @@ void savedir_cache_invalidate(void)
 	file_note_fs_mutation();
 }
 
+static bool savedir_strip_memory_prefix(const char *path, const char **rest_out)
+{
+	if (!path)
+		return false;
+	const char *p = path;
+	while (p[0] == '.' && (p[1] == '/' || p[1] == '\\'))
+		p += 2;
+	static const char tag[] = "<memory>";
+	for (size_t i = 0; i < sizeof(tag) - 1; i++) {
+		unsigned char c = (unsigned char)p[i];
+		if (!c)
+			return false;
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c - 'A' + 'a');
+		if (c != (unsigned char)tag[i])
+			return false;
+	}
+	*rest_out = p + (sizeof(tag) - 1);
+	return true;
+}
+
+static uint64_t savedir_fnv1a64_ascii_icase(const char *s, size_t len)
+{
+	uint64_t h = 14695981039346656037ULL;
+	for (size_t i = 0; i < len; i++) {
+		unsigned char c = (unsigned char)s[i];
+		if (c >= 'A' && c <= 'Z')
+			c = (unsigned char)(c - 'A' + 'a');
+		h ^= c;
+		h *= 1099511628211ULL;
+	}
+	return h;
+}
+
+static _Atomic uint64_t g_savedir_mem_session_nonce = 0;
+
+static uint64_t savedir_current_pid(void)
+{
+#ifdef _WIN32
+	return (uint64_t)GetCurrentProcessId();
+#elif defined(__SWITCH__)
+	return 1ULL;
+#else
+	return (uint64_t)getpid();
+#endif
+}
+
+static uint64_t savedir_make_session_nonce(uint64_t prev)
+{
+	uint64_t h = 14695981039346656037ULL ^ savedir_current_pid();
+#ifdef _WIN32
+	FILETIME ft;
+	GetSystemTimeAsFileTime(&ft);
+	uint64_t rt = ((uint64_t)ft.dwHighDateTime << 32) | (uint64_t)ft.dwLowDateTime;
+	uint64_t mono = (uint64_t)GetTickCount64();
+	h = (h ^ rt) * 1099511628211ULL;
+	h = (h ^ mono) * 1099511628211ULL;
+#else
+	struct timespec rt = { 0 }, mono = { 0 };
+	clock_gettime(CLOCK_REALTIME, &rt);
+	clock_gettime(CLOCK_MONOTONIC, &mono);
+	h = (h ^ (uint64_t)rt.tv_sec) * 1099511628211ULL;
+	h = (h ^ (uint64_t)rt.tv_nsec) * 1099511628211ULL;
+	h = (h ^ (uint64_t)mono.tv_sec) * 1099511628211ULL;
+	h = (h ^ (uint64_t)mono.tv_nsec) * 1099511628211ULL;
+#endif
+	h ^= (uintptr_t)&g_savedir_mem_session_nonce;
+	h *= 1099511628211ULL;
+	h ^= prev + 1ULL;
+	if (h == 0 || h == prev)
+		h = prev + 1ULL;
+	if (h == 0)
+		h = 1ULL;
+	return h;
+}
+
+static uint64_t savedir_current_mem_session_nonce(void)
+{
+	uint64_t nonce = atomic_load_explicit(&g_savedir_mem_session_nonce, memory_order_acquire);
+	if (nonce != 0)
+		return nonce;
+	uint64_t candidate = savedir_make_session_nonce(0);
+	uint64_t expected = 0;
+	if (atomic_compare_exchange_strong_explicit(&g_savedir_mem_session_nonce, &expected, candidate,
+			memory_order_acq_rel, memory_order_acquire))
+		return candidate;
+	return expected;
+}
+
+static size_t savedir_format_session_prefix(char *buf, size_t cap, uint64_t pid, uint64_t nonce)
+{
+	int n = snprintf(buf, cap, "%sp%" PRIu64 ".%016" PRIx64 ".", SAVEDIR_MEMORY_PREFIX, pid, nonce);
+	if (n < 0 || (size_t)n >= cap)
+		return 0;
+	return (size_t)n;
+}
+
+static bool savedir_parse_memory_owner(const char *d_name, uint64_t *pid_out, uint64_t *nonce_out)
+{
+	const size_t pfx_len = sizeof(SAVEDIR_MEMORY_PREFIX) - 1;
+	const char *p = d_name;
+	if (p[0] == '.' && !strncmp(p + 1, SAVEDIR_MEMORY_PREFIX, pfx_len))
+		p += 1 + pfx_len;
+	else if (!strncmp(p, SAVEDIR_MEMORY_PREFIX, pfx_len))
+		p += pfx_len;
+	else
+		return false;
+
+	if (*p != 'p')
+		return false;
+	p++;
+	if (*p < '0' || *p > '9')
+		return false;
+	uint64_t pid = 0;
+	while (*p >= '0' && *p <= '9') {
+		uint64_t digit = (uint64_t)(*p - '0');
+		if (pid > (UINT64_MAX - digit) / 10)
+			return false;
+		pid = pid * 10 + digit;
+		p++;
+	}
+	if (*p != '.')
+		return false;
+	p++;
+	uint64_t nonce = 0;
+	size_t hex_digits = 0;
+	while ((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F')) {
+		if (hex_digits >= 16)
+			return false;
+		uint64_t v = (*p >= '0' && *p <= '9') ? (uint64_t)(*p - '0')
+			: (*p >= 'a' && *p <= 'f') ? (uint64_t)(*p - 'a' + 10)
+			: (uint64_t)(*p - 'A' + 10);
+		nonce = (nonce << 4) | v;
+		hex_digits++;
+		p++;
+	}
+	if (*p != '.' || hex_digits == 0 || nonce == 0)
+		return false;
+	*pid_out = pid;
+	*nonce_out = nonce;
+	return true;
+}
+
+static bool savedir_owner_is_dead(uint64_t pid, uint64_t nonce, uint64_t my_pid, uint64_t my_nonce)
+{
+#ifdef __SWITCH__
+	// Switch runs a single game instance at a time and always uses pid=1;
+	// at startup (before the new session writes any snapshots), any leftover
+	// .alicehub-mem.* file on the SD card is guaranteed stale.
+	(void)pid;
+	(void)nonce;
+	(void)my_pid;
+	(void)my_nonce;
+	return true;
+#else
+	if (pid == my_pid)
+		return nonce != my_nonce;
+#if defined(_WIN32)
+	if (pid == 0 || pid > UINT32_MAX)
+		return false;
+	HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid);
+	if (h) {
+		DWORD exit_code = 0;
+		bool dead = GetExitCodeProcess(h, &exit_code) && exit_code != STILL_ACTIVE;
+		CloseHandle(h);
+		return dead;
+	}
+	return GetLastError() == ERROR_INVALID_PARAMETER;
+#else
+	if (pid == 0 || pid > (uint64_t)INT32_MAX)
+		return false;
+	if (kill((pid_t)pid, 0) == 0)
+		return false;
+	return errno == ESRCH;
+#endif
+#endif
+}
+
+static char *savedir_format_memory_basename(const char *utf_rest)
+{
+	static const char hex[] = "0123456789abcdef";
+	char pfx[64];
+	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx),
+		savedir_current_pid(), savedir_current_mem_session_nonce());
+	const size_t max_body = 130;
+	size_t rest_len = utf_rest ? strlen(utf_rest) : 0;
+	if (!rest_len) {
+		// '~' is always percent-encoded for non-empty inputs (and hash suffixes
+		// never place '~' at index 0), so "~empty" cannot collide with any input.
+		char *out = xmalloc(pfx_len + sizeof("~empty"));
+		memcpy(out, pfx, pfx_len);
+		memcpy(out + pfx_len, "~empty", sizeof("~empty"));
+		return out;
+	}
+
+	size_t enc_cap = rest_len * 3 + 1;
+	char *enc = xmalloc(enc_cap);
+	size_t enc_len = 0;
+	for (size_t i = 0; i < rest_len; i++) {
+		unsigned char c = (unsigned char)utf_rest[i];
+		bool safe = (c >= 'A' && c <= 'Z')
+			|| (c >= 'a' && c <= 'z')
+			|| (c >= '0' && c <= '9')
+			|| c == '_' || c == '-'
+			|| (c == '.' && i + 1 < rest_len);
+		if (safe) {
+			enc[enc_len++] = (char)c;
+		} else {
+			enc[enc_len++] = '%';
+			enc[enc_len++] = hex[c >> 4];
+			enc[enc_len++] = hex[c & 0x0f];
+		}
+	}
+	enc[enc_len] = '\0';
+
+	if (enc_len <= max_body) {
+		char *out = xmalloc(pfx_len + enc_len + 1);
+		memcpy(out, pfx, pfx_len);
+		memcpy(out + pfx_len, enc, enc_len + 1);
+		free(enc);
+		return out;
+	}
+
+	// Keep filename comfortably under 255-byte component limits even with
+	// atomic .tmp / .switch-old suffixes, while avoiding collisions via hash.
+	size_t cut = max_body - 17; // reserve '~' + 16 hex chars
+	if (cut >= 1 && enc[cut - 1] == '%')
+		cut -= 1;
+	else if (cut >= 2 && enc[cut - 2] == '%')
+		cut -= 2;
+	uint64_t h = savedir_fnv1a64_ascii_icase(utf_rest, rest_len);
+	char *out = xmalloc(pfx_len + cut + 1 + 16 + 1);
+	memcpy(out, pfx, pfx_len);
+	memcpy(out + pfx_len, enc, cut);
+	out[pfx_len + cut] = '~';
+	for (int i = 0; i < 16; i++)
+		out[pfx_len + cut + 1 + i] = hex[(h >> ((15 - i) * 4)) & 0x0f];
+	out[pfx_len + cut + 17] = '\0';
+	free(enc);
+	return out;
+}
+
+struct savedir_mem_entry {
+	char *logical_name;
+	char *logical_utf8;
+	char *disk_path;
+};
+
+static struct savedir_mem_entry *savedir_mem_entries = NULL;
+static size_t savedir_mem_entry_count = 0;
+static size_t savedir_mem_entry_cap = 0;
+
+static void savedir_mem_registry_clear(void)
+{
+	savedir_lock();
+	for (size_t i = 0; i < savedir_mem_entry_count; i++) {
+		free(savedir_mem_entries[i].logical_name);
+		free(savedir_mem_entries[i].logical_utf8);
+		free(savedir_mem_entries[i].disk_path);
+	}
+	free(savedir_mem_entries);
+	savedir_mem_entries = NULL;
+	savedir_mem_entry_count = 0;
+	savedir_mem_entry_cap = 0;
+	savedir_unlock();
+}
+
+static bool savedir_ascii_ieq_n(const char *a, const char *b, size_t n)
+{
+	for (size_t i = 0; i < n; i++) {
+		unsigned char ca = (unsigned char)a[i];
+		unsigned char cb = (unsigned char)b[i];
+		if (ca >= 'A' && ca <= 'Z')
+			ca = (unsigned char)(ca - 'A' + 'a');
+		if (cb >= 'A' && cb <= 'Z')
+			cb = (unsigned char)(cb - 'A' + 'a');
+		if (ca != cb)
+			return false;
+	}
+	return true;
+}
+
+static bool savedir_ascii_ieq(const char *a, const char *b)
+{
+	size_t la = strlen(a);
+	if (la != strlen(b))
+		return false;
+	return savedir_ascii_ieq_n(a, b, la);
+}
+
+static bool savedir_wildcard_match_icase(const char *pat, const char *s)
+{
+	const char *star = strchr(pat, '*');
+	if (!star)
+		return savedir_ascii_ieq(pat, s);
+	size_t pre = (size_t)(star - pat);
+	size_t suf = strlen(star + 1);
+	size_t slen = strlen(s);
+	if (slen < pre + suf)
+		return false;
+	return savedir_ascii_ieq_n(pat, s, pre)
+		&& savedir_ascii_ieq_n(star + 1, s + slen - suf, suf);
+}
+
+static void savedir_mem_registry_record(const char *raw_rest, const char *utf_rest, const char *disk_path)
+{
+	if (!disk_path)
+		return;
+	static const char tag[] = "<memory>";
+	const size_t tag_len = sizeof(tag) - 1;
+	size_t raw_len = raw_rest ? strlen(raw_rest) : 0;
+	char *logical = xmalloc(tag_len + raw_len + 1);
+	memcpy(logical, tag, tag_len);
+	if (raw_len)
+		memcpy(logical + tag_len, raw_rest, raw_len);
+	logical[tag_len + raw_len] = '\0';
+
+	const char *utf = utf_rest ? utf_rest : "";
+
+	savedir_lock();
+	for (size_t i = 0; i < savedir_mem_entry_count; i++) {
+		if (savedir_ascii_ieq(savedir_mem_entries[i].disk_path, disk_path)) {
+			if (!file_exists(savedir_mem_entries[i].disk_path)) {
+				free(savedir_mem_entries[i].logical_name);
+				free(savedir_mem_entries[i].logical_utf8);
+				free(savedir_mem_entries[i].disk_path);
+				savedir_mem_entries[i].logical_name = logical;
+				savedir_mem_entries[i].logical_utf8 = xstrdup(utf);
+				savedir_mem_entries[i].disk_path = xstrdup(disk_path);
+			} else {
+				free(logical);
+			}
+			savedir_unlock();
+			return;
+		}
+	}
+	if (savedir_mem_entry_count == savedir_mem_entry_cap) {
+		size_t ncap = savedir_mem_entry_cap ? savedir_mem_entry_cap * 2 : 16;
+		savedir_mem_entries = xrealloc(savedir_mem_entries, ncap * sizeof(*savedir_mem_entries));
+		savedir_mem_entry_cap = ncap;
+	}
+	savedir_mem_entries[savedir_mem_entry_count++] = (struct savedir_mem_entry) {
+		.logical_name = logical,
+		.logical_utf8 = xstrdup(utf),
+		.disk_path = xstrdup(disk_path),
+	};
+	savedir_unlock();
+}
+
+int savedir_memory_find(const char *pattern, int *count, char **match_out)
+{
+	if (!pattern || !count || !match_out)
+		return -1;
+	const char *target = pattern;
+	if (config.save_dir && config.save_dir[0]) {
+		const char *stripped_rel = NULL;
+		if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
+			target = stripped_rel;
+	}
+	const char *mem_rest = NULL;
+	if (!savedir_strip_memory_prefix(target, &mem_rest))
+		return -1;
+
+	char *pat_utf8 = unix_path_with(mem_rest, false);
+	int found = 0;
+	int visible_idx = 0;
+	savedir_lock();
+	for (size_t i = 0; i < savedir_mem_entry_count; i++) {
+		if (!file_exists(savedir_mem_entries[i].disk_path))
+			continue;
+		if (visible_idx >= *count) {
+			*count = visible_idx;
+			if (savedir_wildcard_match_icase(pat_utf8, savedir_mem_entries[i].logical_utf8)) {
+				*match_out = xstrdup(savedir_mem_entries[i].logical_name);
+				found = 1;
+				break;
+			}
+		}
+		visible_idx++;
+	}
+	savedir_unlock();
+	free(pat_utf8);
+	return found;
+}
+
+static void savedir_cleanup_stale_memory_saves(uint64_t my_pid, uint64_t my_nonce)
+{
+	if (!config.save_dir || !config.save_dir[0])
+		return;
+	UDIR *d = opendir_utf8(config.save_dir);
+	if (!d)
+		return;
+	char *d_name;
+	while ((d_name = readdir_utf8(d)) != NULL) {
+		uint64_t owner_pid = 0;
+		uint64_t owner_nonce = 0;
+		if (savedir_parse_memory_owner(d_name, &owner_pid, &owner_nonce)
+				&& savedir_owner_is_dead(owner_pid, owner_nonce, my_pid, my_nonce)) {
+			char *full = path_join(config.save_dir, d_name);
+			ustat st;
+			if (stat_utf8(full, &st) == 0 && S_ISREG(st.st_mode))
+				remove_utf8(full);
+			free(full);
+		}
+		free(d_name);
+	}
+	closedir_utf8(d);
+}
+
+void savedir_begin_memory_session(void)
+{
+	savedir_mem_registry_clear();
+	uint64_t prev = atomic_load_explicit(&g_savedir_mem_session_nonce, memory_order_acquire);
+	uint64_t nonce;
+	do {
+		nonce = savedir_make_session_nonce(prev);
+	} while (!atomic_compare_exchange_weak_explicit(&g_savedir_mem_session_nonce, &prev, nonce,
+			memory_order_acq_rel, memory_order_acquire));
+	savedir_cleanup_stale_memory_saves(savedir_current_pid(), nonce);
+}
+
+void savedir_cleanup_memory_saves(void)
+{
+	savedir_mem_registry_clear();
+	if (!config.save_dir || !config.save_dir[0])
+		return;
+	uint64_t my_nonce = atomic_load_explicit(&g_savedir_mem_session_nonce, memory_order_acquire);
+	if (my_nonce == 0)
+		return;
+	char pfx[64];
+	size_t pfx_len = savedir_format_session_prefix(pfx, sizeof(pfx), savedir_current_pid(), my_nonce);
+	if (!pfx_len)
+		return;
+	UDIR *d = opendir_utf8(config.save_dir);
+	if (!d)
+		return;
+	char *d_name;
+	while ((d_name = readdir_utf8(d)) != NULL) {
+		bool match = !strncmp(d_name, pfx, pfx_len)
+			|| (d_name[0] == '.' && !strncmp(d_name + 1, pfx, pfx_len));
+		if (match) {
+			char *full = path_join(config.save_dir, d_name);
+			ustat st;
+			if (stat_utf8(full, &st) == 0 && S_ISREG(st.st_mode))
+				remove_utf8(full);
+			free(full);
+		}
+		free(d_name);
+	}
+	closedir_utf8(d);
+}
+
 static char *resolve_savedir_path(const char *path, bool *exists_out)
 {
 	if (exists_out)
 		*exists_out = false;
+
+	const char *target = path ? path : "";
+	if (config.save_dir && config.save_dir[0]) {
+		const char *stripped_rel = NULL;
+		if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
+			target = stripped_rel;
+	}
+
+	const char *mem_rest = NULL;
+	if (savedir_strip_memory_prefix(target, &mem_rest)) {
+		char *utf_rest = unix_path_with(mem_rest, false);
+		char *mem_base = savedir_format_memory_basename(utf_rest);
+		const char *dir = (config.save_dir && config.save_dir[0]) ? config.save_dir : ".";
+		char *resolved_mem = join_dir_and_rel(dir, mem_base);
+		free(mem_base);
+		char *final_mem = resolved_mem;
+		if (!config.save_dir || !config.save_dir[0]) {
+			if (exists_out)
+				*exists_out = file_exists(resolved_mem);
+		} else {
+			char *matched = NULL;
+			bool dir_missing = false;
+			if (!savedir_cache_lookup(resolved_mem, &matched, &dir_missing)) {
+				if (exists_out)
+					*exists_out = file_exists(resolved_mem);
+			} else if (matched) {
+				if (!exists_out) {
+					free(resolved_mem);
+					final_mem = matched;
+				} else if (file_exists(matched)) {
+					*exists_out = true;
+					free(resolved_mem);
+					final_mem = matched;
+				} else {
+					file_note_fs_mutation();
+					free(matched);
+				}
+			}
+		}
+		if (!exists_out)
+			savedir_mem_registry_record(mem_rest, utf_rest, final_mem);
+		free(utf_rest);
+		return final_mem;
+	}
+
 	if (!config.save_dir || !config.save_dir[0]) {
 		char *p = resolve_path(config.save_dir ? config.save_dir : ".", path, false);
 		if (exists_out)
 			*exists_out = p && file_exists(p);
 		return p;
 	}
-
-	const char *target = path ? path : "";
-	const char *stripped_rel = NULL;
-	if (strip_cjk_dir_prefix(config.save_dir, target, &stripped_rel))
-		target = stripped_rel;
 
 	char *utf_primary = unix_path_with(target, false);
 	char *resolved_primary = join_dir_and_rel(config.save_dir, utf_primary);

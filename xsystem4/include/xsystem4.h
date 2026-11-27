@@ -79,9 +79,31 @@ bool is_absolute_path(const char *path);
 char *unix_path(const char *path);
 char *gamedir_path(const char *path);
 char *gamedir_path_icase(const char *path);
+#define SAVEDIR_MEMORY_PREFIX ".alicehub-mem."
+
 char *savedir_path(const char *path);
 bool savedir_file_exists(const char *path);
 void savedir_cache_invalidate(void);
+void savedir_begin_memory_session(void);
+void savedir_cleanup_memory_saves(void);
+int savedir_memory_find(const char *pattern, int *count, char **match_out);
+
+static inline bool savedir_is_memory_save_path(const char *path)
+{
+	if (!path)
+		return false;
+	const char *base = path;
+	for (const char *p = path; *p; p++) {
+		if (*p == '/' || *p == '\\')
+			base = p + 1;
+	}
+	const char *prefix = SAVEDIR_MEMORY_PREFIX;
+	for (size_t i = 0; prefix[i]; i++) {
+		if (base[i] != prefix[i])
+			return false;
+	}
+	return true;
+}
 
 void get_date(int *year, int *month, int *mday, int *wday);
 void get_time(int *hour, int *min, int *sec, int *ms);

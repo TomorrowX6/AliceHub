@@ -1461,6 +1461,286 @@ char *cjk_mixed_display_to_gbk(const char *text, bool allow_ambiguous)
 	return out;
 }
 
+static bool gbk_display_pair_bounded(const uint8_t *s, const uint8_t *end)
+{
+	return s + 1 < end && gbk_display_pair(s);
+}
+
+struct cjk_dialog_run_stats {
+	size_t common;
+	size_t extended;
+	bool has_sjis_only;
+	bool has_sjis_punct;
+	bool all_sjis_punct_or_space;
+};
+
+static bool cjk_dialog_is_sjis_punct_pair(const uint8_t *p)
+{
+	if (p[0] != 0x81)
+		return false;
+	switch (p[1]) {
+	case 0x41: // 、
+	case 0x42: // 。
+	case 0x45: // ・
+	case 0x46: // ：
+	case 0x47: // ；
+	case 0x48: // ？
+	case 0x49: // ！
+	case 0x63: // …
+	case 0x69: // （
+	case 0x6a: // ）
+	case 0x6d: // ［
+	case 0x6e: // ］
+	case 0x71: // 〈
+	case 0x72: // 〉
+	case 0x73: // 《
+	case 0x74: // 》
+	case 0x75: // 「
+	case 0x76: // 」
+	case 0x77: // 『
+	case 0x78: // 』
+	case 0x79: // 【
+	case 0x7a: // 】
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool cjk_dialog_is_sjis_hw_kana_run(const uint8_t *s, const uint8_t *end)
+{
+	size_t len = (size_t)(end - s);
+	if (!len)
+		return false;
+	// Odd-length 0xA1..0xDF runs cannot be valid GBK double-byte sequences.
+	if (len & 1u)
+		return true;
+	// Any pair unmapped in GBK cannot be valid GBK text.
+	for (size_t i = 0; i < len; i += 2) {
+		if (!gbk_lookup(s[i], s[i + 1]))
+			return true;
+	}
+	// Even-length 0xA1..0xDF runs overlap GB2312 (e.g. 中文/系统); only match
+	// explicit CP932 half-width katakana system words inside a CP932 dialog.
+	static const struct {
+		const uint8_t bytes[6];
+		uint8_t len;
+	} hw_words[] = {
+		{ { 0xcc, 0xa7, 0xb2, 0xd9 }, 4 },                   // ﾌｧｲﾙ
+		{ { 0xbe, 0xb0, 0xcc, 0xde }, 4 },                   // ｾｰﾌﾞ
+		{ { 0xdb, 0xb0, 0xc4, 0xde }, 4 },                   // ﾛｰﾄﾞ
+		{ { 0xc3, 0xde, 0xb0, 0xc0 }, 4 },                   // ﾃﾞｰﾀ
+		{ { 0xbc, 0xbd, 0xc3, 0xd1 }, 4 },                   // ｼｽﾃﾑ
+		{ { 0xd2, 0xaf, 0xbe, 0xb0, 0xbc, 0xde }, 6 },       // ﾒｯｾｰｼﾞ
+		{ { 0xc0, 0xb2, 0xc4, 0xd9 }, 4 },                   // ﾀｲﾄﾙ
+	};
+	for (size_t i = 0; i < sizeof(hw_words) / sizeof(hw_words[0]); i++) {
+		size_t wlen = hw_words[i].len;
+		if (wlen > len)
+			continue;
+		for (size_t off = 0; off <= len - wlen; off++) {
+			if (!memcmp(s + off, hw_words[i].bytes, wlen))
+				return true;
+		}
+	}
+	return false;
+}
+
+static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
+		struct cjk_dialog_run_stats *st)
+{
+	memset(st, 0, sizeof(*st));
+	st->all_sjis_punct_or_space = (run < end);
+	for (const uint8_t *p = run; p < end; p += 2) {
+		if (!gbk_lookup(p[0], p[1]))
+			st->has_sjis_only = true;
+		if (p[0] >= 0xa1 && p[0] <= 0xf7 && p[1] >= 0xa1)
+			st->common++;
+		else
+			st->extended++;
+		if (cjk_dialog_is_sjis_punct_pair(p))
+			st->has_sjis_punct = true;
+		else if (!(p[0] == 0x81 && p[1] == 0x40))
+			st->all_sjis_punct_or_space = false;
+	}
+}
+
+/* Recognized CP932 System 4 dialog keywords and sentence endings.
+ * Matched strictly on 2-byte pair boundaries inside valid Shift-JIS runs so
+ * arbitrary dual-valid GBK text (e.g. 傑傑傑傑, 偽鈔偵測機) is never overridden. */
+static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *end)
+{
+	static const struct {
+		const uint8_t bytes[10];
+		uint8_t len;
+	} phrases[] = {
+		{ { 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75 }, 6 },                         // セーブ
+		{ { 0x83, 0x8d, 0x81, 0x5b, 0x83, 0x68 }, 6 },                         // ロード
+		{ { 0x83, 0x66, 0x81, 0x5b, 0x83, 0x5e }, 6 },                         // データ
+		{ { 0x83, 0x47, 0x83, 0x89, 0x81, 0x5b }, 6 },                         // エラー
+		{ { 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b }, 8 },             // ファイル
+		{ { 0x83, 0x56, 0x83, 0x58, 0x83, 0x65, 0x83, 0x80 }, 8 },             // システム
+		{ { 0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b }, 8 },             // タイトル
+		{ { 0x83, 0x81, 0x83, 0x62, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x57 }, 10 },// メッセージ
+		{ { 0x83, 0x81, 0x83, 0x82, 0x83, 0x8a }, 6 },                         // メモリ
+		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8 },             // しました
+		{ { 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ますか？
+		{ { 0x82, 0xc5, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ですか？
+		{ { 0x82, 0xb7, 0x82, 0xe9, 0x81, 0x48 }, 6 },                         // する？
+		{ { 0x82, 0xdc, 0x82, 0xb9, 0x82, 0xf1 }, 6 },                         // ません
+		{ { 0x82, 0xc4, 0x82, 0xa2, 0x82, 0xdc, 0x82, 0xb7 }, 8 },             // ています
+		{ { 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73 }, 6 },                         // に失敗
+		{ { 0x82, 0xad, 0x82, 0xbe, 0x82, 0xb3, 0x82, 0xa2 }, 8 },             // ください
+		{ { 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42 }, 8 },             // ました。
+	};
+	size_t run_len = (size_t)(end - run);
+	for (size_t i = 0; i < sizeof(phrases) / sizeof(phrases[0]); i++) {
+		size_t plen = phrases[i].len;
+		if (plen > run_len)
+			continue;
+		for (size_t off = 0; off <= run_len - plen; off += 2) {
+			if (!memcmp(run + off, phrases[i].bytes, plen))
+				return true;
+		}
+	}
+	return false;
+}
+
+static bool cjk_dialog_run_is_strong_sjis(const uint8_t *run, const uint8_t *end,
+		const struct cjk_dialog_run_stats *st)
+{
+	if (st->has_sjis_only)
+		return true;
+	if (st->common && st->extended / 3 < st->common)
+		return false;
+	return cjk_dialog_run_has_sjis_phrase(run, end);
+}
+
+static bool cjk_dialog_has_sjis_evidence(const uint8_t *src, const uint8_t *end)
+{
+	const uint8_t *s = src;
+	while (s < end) {
+		if (!gbk_display_pair_bounded(s, end)) {
+			s++;
+			continue;
+		}
+		const uint8_t *tok_end = s;
+		bool token_has_gbk_text = false;
+		while (gbk_display_pair_bounded(tok_end, end)) {
+			int sjis = sjis_display_pair(tok_end);
+			int gbk = gbk_lookup(tok_end[0], tok_end[1]);
+			if (!sjis && gbk) {
+				token_has_gbk_text |= !(tok_end[0] == 0xa1 && tok_end[1] == 0xa1)
+					&& !(tok_end[0] == 0xa3 && tok_end[1] >= 0xb0 && tok_end[1] <= 0xb9);
+			}
+			tok_end += 2;
+		}
+		while (s < tok_end) {
+			const uint8_t *run = s;
+			while (s < tok_end && sjis_display_pair(s) > 0)
+				s += 2;
+			if (run == s) {
+				s += 2;
+				continue;
+			}
+			struct cjk_dialog_run_stats st;
+			cjk_dialog_scan_sjis_run(run, s, &st);
+			if (st.has_sjis_only || (!token_has_gbk_text && cjk_dialog_run_is_strong_sjis(run, s, &st)))
+				return true;
+		}
+	}
+	return false;
+}
+
+char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
+{
+	if (!_src)
+		return NULL;
+	if (!len) {
+		len = strlen(_src);
+	} else {
+		const char *nul = memchr(_src, '\0', len);
+		if (nul)
+			len = (size_t)(nul - _src);
+	}
+	if (!len || !sys4_text_is_gbk || sys4_mai_active)
+		return mai_sjis2utf(_src, len);
+
+	const uint8_t *src = (const uint8_t *)_src;
+	const uint8_t *end = src + len;
+	if (!cjk_dialog_has_sjis_evidence(src, end))
+		return mai_sjis2utf(_src, len);
+
+	uint8_t *dst = xmalloc(len * 3 + 1);
+	uint8_t *dstp = dst;
+	const uint8_t *s = src;
+	while (s < end) {
+		if (*s >= 0xa1 && *s <= 0xdf) {
+			const uint8_t *na_end = s;
+			bool all_hw = true;
+			while (na_end < end && *na_end >= 0x80) {
+				if (*na_end < 0xa1 || *na_end > 0xdf)
+					all_hw = false;
+				na_end++;
+			}
+			bool crosses_gbk_pair = ((size_t)(na_end - s) & 1u) != 0
+				&& na_end < end
+				&& gbk_display_pair_bounded(na_end - 1, end)
+				&& gbk_lookup(na_end[-1], na_end[0]) > 0;
+			if (all_hw && !crosses_gbk_pair && cjk_dialog_is_sjis_hw_kana_run(s, na_end)) {
+				for (const uint8_t *p = s; p < na_end; p++)
+					encode_utf8_bmp(0xff60 + (*p - 0xa0), &dstp);
+				s = na_end;
+				continue;
+			}
+		}
+		if (!gbk_display_pair_bounded(s, end)) {
+			if (*s <= 0x7f)
+				*dstp++ = *s;
+			else if (*s == 0x80)
+				encode_utf8_bmp(0x20ac, &dstp);
+			else
+				encode_utf8_bmp(0xfffd, &dstp);
+			s++;
+			continue;
+		}
+		const uint8_t *tok_end = s;
+		bool token_has_gbk_text = false;
+		while (gbk_display_pair_bounded(tok_end, end)) {
+			int sjis = sjis_display_pair(tok_end);
+			int gbk = gbk_lookup(tok_end[0], tok_end[1]);
+			if (!sjis && gbk) {
+				token_has_gbk_text |= !(tok_end[0] == 0xa1 && tok_end[1] == 0xa1)
+					&& !(tok_end[0] == 0xa3 && tok_end[1] >= 0xb0 && tok_end[1] <= 0xb9);
+			}
+			tok_end += 2;
+		}
+		while (s < tok_end) {
+			const uint8_t *run = s;
+			while (s < tok_end && sjis_display_pair(s) > 0)
+				s += 2;
+			if (run == s) {
+				int g = gbk_lookup(s[0], s[1]);
+				encode_utf8_bmp(g ? g : 0xfffd, &dstp);
+				s += 2;
+				continue;
+			}
+			struct cjk_dialog_run_stats st;
+			cjk_dialog_scan_sjis_run(run, s, &st);
+			bool decode_as_sjis = st.has_sjis_only
+				|| (!token_has_gbk_text
+					&& (cjk_dialog_run_is_strong_sjis(run, s, &st)
+						|| (st.all_sjis_punct_or_space && st.has_sjis_punct)));
+			for (const uint8_t *p = run; p < s; p += 2) {
+				int code = decode_as_sjis ? sjis_display_pair(p) : gbk_lookup(p[0], p[1]);
+				encode_utf8_bmp(code ? code : 0xfffd, &dstp);
+			}
+		}
+	}
+	*dstp = '\0';
+	return (char *)dst;
+}
+
 struct string *cjk_display_log_line(struct string *line)
 {
 	const uint8_t *text = (const uint8_t *)line->text;

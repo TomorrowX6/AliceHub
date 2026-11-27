@@ -105,6 +105,7 @@ static int android_clean_return(int code)
 	android_exit_jmp_active = 0;
 	sys_exit_handler = NULL;
 	savedata_flush_on_background();
+	savedir_cleanup_memory_saves();
 	mixer_set_app_backgrounded(true);
 	gfx_android_fini();
 	return code;
@@ -1678,6 +1679,14 @@ int main(int argc, char *argv[])
 #endif
 
 	mkdir_p(config.save_dir);
+	savedir_begin_memory_session();
+#if !defined(__ANDROID__) && !defined(ALICEHUB_IOS)
+	static bool mem_cleanup_registered = false;
+	if (!mem_cleanup_registered) {
+		atexit(savedir_cleanup_memory_saves);
+		mem_cleanup_registered = true;
+	}
+#endif
 #ifdef __SWITCH__
 	switch_menu4_load_display(config.save_dir);
 #endif
@@ -1713,10 +1722,12 @@ int alicehub_switch_engine_main(int argc, char *argv[])
 	optind = 0;
 	if (!setjmp(switch_startup)) {
 		int result = run_xsystem4(argc, argv);
+		savedir_cleanup_memory_saves();
 		sys_error_handler = NULL;
 		sys_exit_handler = NULL;
 		return result;
 	}
+	savedir_cleanup_memory_saves();
 	sys_error_handler = NULL;
 	sys_exit_handler = NULL;
 	ini_abort_parse();
@@ -1737,6 +1748,7 @@ int xsystem4_main(int argc, char **argv)
 	if (setjmp(target) == 0)
 		ios_exit_code = run_xsystem4(argc, argv);
 	vm_end_session();
+	savedir_cleanup_memory_saves();
 	audio_end_session();
 	gfx_fini();
 	asset_manager_fini();
