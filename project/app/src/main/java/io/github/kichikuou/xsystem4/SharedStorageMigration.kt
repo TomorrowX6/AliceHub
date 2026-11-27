@@ -52,7 +52,17 @@ internal object SharedStorageMigration {
         running?.dialogs?.remove(activity)?.dialog?.dismiss()
     }
 
-    fun start(activity: Activity, onFinished: (Boolean) -> Unit, onComplete: () -> Unit) {
+    fun showPendingFailureNotice(activity: Activity) {
+        if (AppStorage.hasPendingPublicStorageFailureNotice(activity)) showFailureNotice(activity)
+    }
+
+    private fun showFailureNotice(activity: Activity) {
+        if (!activity.isFinishing && !activity.isDestroyed && AppStorage.consumePublicStorageFailureNotice(activity)) {
+            Toast.makeText(activity, R.string.public_storage_migration_incomplete, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun start(activity: Activity, retry: Boolean, onFinished: () -> Unit, onComplete: () -> Unit) {
         if (attach(activity, onComplete)) return
         val session = Session()
         running = session
@@ -60,7 +70,7 @@ internal object SharedStorageMigration {
         val context = activity.applicationContext
         Thread({
             val complete = try {
-                AppStorage.preparePublicStorage(context) { status ->
+                AppStorage.preparePublicStorage(context, retry) { status ->
                     if (session.latest.getAndSet(status) == null) handler.post {
                         session.latest.getAndSet(null)?.let { current ->
                             session.displayed = current
@@ -74,12 +84,16 @@ internal object SharedStorageMigration {
             }
             handler.post {
                 running = null
-                onFinished(complete)
+                onFinished()
+                var resultShown = false
                 for ((host, binding) in session.dialogs) {
                     binding.dialog.dismiss()
                     if (host.isFinishing || host.isDestroyed) continue
-                    Toast.makeText(host, if (complete) R.string.public_storage_migration_done
-                        else R.string.public_storage_migration_incomplete, Toast.LENGTH_LONG).show()
+                    if (!resultShown) {
+                        resultShown = true
+                        if (complete) Toast.makeText(host, R.string.public_storage_migration_done, Toast.LENGTH_LONG).show()
+                        else showFailureNotice(host)
+                    }
                     binding.onComplete()
                 }
             }

@@ -512,7 +512,7 @@
     <string name="public_storage_migrating">Moving saves and backups to shared storage…</string>
     <string name="public_storage_migration_preparing">Preparing files…</string>
     <string name="public_storage_migration_done">Shared storage is ready.</string>
-    <string name="public_storage_migration_incomplete">Some files could not be moved and were kept in their original location.</string>
+    <string name="public_storage_migration_incomplete">Shared storage setup couldn’t finish. Unmoved saves and backups are still in their original location.</string>
     <string name="public_storage_settings_unavailable">Could not open file access settings.</string>
     <string name="onboarding_step">SETUP · %1$d / %2$d</string>
     <string name="onboarding_welcome">Welcome to AliceHub</string>

@@ -340,7 +340,7 @@ class XSystem4Activity : SDLActivity() {
         val saveDir = (intent?.getStringExtra(EXTRA_SAVE_DIR)
             ?: savedInstanceState?.getString(EXTRA_SAVE_DIR))
             ?.takeIf { it.isNotBlank() }
-            ?.let { AppStorage.resolveSavePath(this, it) }
+            ?.let { AppStorage.resolveSavePath(this, it, forLaunch = true) }
         val bootEntry = (intent?.getStringExtra(EXTRA_BOOT_ENTRY)
             ?: savedInstanceState?.getString(EXTRA_BOOT_ENTRY))
             ?.takeIf { it.isNotBlank() }

@@ -511,7 +511,7 @@
     <string name="public_storage_migrating">正在将存档和备份迁移到共享存储…</string>
     <string name="public_storage_migration_preparing">正在准备文件…</string>
     <string name="public_storage_migration_done">共享存储已准备就绪。</string>
-    <string name="public_storage_migration_incomplete">部分文件未能迁移，已保留在原位置。</string>
+    <string name="public_storage_migration_incomplete">共享储存设置未完成。未迁移的存档和备份仍保留在原位置。</string>
     <string name="public_storage_settings_unavailable">无法打开文件访问权限设置。</string>
     <string name="onboarding_step">初始设置 · %1$d / %2$d</string>
     <string name="onboarding_welcome">欢迎使用 AliceHub</string>

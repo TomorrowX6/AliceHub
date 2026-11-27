@@ -334,7 +334,6 @@ object AppSettings {
 
     fun setPublicStorage(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean("public_storage", enabled).apply()
-        if (!enabled) AppStorage.resetPublicStoragePreparation(context)
     }
 
     fun isUpdateCheckEnabled(context: Context): Boolean =
