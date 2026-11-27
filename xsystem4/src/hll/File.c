@@ -392,7 +392,24 @@ static int File_MakeDirectory(struct string *name)
 	return 1;
 }
 
-//int File_Copy(struct string *src, struct string *dst);
+static int File_Copy(struct string *src, struct string *dst)
+{
+	if (!src || !dst)
+		return 0;
+	char *src_path = file_resolve_path(src->text, false);
+	char *dst_path = file_resolve_path(dst->text, true);
+	if (dst_path) {
+		char *dst_copy = xstrdup(dst_path);
+		char *dir = path_dirname(dst_copy);
+		if (dir && dir[0])
+			mkdir_p(dir);
+		free(dst_copy);
+	}
+	bool ok = src_path && dst_path && file_copy(src_path, dst_path);
+	free(src_path);
+	free(dst_path);
+	return ok ? 1 : 0;
+}
 //int File_SetFind(struct string *name);
 //int File_GetFind(struct string **name);
 
@@ -402,7 +419,7 @@ HLL_LIBRARY(File,
 	    HLL_EXPORT(Close, File_Close),
 	    HLL_EXPORT(Read, File_Read),
 	    HLL_EXPORT(Write, File_Write),
-	    //HLL_EXPORT(Copy, File_Copy),
+	    HLL_EXPORT(Copy, File_Copy),
 	    HLL_EXPORT(Delete, File_Delete),
 	    HLL_EXPORT(GetTime, File_GetTime),
 	    //HLL_EXPORT(SetFind, File_SetFind),

@@ -155,6 +155,7 @@ static int MsgSkip_Init(struct string *name)
 #endif
 		save_hook_registered = true;
 	}
+	savedata_set_background_flush_hook(msgskip_save);
 	return 1;
 }
 
@@ -237,6 +238,7 @@ static int MsgSkip_GetAdvFlag(struct string *adv_name, int version, int step)
 
 static void MsgSkip_ModuleFini(void)
 {
+	savedata_set_background_flush_hook(NULL);
 	msgskip_save();
 #ifdef __ANDROID__
 	if (save_hook_registered) {

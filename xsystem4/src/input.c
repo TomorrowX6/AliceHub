@@ -1344,7 +1344,7 @@ invalid:
 	return false;
 }
 
-bool joy_get_digital_stick_status(int controller, int type, bool *left, bool *right, bool *up, bool *down)
+bool joy_get_digital_stick_status(int controller, int type, int *left, int *right, int *up, int *down)
 {
 	float ax = 0.0f, ay = 0.0f;
 	bool valid = false;
@@ -1361,10 +1361,10 @@ bool joy_get_digital_stick_status(int controller, int type, bool *left, bool *ri
 		valid = true;
 	}
 	pthread_mutex_unlock(&gp_mutex);
-	*left = ax < -0.45f;
-	*right = ax > 0.45f;
-	*up = ay < -0.45f;
-	*down = ay > 0.45f;
+	if (left) *left = ax < -0.45f ? 1 : 0;
+	if (right) *right = ax > 0.45f ? 1 : 0;
+	if (up) *up = ay < -0.45f ? 1 : 0;
+	if (down) *down = ay > 0.45f ? 1 : 0;
 	return valid;
 }
 
@@ -2607,6 +2607,84 @@ void input_set_parts_text_handlers(const struct input_text_handlers *handlers)
 {
 	parts_text_handlers = handlers;
 	update_text_handlers();
+}
+
+void input_end_session(void)
+{
+	SDL_GameController *ctrls[MAX_CONTROLLERS] = {0};
+	SDL_Joystick *joys[MAX_CONTROLLERS] = {0};
+
+	pthread_mutex_lock(&gp_mutex);
+	for (int i = 0; i < MAX_CONTROLLERS; i++) {
+		ctrls[i] = pad_slots[i].ctrl;
+		joys[i] = pad_slots[i].joy;
+	}
+	memset(pad_slots, 0, sizeof(pad_slots));
+	memset(&android_pad, 0, sizeof(android_pad));
+	pthread_mutex_unlock(&gp_mutex);
+
+	for (int i = 0; i < MAX_CONTROLLERS; i++) {
+		if (ctrls[i])
+			SDL_GameControllerClose(ctrls[i]);
+		else if (joys[i])
+			SDL_JoystickClose(joys[i]);
+	}
+
+	reset_gamepad_transient_state();
+	input_reset_close_hook();
+
+	memset(key_state, 0, sizeof(key_state));
+	memset(kbd_key_state, 0, sizeof(kbd_key_state));
+	memset(injected_vk_down, 0, sizeof(injected_vk_down));
+	memset(sdl_mouse_down, 0, sizeof(sdl_mouse_down));
+	kbd_ctrl_down = false;
+	atomic_store(&touch_ctrl_skip, false);
+	atomic_store(&long_press_ctrl_enabled, false);
+	long_touch_armed = false;
+	long_touch_ctrl_down = false;
+	touch_press_id = 0;
+	long_touch_click_cancel = 0;
+
+	movie_mode_active = false;
+	movie_mode_seq = 0;
+	single_touch_down = false;
+	movie_touch_hold_eligible = false;
+	suppress_touch_until_release = false;
+	movie_mouse_holding = false;
+	suppress_mouse_until_release = false;
+	movie_key_holding = false;
+	memset(suppressed_movie_keys, 0, sizeof(suppressed_movie_keys));
+	movie_early_release_hint = false;
+
+	clear_active_touch_fingers();
+	multi_touch_active = false;
+	two_finger_tap_candidate = false;
+	two_finger_scrolled = false;
+
+	nr_deferred_synthetic_mouse_events = 0;
+	memset(deferred_synthetic_mouse_events, 0, sizeof(deferred_synthetic_mouse_events));
+	synthetic_mouse_hover_observed = false;
+	synthetic_mouse_down_observed = false;
+	synthetic_mouse_up_observed = true;
+	synthetic_mouse_release_pos_observed = false;
+	synthetic_mouse_release_pos_obs_count = 0;
+	synthetic_mouse_release_queued_before_down_obs = false;
+	has_synthetic_mouse_pos = false;
+	synthetic_mouse_warped = false;
+	has_last_touch_down_pos = false;
+	in_parts_poll = false;
+	memset(mouse_down_unobserved, 0, sizeof(mouse_down_unobserved));
+	memset(deferred_mouse_release, 0, sizeof(deferred_mouse_release));
+
+	gamepad_cursor_active = false;
+	gamepad_cursor_visible = false;
+	mouse_focus = true;
+	keyboard_focus = true;
+
+	legacy_text_handlers = NULL;
+	parts_text_handlers = NULL;
+	if (SDL_WasInit(SDL_INIT_VIDEO))
+		update_text_handlers();
 }
 
 static void pop_deferred_synthetic_mouse_event(uint32_t now)

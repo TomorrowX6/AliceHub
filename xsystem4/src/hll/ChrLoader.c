@@ -82,6 +82,8 @@ static bool is_enemy(uint8_t *data)
 
 static uint8_t *chr_get(int id)
 {
+	if (!chr_table || !chr_directory)
+		return NULL;
 	struct ht_slot *slot = ht_put_int(chr_table, id, NULL);
 	if (slot->value)
 		return slot->value;
@@ -105,8 +107,20 @@ static uint8_t *chr_get(int id)
 	return data;
 }
 
+static void ChrLoader_ModuleFini(void)
+{
+	free(chr_directory);
+	chr_directory = NULL;
+	if (chr_table) {
+		ht_foreach_value(chr_table, free);
+		ht_free_int(chr_table);
+		chr_table = NULL;
+	}
+}
+
 void chr_loader_init(const char *dir)
 {
+	ChrLoader_ModuleFini();
 	chr_directory = strdup(dir);
 	chr_table = ht_create(512);
 }
@@ -314,6 +328,7 @@ static bool ChrLoader_GetName(int id, struct string **name)
 }
 
 HLL_LIBRARY(ChrLoader,
+	    HLL_EXPORT(_ModuleFini, ChrLoader_ModuleFini),
 	    HLL_EXPORT(Init, ChrLoader_Init),
 	    HLL_EXPORT(LoadCG, ChrLoader_LoadCG),
 	    HLL_EXPORT(LoadWavFile, ChrLoader_LoadWavFile),

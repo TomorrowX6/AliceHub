@@ -935,7 +935,10 @@ static void draw_character(struct dungeon_renderer *r, struct drawfield_characte
 	if (!chara->show || chara->sprite <= 0)
 		return;
 	struct sact_sprite *sp = sact_try_get_sprite(chara->sprite);
-	if (!sp || !sp->texture.handle)
+	if (!sp)
+		return;
+	Texture *tex = sprite_get_texture(sp);
+	if (!tex || !tex->handle)
 		return;
 
 	if (chara->cols <= 0) chara->cols = 1;
@@ -953,7 +956,7 @@ static void draw_character(struct dungeon_renderer *r, struct drawfield_characte
 	glm_mat4_pick3t(view_mat, r_bill);
 	glm_mat4_ins3(r_bill, m);
 
-	draw(r, r->wall_geometry, sp->texture.handle, m);
+	draw(r, r->wall_geometry, tex->handle, m);
 }
 
 struct character_z {

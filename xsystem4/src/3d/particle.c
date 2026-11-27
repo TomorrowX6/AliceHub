@@ -201,6 +201,7 @@ static struct particle_position *parse_position(char **ptext)
 	char string_buf[STRING_BUF_SIZE];
 	for (int i = 0; i < NR_PARTICLE_POSITION_UNITS; i++) {
 		struct particle_position_unit *unit = &epos->units[i];
+		string_buf[0] = '\0';
 		if (MATCH("なし")) {
 			unit->type = PARTICLE_POS_UNIT_NONE;
 		} else if (MATCH("絶対位置( %f , %f , %f )", &x, &y, &z)) {

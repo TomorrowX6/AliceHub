@@ -187,10 +187,7 @@ void parts_list_resort(struct parts *parts)
 
 struct parts *parts_try_get(int parts_no)
 {
-	struct ht_slot *slot = ht_put_int(parts_table, parts_no, NULL);
-	if (slot->value)
-		return slot->value;
-	return NULL;
+	return ht_get_int(parts_table, parts_no, NULL);
 }
 
 struct parts *parts_get(int parts_no)
@@ -2621,19 +2618,21 @@ void parts_release_all(void)
 	}
 	parts_current->next_free_no = 1000010000;
 
-	for (int i = 0; i < parts_nr_numeral_fonts; i++) {
-		struct parts_numeral_font *font = &parts_numeral_fonts[i];
-		for (int j = 0; j < 12; j++) {
-			if (font->cg[j].handle)
-				gfx_delete_texture(&font->cg[j]);
+	if (!parts_current->background) {
+		for (int i = 0; i < parts_nr_numeral_fonts; i++) {
+			struct parts_numeral_font *font = &parts_numeral_fonts[i];
+			for (int j = 0; j < 12; j++) {
+				if (font->cg[j].handle)
+					gfx_delete_texture(&font->cg[j]);
+			}
+			if (font->cg_name)
+				free_string(font->cg_name);
 		}
-		if (font->cg_name)
-			free_string(font->cg_name);
-	}
 
-	free(parts_numeral_fonts);
-	parts_numeral_fonts = NULL;
-	parts_nr_numeral_fonts = 0;
+		free(parts_numeral_fonts);
+		parts_numeral_fonts = NULL;
+		parts_nr_numeral_fonts = 0;
+	}
 }
 
 struct parts_context *parts_context_select(struct parts_context *context)
@@ -2738,7 +2737,6 @@ void PE_Reset(void)
 	sact_ModuleFini();
 }
 
-#ifdef ALICEHUB_IOS
 void parts_end_session(void)
 {
 	if (parts_engine_initialized) {
@@ -2746,16 +2744,19 @@ void parts_end_session(void)
 		ht_free_int(parts_table);
 		parts_table = NULL;
 		root_pos = (Point){0};
-		parts_multi_controller = parts_v2 = false;
-		parts_hierarchical_matrix = true;
 		parts_engine_initialized = false;
 	}
+	parts_multi_controller = false;
+	parts_v2 = false;
+	parts_hierarchical_matrix = true;
 	parts_message_window_show = true;
 	parts_message_window_mul_color_rate = 1.0f;
 	parts_message_window_alpha_rate = 1.0f;
+	parts_activity_end_session();
+	parts_motion_end_session();
+	parts_scrollbar_end_session();
 	parts_text_end_session();
 }
-#endif
 
 static bool parts_has_dirty_parent(struct parts *parts)
 {
@@ -3176,9 +3177,12 @@ bool PE_SetPartsCG_by_string_index(int parts_no, struct string *cg_name,
 
 void PE_GetPartsCGName(int parts_no, struct string **cg_name, int state)
 {
-	if (!parts_state_valid(--state))
+	if (!parts_state_valid(--state) || !cg_name)
 		return;
-	struct parts_cg *cg = parts_get_cg(parts_get(parts_no), state);
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || parts->states[state].type != PARTS_CG)
+		return;
+	struct parts_cg *cg = &parts->states[state].cg;
 	if (cg->name) {
 		if (*cg_name)
 			free_string(*cg_name);
@@ -3199,10 +3203,14 @@ bool PE_SetPartsCGSurfaceArea(int parts_no, int x, int y, int w, int h, int stat
 
 void PE_GetPartsCGSurfaceArea(int parts_no, int *x, int *y, int *w, int *h, int state)
 {
+	*x = *y = *w = *h = 0;
 	if (!parts_state_valid(--state))
 		return;
 
-	struct parts_cg *cg = parts_get_cg(parts_get(parts_no), state);
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || parts->states[state].type != PARTS_CG)
+		return;
+	struct parts_cg *cg = &parts->states[state].cg;
 	*x = cg->common.surface_area.x;
 	*y = cg->common.surface_area.y;
 	*w = cg->common.surface_area.w;
@@ -3215,7 +3223,10 @@ int PE_GetPartsCGNumber(int parts_no, int state)
 		return false;
 	}
 
-	return parts_get_cg(parts_get(parts_no), state)->no;
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || parts->states[state].type != PARTS_CG)
+		return 0;
+	return parts->states[state].cg.no;
 }
 
 static bool _parts_animation_set_cg(struct parts *parts, struct parts_animation *anim,
@@ -4271,8 +4282,12 @@ void PE_AddChild(int no, int child) { PE_SetParentPartsNumber(child, no); }
 
 void PE_InsertChild(int no, int index, int child)
 {
+	if (!parts_v2 || child == no)
+		return;
 	PE_SetParentPartsNumber(child, no);
 	struct parts *parent = parts_get(no), *p = parts_get(child), *at;
+	if (p->parent != parent)
+		return;
 	TAILQ_REMOVE(&parent->children, p, child_list_entry);
 	PARTS_FOREACH_CHILD(at, parent) {
 		if (index--) continue;

@@ -164,6 +164,7 @@ extern bool game_waidonyo;
 extern bool game_dorapeko;
 extern bool game_pascha3;
 extern bool game_sanbiki;
+extern bool game_haniwapetit;
 
 bool sys_is_sdl_main_thread(void);
 

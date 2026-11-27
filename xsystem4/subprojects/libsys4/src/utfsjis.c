@@ -1239,12 +1239,16 @@ static char *cjk2utf_strict_buf_impl(const char *_src, size_t len, bool gbk, cha
 			if (b0 >= 0xa1 && b0 <= 0xdf) {
 				u = 0xff60 + (b0 - 0xa0);
 				src++;
-			} else if (b0 >= 0x81 && b0 != 0xa0 && ((b0 & 0xe0) == 0x80 || (b0 & 0xe0) == 0xe0) && src + 1 < end && src[1]) {
+			} else if (((b0 >= 0x81 && b0 <= 0x9f) || (b0 >= 0xe0 && b0 <= 0xfc)) && src + 1 < end && src[1]) {
 				uint8_t b1 = src[1];
 				size_t r = (size_t)(b0 - 0x80);
 				size_t c = (size_t)(b1 - 0x40);
-				if (b1 >= 0x40 && r < sizeof(s2u) / sizeof(s2u[0]) && c < sizeof(s2u_80) / sizeof(s2u_80[0]))
+				if (b1 >= 0x40 && b1 != 0x7f && b1 <= 0xfc &&
+				    r < sizeof(s2u) / sizeof(s2u[0]) && c < sizeof(s2u_80) / sizeof(s2u_80[0])) {
 					u = use_mai ? mai_s2u[r][c] : s2u[r][c];
+					if (!use_mai && u == 0x30fb && (b0 != 0x81 || b1 != 0x45))
+						u = 0;
+				}
 				src += 2;
 			}
 		} else {
@@ -1910,8 +1914,9 @@ static bool seg_is_strict_sjis_non_gb2312(const uint8_t *src, size_t len)
 			i++;
 			continue;
 		}
-		// Halfwidth katakana in CP932 (0xA1..0xDF) cannot disambiguate from GB2312 lead bytes.
-		if (b0 >= 0xa0 && b0 <= 0xdf)
+		// Restrict to standard CP932 double-byte lead ranges (0x81..0x9F, 0xE0..0xEF);
+		// rejects halfwidth kana (0xA1..0xDF) and user/extended ranges (>= 0xF0).
+		if (!((b0 >= 0x81 && b0 <= 0x9f) || (b0 >= 0xe0 && b0 <= 0xef)))
 			return false;
 		if (i + 1 >= len || !src[i + 1])
 			return false;
@@ -1920,7 +1925,10 @@ static bool seg_is_strict_sjis_non_gb2312(const uint8_t *src, size_t len)
 			return false;
 		size_t r = (size_t)(b0 - 0x80);
 		size_t c = (size_t)(b1 - 0x40);
-		if (r >= sizeof(s2u) / sizeof(s2u[0]) || c >= sizeof(s2u_80) / sizeof(s2u_80[0]) || s2u[r][c] <= 0)
+		if (r >= sizeof(s2u) / sizeof(s2u[0]) || c >= sizeof(s2u_80) / sizeof(s2u_80[0]))
+			return false;
+		int u = s2u[r][c];
+		if (u <= 0 || (u == 0x30fb && (b0 != 0x81 || b1 != 0x45)))
 			return false;
 		cjk_pairs++;
 		if (b0 < 0xa1 || b1 < 0xa1)
@@ -2037,6 +2045,49 @@ static bool encode_utf8_to_gbk_strict(const char *seg, size_t seg_len, uint8_t *
 	return true;
 }
 
+static void utf8_jp_filename_quality(const char *seg, size_t seg_len, int *score_out, size_t *mojibake_out)
+{
+	int score = 0;
+	size_t mojibake = 0;
+	const uint8_t *p = (const uint8_t *)seg;
+	const uint8_t *end = p + seg_len;
+	while (p < end && *p) {
+		if (*p <= 0x7f) {
+			p++;
+			continue;
+		}
+		int u = 0;
+		if ((*p & 0xe0) == 0xc0 && p + 1 < end && (p[1] & 0xc0) == 0x80) {
+			u = ((p[0] & 0x1f) << 6) | (p[1] & 0x3f);
+			p += 2;
+		} else if ((*p & 0xf0) == 0xe0 && p + 2 < end && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
+			u = ((p[0] & 0x0f) << 12) | ((p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+			p += 3;
+		} else {
+			p++;
+			continue;
+		}
+		if ((u >= 0x3041 && u <= 0x3096) || (u >= 0x30a1 && u <= 0x30fa) ||
+		    (u >= 0x3000 && u <= 0x303f) || u == 0x30fb || u == 0x30fc ||
+		    (u >= 0xff01 && u <= 0xff5e)) {
+			score += 3;
+			continue;
+		}
+		int sj = cjk_encode_codepoint(u, false);
+		if ((sj >= 0x8140 && sj <= 0x84be) || (sj >= 0x889f && sj <= 0x9872)) {
+			score += 2;
+		} else if (sj >= 0x989f && sj <= 0xeaa4) {
+			score -= 1;
+			mojibake++;
+		} else {
+			score -= 3;
+			mojibake++;
+		}
+	}
+	*score_out = score;
+	*mojibake_out = mojibake;
+}
+
 /* Repair a UTF-8 path/filename that contains CP932-as-GBK mojibake
  * (e.g. "愴崙儔儞僗GA.ald" -> "戦国ランスGA.ald"). Returns newly allocated string if repaired, else NULL. */
 char *cjk_repair_sjis_as_gbk_utf8(const char *utf)
@@ -2075,14 +2126,20 @@ char *cjk_repair_sjis_as_gbk_utf8(const char *utf)
 				char *sjis_utf = cjk2utf_strict_buf((const char *)gbk_bytes, gbk_len, false, NULL, 0, &ok);
 				if (sjis_utf && ok) {
 					size_t rlen = strlen(sjis_utf);
-					if (out_len + rlen + 2 > out_cap) {
-						out_cap = out_len + rlen + 64;
-						out = xrealloc(out, out_cap);
+					int orig_score = 0, rep_score = 0;
+					size_t orig_mojibake = 0, rep_mojibake = 0;
+					utf8_jp_filename_quality(utf + seg_start, seg_len, &orig_score, &orig_mojibake);
+					utf8_jp_filename_quality(sjis_utf, rlen, &rep_score, &rep_mojibake);
+					if (orig_mojibake > 0 && rep_score > orig_score && rep_mojibake < orig_mojibake) {
+						if (out_len + rlen + 2 > out_cap) {
+							out_cap = out_len + rlen + 64;
+							out = xrealloc(out, out_cap);
+						}
+						memcpy(out + out_len, sjis_utf, rlen);
+						out_len += rlen;
+						changed = true;
+						seg_repaired = true;
 					}
-					memcpy(out + out_len, sjis_utf, rlen);
-					out_len += rlen;
-					changed = true;
-					seg_repaired = true;
 				}
 				free(sjis_utf);
 			}

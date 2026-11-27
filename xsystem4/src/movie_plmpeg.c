@@ -877,10 +877,8 @@ void movie_free(struct movie_context *mc)
 	if (!mc)
 		return;
 	unregister_movie(mc);
-	int voice = mc->voice;
 	mc->voice = -1;
-	if (voice >= 0)
-		mixer_stream_stop(voice);
+	mixer_stream_stop_stream(&mc->sts_stream);
 
 	if (mc->apeg) {
 		struct apeg_context *apeg = mc->apeg;
@@ -917,11 +915,8 @@ bool movie_play(struct movie_context *mc)
 	if (mc->apeg)
 		return movie_play_at(mc, 0);
 
-	if (mc->voice >= 0) {
-		int prev_voice = mc->voice;
-		mc->voice = -1;
-		mixer_stream_stop(prev_voice);
-	}
+	mc->voice = -1;
+	mixer_stream_stop_stream(&mc->sts_stream);
 	mc->skipped = false;
 	mc->plm_playing = true;
 	movie_playback_seq++;
@@ -1194,8 +1189,7 @@ bool movie_set_volume(struct movie_context *mc, int volume)
 	else if (volume > 100)
 		volume = 100;
 	mc->volume = volume;
-	if (mc->voice >= 0)
-		mixer_stream_set_volume(mc->voice, volume);
+	mixer_stream_set_volume_stream(&mc->sts_stream, volume);
 	return true;
 }
 
@@ -1204,10 +1198,8 @@ static void movie_skip_one(struct movie_context *mc)
 	if (!mc || mc->skipped)
 		return;
 	mc->skipped = true;
-	int voice = mc->voice;
 	mc->voice = -1;
-	if (voice >= 0)
-		mixer_stream_stop(voice);
+	mixer_stream_stop_stream(&mc->sts_stream);
 	if (mc->apeg) {
 		struct apeg_context *apeg = mc->apeg;
 		apeg->playing = false;

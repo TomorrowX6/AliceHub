@@ -698,3 +698,20 @@ void PE_PauseMotion(bool pause)
 	if (pause)
 		parts_set_global_pos((Point){ 0, 0 });
 }
+
+void parts_motion_end_session(void)
+{
+	parts_motion_list_clear(&global_motion_list);
+	while (!TAILQ_EMPTY(&sound_motion_list)) {
+		struct sound_motion *sound = TAILQ_FIRST(&sound_motion_list);
+		TAILQ_REMOVE(&sound_motion_list, sound, entry);
+		if (sound->sound_name)
+			free_string(sound->sound_name);
+		free(sound);
+	}
+	is_motion = false;
+	is_motion_paused = false;
+	motion_t = 0;
+	motion_end_t = 0;
+	msgskip_speedup_rate = 1;
+}

@@ -672,6 +672,7 @@ extern struct static_library lib_DALKDemo;
 extern struct static_library lib_DALKEDemo;
 extern struct static_library lib_Data;
 extern struct static_library lib_DataFile;
+extern struct static_library lib_Dialog;
 extern struct static_library lib_Discord;
 extern struct static_library lib_DrawDungeon;
 extern struct static_library lib_DrawDungeon2;
@@ -808,6 +809,7 @@ static struct static_library *static_libraries[] = {
 	&lib_DALKEDemo,
 	&lib_Data,
 	&lib_DataFile,
+	&lib_Dialog,
 	&lib_Discord,
 	&lib_DrawDungeon,
 	&lib_DrawDungeon2,

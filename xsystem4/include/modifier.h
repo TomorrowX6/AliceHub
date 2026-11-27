@@ -6,6 +6,7 @@
 union vm_value;
 
 void modifier_on_ain_init(void);
+void modifier_end_session(void);
 void modifier_on_frame(void);
 void modifier_on_config_loaded(void);
 void modifier_on_globals_loaded(void);

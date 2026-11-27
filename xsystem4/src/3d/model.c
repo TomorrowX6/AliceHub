@@ -815,12 +815,13 @@ static void init_sphere_mesh(struct mesh *mesh)
 	const int nr_indices = 3 * 2 * w_segments * (h_segments - 1);
 	GLushort *indices = xcalloc(nr_indices, sizeof(GLushort));
 	GLushort *pi = indices;
+	const int row_stride = w_segments + 1;
 	for (int y = 0; y < h_segments; y++) {
 		for (int x = 0; x < w_segments; x++) {
-			GLushort a = y * w_segments + x + 1;
-			GLushort b = y * w_segments + x;
-			GLushort c = (y + 1) * w_segments + x;
-			GLushort d = (y + 1) * w_segments + x + 1;
+			GLushort a = y * row_stride + x + 1;
+			GLushort b = y * row_stride + x;
+			GLushort c = (y + 1) * row_stride + x;
+			GLushort d = (y + 1) * row_stride + x + 1;
 			if (y > 0) {
 				*pi++ = a;
 				*pi++ = b;

@@ -684,6 +684,11 @@ static void *PE_AddCopyCutCGToPartsConstructionProcess, *PartsEngine_Update_Pasc
 static void *PartsEngine_Save_v14, *PartsEngine_AddPartsConstructionProcess_v6;
 static void *PartsEngine_AddPartsConstructionProcess_v14, *PartsEngine_GetPartsConstructionProcess_v6;
 static void *PartsEngine_GetPartsConstructionProcess_v14;
+static void *PartsEngine_GetMessageWindowCGName_v6, *PartsEngine_GetMessageWindowFlatName_v6;
+static void *PartsEngine_GetMessageWindowText_v6, *PartsEngine_GetActivityEXText_v6;
+static void *PartsEngine_AddMotionHGaugeRate_int_curve, *PartsEngine_AddMotionHGaugeRate_int;
+static void *PartsEngine_AddMotionVGaugeRate_int_curve, *PartsEngine_AddMotionVGaugeRate_int;
+static void *PE_AddMotionHGaugeRate, *PE_AddMotionVGaugeRate;
 
 """
             + parts_fns

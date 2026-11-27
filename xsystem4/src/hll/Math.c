@@ -131,6 +131,27 @@ static float Math_ClampF(float value, float low, float high)
 	return Math_MinF(Math_MaxF(value, low), high);
 }
 
+static int Math_AbsF_int(float x)
+{
+	return (int)fabsf(x);
+}
+
+static void *Math_ResolveAbsF(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments != 1)
+		return NULL;
+	if (f->return_type.data == AIN_INT) {
+		if (f->arguments[0].type.data == AIN_FLOAT)
+			return (void *)Math_AbsF_int;
+		if (f->arguments[0].type.data == AIN_INT)
+			return (void *)abs;
+		return NULL;
+	}
+	if (f->return_type.data == AIN_FLOAT && f->arguments[0].type.data == AIN_FLOAT)
+		return (void *)fabsf;
+	return NULL;
+}
+
 static void *Math_Resolve(const struct ain_hll_function *f)
 {
 	enum ain_data_type type = f->return_type.data;
@@ -316,7 +337,7 @@ HLL_LIBRARY(Math,
 	    HLL_EXPORT(Atan, atanf),
 	    HLL_EXPORT(Atan2, atan2f),
 	    HLL_OVERLOAD(Abs, Math_Resolve),
-	    HLL_EXPORT(AbsF, fabsf),
+	    HLL_OVERLOAD(AbsF, Math_ResolveAbsF),
 	    HLL_EXPORT(Pow, powf),
 	    HLL_EXPORT(SetSeed, Math_SetSeed),
 	    HLL_EXPORT(SetSeedByCurrentTime, Math_SetSeedByCurrentTime),

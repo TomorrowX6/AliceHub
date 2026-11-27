@@ -59,6 +59,8 @@ struct movie_context {
 	struct SwsContext *sws_ctx;
 	AVFrame *sws_frame;
 	void *sws_buf;
+	int sws_w;
+	int sws_h;
 
 	sts_mixer_stream_t sts_stream;
 	int bytes_per_sample;
@@ -400,10 +402,8 @@ void movie_free(struct movie_context *mc)
 	if (!mc)
 		return;
 	unregister_movie(mc);
-	int voice = mc->voice;
 	mc->voice = -1;
-	if (voice >= 0)
-		mixer_stream_stop(voice);
+	mixer_stream_stop_stream(&mc->sts_stream);
 	if (mc->sts_stream.sample.data)
 		free(mc->sts_stream.sample.data);
 
@@ -433,11 +433,8 @@ bool movie_play(struct movie_context *mc)
 {
 	if (!mc)
 		return false;
-	if (mc->voice >= 0) {
-		int prev_voice = mc->voice;
-		mc->voice = -1;
-		mixer_stream_stop(prev_voice);
-	}
+	mc->voice = -1;
+	mixer_stream_stop_stream(&mc->sts_stream);
 	mc->skipped = false;
 	mc->playing = true;
 	movie_playback_seq++;
@@ -497,10 +494,24 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 		texture = &mc->temp_surface;
 	}
 
-	if (!mc->sws_ctx) {
-		if (!mc->video.ctx || mc->video.ctx->width <= 0 || mc->video.ctx->height <= 0 ||
-		    !texture || texture->w <= 0 || texture->h <= 0)
-			return false;
+	if (!mc->video.ctx || mc->video.ctx->width <= 0 || mc->video.ctx->height <= 0 ||
+	    !texture || texture->w <= 0 || texture->h <= 0)
+		return false;
+	if (!mc->sws_ctx || !mc->sws_frame || !mc->sws_buf ||
+	    texture->w != mc->sws_w || texture->h != mc->sws_h) {
+		if (mc->sws_ctx) {
+			sws_freeContext(mc->sws_ctx);
+			mc->sws_ctx = NULL;
+		}
+		if (mc->sws_frame)
+			av_frame_free(&mc->sws_frame);
+		if (mc->sws_buf) {
+			av_free(mc->sws_buf);
+			mc->sws_buf = NULL;
+		}
+		mc->sws_w = 0;
+		mc->sws_h = 0;
+
 		mc->sws_ctx = sws_getContext(
 			mc->video.ctx->width, mc->video.ctx->height, mc->video.ctx->pix_fmt,
 			texture->w, texture->h, AV_PIX_FMT_RGBA, SWS_BICUBIC, NULL, NULL, NULL);
@@ -508,14 +519,25 @@ bool movie_draw(struct movie_context *mc, struct sact_sprite *sprite)
 			return false;
 		mc->sws_frame = av_frame_alloc();
 		int size = av_image_get_buffer_size(AV_PIX_FMT_RGBA, texture->w, texture->h, 1);
-		if (!mc->sws_frame || size <= 0)
+		if (!mc->sws_frame || size <= 0) {
+			sws_freeContext(mc->sws_ctx);
+			mc->sws_ctx = NULL;
+			if (mc->sws_frame)
+				av_frame_free(&mc->sws_frame);
 			return false;
+		}
 		mc->sws_buf = av_malloc(size);
-		if (!mc->sws_buf)
+		if (!mc->sws_buf) {
+			sws_freeContext(mc->sws_ctx);
+			mc->sws_ctx = NULL;
+			av_frame_free(&mc->sws_frame);
 			return false;
+		}
 		av_image_fill_arrays(
 			mc->sws_frame->data, mc->sws_frame->linesize,
 			mc->sws_buf, AV_PIX_FMT_RGBA, texture->w, texture->h, 1);
+		mc->sws_w = texture->w;
+		mc->sws_h = texture->h;
 	}
 
 	// Decode a frame, unless we already have one.
@@ -579,8 +601,7 @@ bool movie_set_volume(struct movie_context *mc, int volume)
 	else if (volume > 100)
 		volume = 100;
 	mc->volume = volume;
-	if (mc->voice >= 0)
-		mixer_stream_set_volume(mc->voice, volume);
+	mixer_stream_set_volume_stream(&mc->sts_stream, volume);
 	return true;
 }
 
@@ -642,10 +663,8 @@ bool movie_skip_active(void)
 		if (mc && mc->playing && !mc->skipped && !movie_is_end(mc)) {
 			mc->skipped = true;
 			mc->playing = false;
-			int voice = mc->voice;
 			mc->voice = -1;
-			if (voice >= 0)
-				mixer_stream_stop(voice);
+			mixer_stream_stop_stream(&mc->sts_stream);
 			skipped_any = true;
 		}
 	}

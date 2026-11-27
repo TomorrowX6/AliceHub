@@ -852,9 +852,11 @@ static void render_billboard_particles(struct RE_renderer *r, struct RE_instance
 		glUniform1f(r->alpha_mod, alpha);
 
 		mat4 local_transform;
+		mat3 normal_transform;
 		particle_object_calc_local_transform(inst, po, pi, frame, local_transform);
+		glm_mat4_pick3(local_transform, normal_transform);
 		glUniformMatrix4fv(r->local_transform, 1, GL_FALSE, local_transform[0]);
-		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, local_transform[0]);
+		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, normal_transform[0]);
 
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
@@ -883,9 +885,11 @@ static void render_polygon_particles(struct RE_renderer *r, struct RE_instance *
 		glUniform1f(r->alpha_mod, alpha);
 
 		mat4 local_transform;
+		mat3 normal_transform;
 		particle_object_calc_local_transform(inst, po, pi, frame, local_transform);
+		glm_mat4_pick3(local_transform, normal_transform);
 		glUniformMatrix4fv(r->local_transform, 1, GL_FALSE, local_transform[0]);
-		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, local_transform[0]);
+		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, normal_transform[0]);
 
 		for (int i = 0; i < model->nr_meshes; i++) {
 			struct mesh *mesh = &model->meshes[i];
@@ -946,9 +950,11 @@ static void render_s3de_billboard_particles(struct RE_renderer *r, struct RE_ins
 		if (!s3de_billboard_world_transform(inst, obj, st, p, frame, camera_rot, world))
 			continue;
 
+		mat3 normal_transform;
+		glm_mat4_pick3(world, normal_transform);
 		glUniform1f(r->alpha_mod, alpha);
 		glUniformMatrix4fv(r->local_transform, 1, GL_FALSE, world[0]);
-		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, world[0]);
+		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, normal_transform[0]);
 
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
@@ -988,9 +994,11 @@ static void render_s3de_polygon_particles(struct RE_renderer *r, struct RE_insta
 		if (!s3de_mesh_world_transform(inst, obj, st, p, frame, camera_rot, camera_pos, world))
 			continue;
 
+		mat3 normal_transform;
+		glm_mat4_pick3(world, normal_transform);
 		glUniform1f(r->alpha_mod, alpha);
 		glUniformMatrix4fv(r->local_transform, 1, GL_FALSE, world[0]);
-		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, world[0]);
+		glUniformMatrix3fv(r->normal_transform, 1, GL_FALSE, normal_transform[0]);
 
 		for (int j = 0; j < model->nr_meshes; j++) {
 			struct mesh *mesh = &model->meshes[j];
@@ -1557,6 +1565,7 @@ void RE_render(struct sact_sprite *sp)
 	for (int i = 0; i < RE_NR_BACK_CGS; i++)
 		render_back_cg(texture, &plugin->back_cg[i], r);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glViewport(0, 0, texture->w, texture->h);
 	reset_default_vertex_attribs();
 
 	glEnable(GL_DEPTH_TEST);

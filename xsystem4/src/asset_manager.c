@@ -930,56 +930,6 @@ static bool name_has_non_ascii(const char *s)
 	return false;
 }
 
-static struct afa_entry *afa_find_best_raw(struct asset_manager_afa *manager,
-		const char *name, struct afa_archive **ar_out)
-{
-	struct afa_archive *best_ar = NULL;
-	struct afa_entry *best_entry = NULL;
-	int best_prio = -1;
-	uint64_t best_ts = 0;
-
-	for (size_t i = 0; i < manager->nr_archives; i++) {
-		struct afa_archive *ar = manager->archives[i];
-		int prio = manager->archive_priorities[i];
-		if (best_entry && prio < best_prio)
-			break;
-
-		struct afa_entry *e = afa_lookup_by_basename(ar, name);
-		if (!e)
-			continue;
-
-		if (prio >= AFA_PRIO_MOD) {
-			*ar_out = ar;
-			return e;
-		}
-
-		uint64_t ts = afa_entry_timestamp(e);
-		if (!best_entry || prio > best_prio) {
-			best_ar = ar;
-			best_entry = e;
-			best_prio = prio;
-			best_ts = ts;
-			if (ts == 0) {
-				*ar_out = ar;
-				return e;
-			}
-			continue;
-		}
-
-		if (ts == 0)
-			continue;
-		if (ts > best_ts) {
-			best_ar = ar;
-			best_entry = e;
-			best_ts = ts;
-		}
-	}
-
-	if (best_entry)
-		*ar_out = best_ar;
-	return best_entry;
-}
-
 static bool afa_candidate_beats(int cur_prio, struct afa_entry *cur_e,
 		int cand_prio, struct afa_entry *cand_e)
 {
@@ -997,6 +947,44 @@ static bool afa_candidate_beats(int cur_prio, struct afa_entry *cur_e,
 	if (cand_ts == 0)
 		return true;
 	return cand_ts > cur_ts;
+}
+
+static struct afa_entry *afa_find_best_raw(struct asset_manager_afa *manager,
+		const char *name, struct afa_archive **ar_out)
+{
+	struct afa_archive *best_ar = NULL;
+	struct afa_entry *best_entry = NULL;
+	int best_prio = -1;
+
+	for (size_t i = 0; i < manager->nr_archives; i++) {
+		struct afa_archive *ar = manager->archives[i];
+		int prio = manager->archive_priorities[i];
+		if (best_entry && prio < best_prio)
+			break;
+
+		struct afa_entry *e = afa_lookup_by_basename(ar, name);
+		if (!e)
+			continue;
+
+		if (prio >= AFA_PRIO_MOD) {
+			*ar_out = ar;
+			return e;
+		}
+
+		if (afa_candidate_beats(best_prio, best_entry, prio, e)) {
+			best_ar = ar;
+			best_entry = e;
+			best_prio = prio;
+			if (afa_entry_timestamp(e) == 0) {
+				*ar_out = ar;
+				return e;
+			}
+		}
+	}
+
+	if (best_entry)
+		*ar_out = best_ar;
+	return best_entry;
 }
 
 static void afa_canon_index_insert(struct asset_manager_afa *manager, const char *key,
@@ -1274,8 +1262,35 @@ static struct asset_manager_afa *afa_create_manager(void)
 	return manager;
 }
 
+static void asset_manager_free_slot(enum asset_type type)
+{
+	if (!assets[type])
+		return;
+	if (assets[type]->get_by_name == afa_get_by_name) {
+		struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[type];
+		afa_invalidate_canon_index(manager);
+		for (size_t i = 0; i < manager->nr_archives; i++)
+			archive_free(&manager->archives[i]->ar);
+		free(manager->archives);
+		free(manager->archive_priorities);
+		free(manager->id_archives);
+	} else {
+		struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[type];
+		for (size_t i = 0; i < manager->nr_cg_overlays; i++)
+			archive_free(&manager->cg_overlays[i]->ar);
+		free(manager->cg_overlays);
+		if (manager->loose_cg_override)
+			archive_free(manager->loose_cg_override);
+		archive_free(manager->archive);
+	}
+	free(assets[type]);
+	assets[type] = NULL;
+}
+
 static void _ald_init(enum asset_type type, struct archive *ar)
 {
+	if (assets[type])
+		asset_manager_free_slot(type);
 	struct asset_manager_ald *manager = xcalloc(1, sizeof(struct asset_manager_ald));
 	manager->manager.exists_by_id = ald_exists_by_id;
 	manager->manager.get_by_id = ald_get_by_id;
@@ -1291,27 +1306,7 @@ void asset_manager_fini(void)
 {
 	asset_cg_archive_lock(ASSET_CG);
 	for (int type = 0; type < ASSET_TYPE_MAX; type++) {
-		if (!assets[type])
-			continue;
-		if (assets[type]->get_by_name == afa_get_by_name) {
-			struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[type];
-			afa_invalidate_canon_index(manager);
-			for (size_t i = 0; i < manager->nr_archives; i++)
-				archive_free(&manager->archives[i]->ar);
-			free(manager->archives);
-			free(manager->archive_priorities);
-			free(manager->id_archives);
-		} else {
-			struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[type];
-			for (size_t i = 0; i < manager->nr_cg_overlays; i++)
-				archive_free(&manager->cg_overlays[i]->ar);
-			free(manager->cg_overlays);
-			if (manager->loose_cg_override)
-				archive_free(manager->loose_cg_override);
-			archive_free(manager->archive);
-		}
-		free(assets[type]);
-		assets[type] = NULL;
+		asset_manager_free_slot(type);
 	}
 	for (size_t i = 0; i < nr_save_cg_names; i++)
 		free(save_cg_names[i]);
@@ -1346,8 +1341,10 @@ static void afa_init(enum asset_type type, char *file)
 {
 	if (!file)
 		return;
-	if (assets[type])
+	if (assets[type]) {
 		WARNING("Multiple asset archives for type %s", asset_strtype(type));
+		asset_manager_free_slot(type);
+	}
 
 	int error;
 	struct afa_archive *ar = afa_open(file, MMAP_IF_64BIT, &error);
@@ -1667,6 +1664,8 @@ void asset_manager_init(void)
 
 	char *base = get_base_name(config.ain_filename);
 	size_t base_len = strlen(base);
+	char *base_repaired = cjk_repair_sjis_as_gbk_utf8(base);
+	size_t base_repaired_len = base_repaired ? strlen(base_repaired) : 0;
 
 	bool ex_is_canonical = false;
 	bool has_base_ald = false;
@@ -1689,7 +1688,19 @@ void asset_manager_init(void)
 		}
 		// archive filename must normally begin with ain filename; retain *.ald candidates for renamed CN AINs
 		// and standalone CHS.afa overlays used by Longinus CN translations (e.g. Oyakorankan).
-		if (strncasecmp(base, match_name, base_len)) {
+		const char *matched_name = NULL;
+		size_t matched_prefix_len = 0;
+		if (base_repaired && !strncasecmp(base_repaired, match_name, base_repaired_len)) {
+			matched_name = match_name;
+			matched_prefix_len = base_repaired_len;
+		} else if (!strncasecmp(base, match_name, base_len)) {
+			matched_name = match_name;
+			matched_prefix_len = base_len;
+		} else if (!strncasecmp(base, d_name, base_len)) {
+			matched_name = d_name;
+			matched_prefix_len = base_len;
+		}
+		if (!matched_name) {
 			if (!strcasecmp(ext, "ald")) {
 				fallback_alds = xrealloc(fallback_alds, (nr_fallback_alds + 1) * sizeof(*fallback_alds));
 				fallback_alds[nr_fallback_alds++] = xstrdup(d_name);
@@ -1708,10 +1719,10 @@ void asset_manager_init(void)
 			goto loop_next;
 		}
 		if (!strcasecmp(ext, "ald")) {
-			size_t mlen = strlen(match_name);
+			size_t mlen = strlen(matched_name);
 			size_t dlen = strlen(d_name);
-			if (mlen > base_len + 1 && dlen >= mlen - base_len) {
-				size_t d_prefix_len = dlen - (mlen - base_len);
+			if (mlen > matched_prefix_len + 1 && dlen >= mlen - matched_prefix_len) {
+				size_t d_prefix_len = dlen - (mlen - matched_prefix_len);
 				if (register_ald_file(ald_filenames, ald_count, d_name, d_prefix_len))
 					has_base_ald = true;
 			}
@@ -1728,7 +1739,7 @@ void asset_manager_init(void)
 			}
 			config.wai_path = path_join(config.game_dir, d_name);
 		} else if (!strcasecmp(ext, "ex")) {
-			const char *suffix = match_name + base_len;
+			const char *suffix = matched_name + matched_prefix_len;
 			bool canonical = !strcasecmp(suffix, "EX.ex") || !strcasecmp(suffix, ".ex");
 			if (config.ex_path) {
 				WARNING("Multiple ex files");
@@ -1739,7 +1750,7 @@ void asset_manager_init(void)
 			config.ex_path = path_join(config.game_dir, d_name);
 			ex_is_canonical = canonical;
 		} else if (!strcasecmp(ext, "afa")) {
-			const char *type = match_name + base_len;
+			const char *type = matched_name + matched_prefix_len;
 			if (!strcasecmp(type, "BA.afa")) {
 				afa_filenames[ASSET_BGM] = path_join(config.game_dir, d_name);
 			} else if (!strcasecmp(type, "WA.afa") || !strcasecmp(type, "Sound.afa")) {
@@ -1770,6 +1781,7 @@ void asset_manager_init(void)
 		free(d_name);
 	}
 	closedir_utf8(dir);
+	free(base_repaired);
 	free(base);
 
 	if (!config.fnl_path && fallback_fnl_name) {

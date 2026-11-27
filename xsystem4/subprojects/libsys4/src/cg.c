@@ -118,10 +118,13 @@ static enum cg_type cg_check_format_sized(uint8_t *buf, size_t buf_size)
 {
 	if (!buf || buf_size < 2)
 		return ALCG_UNKNOWN;
-	if (buf_size < 18) {
-		uint8_t hdr[18] = {0};
+	if (buf_size < 48) {
+		uint8_t hdr[48] = {0};
 		memcpy(hdr, buf, buf_size);
-		return cg_check_format(hdr);
+		enum cg_type type = cg_check_format(hdr);
+		if ((type == ALCG_PMS8 || type == ALCG_PMS16) && buf_size < 32)
+			return ALCG_UNKNOWN;
+		return type;
 	}
 	return cg_check_format(buf);
 }

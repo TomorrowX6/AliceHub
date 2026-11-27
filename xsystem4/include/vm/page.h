@@ -125,6 +125,7 @@ enum ain_data_type variable_type(struct page *page, int varno, int *struct_type,
 void variable_set(struct page *page, int varno, enum ain_data_type type, union vm_value val);
 
 // pages
+void page_end_session(void);
 struct page *alloc_page(enum page_type type, int type_index, int nr_vars);
 void free_page(struct page *page);
 struct page *copy_page(struct page *page);

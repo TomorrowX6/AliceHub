@@ -188,8 +188,7 @@ int main(int argc, char **argv) {
             self.assertEqual(out.strip(), "OK")
 
     def test_galzoo_hacks_and_gbk_detection(self):
-        extracted = extract_galzoo_hack_functions()
-        harness = f"""
+        harness = r"""
 #include <assert.h>
 #include <math.h>
 #include <stdbool.h>
@@ -206,92 +205,65 @@ int main(int argc, char **argv) {
 #include "xsystem4.h"
 
 struct config config;
-bool game_daibanchou_en = false;
-bool game_rance01 = false;
-bool game_rance02 = false;
-bool game_rance02_mg = false;
-bool game_rance6 = false;
-bool game_rance6_mg = false;
-bool game_rance7_mg = false;
-bool game_sengokurance = false;
-bool game_rance8 = false;
-bool game_rance8_mg = false;
-bool game_rance9 = false;
-bool game_rance10 = false;
-bool game_dohnadohna = false;
-bool game_evenicle = false;
-bool game_evenicle2 = false;
-bool game_rance03 = false;
-bool game_dungeons_and_dolls = false;
-bool game_escalayer_reboot = false;
-bool game_galzoo = false;
-bool game_ixseal = false;
-bool game_tsumashibori = false;
+void message_layout_init_rance03(void) {}
+void apply_game_specific_hacks(struct ain *ain);
 
-static bool ain_has_gbk_r03_strings(struct ain *ain) {{ (void)ain; return false; }}
-static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_card_caption_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_effect_sound_paths(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_skill_cooldown_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_daibanchou_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance02_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance6_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance9_hacks(struct ain *ain) {{ (void)ain; }}
-static void escalayer_reboot_replace_cn_ui_text(struct string **strings, int nr_strings) {{ (void)strings; (void)nr_strings; }}
-
-{extracted}
-
-static struct ain *make_galzoo_ain(int version, const char *lib_name, const char *struct_name, const char *str_val) {{
+static struct ain *make_galzoo_ain(int version, const char *lib_name, const char *struct_name, const char *str_val) {
     struct ain *ain = ain_new(version, 0);
     ain_add_library(ain, lib_name);
     ain_add_struct(ain, struct_name);
     ain_add_string(ain, str_val);
     ain_init_member_functions(ain, strdup);
     return ain;
-}}
+}
 
-int main(void) {{
+int main(void) {
     // 1. Default CN GameName + GALZOO AIN v5.
-    config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "GALZOO\\xba\\xba\\xbb\\xaf\\xb0\\xe6V1.00" }};
-    struct ain *ain_cn = make_galzoo_ain(5, "DrawDungeon14", "CDungeon", "\\xd2\\xd1\\xb6\\xc1\\xce\\xc4\\xb1\\xbe\\xcc\\xf8\\xb9\\xfd");
+    config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "GALZOO\xba\xba\xbb\xaf\xb0\xe6V1.00" };
+    struct ain *ain_cn = make_galzoo_ain(5, "DrawDungeon14", "CDungeon", "\xd2\xd1\xb6\xc1\xce\xc4\xb1\xbe\xcc\xf8\xb9\xfd");
     apply_game_specific_hacks(ain_cn);
     assert(game_galzoo && !game_rance6 && sys4_text_is_gbk);
     assert(config.view_width == 800 && config.view_height == 600);
     ain_free(ain_cn);
 
     // 2. Modified/English GameName + CN AIN strings (font / dungeon / skip).
-    const char *markers[] = {{
-        "\\xba\\xda\\xcc\\xe5",                                         // 黑体
-        "\\xcd\\xf2\\xc0\\xef\\xb3\\xa4\\xb3\\xc7",                     // 万里长城
-        "\\xd2\\xd1\\xb6\\xc1\\xce\\xc4\\xb1\\xbe\\xcc\\xf8\\xb9\\xfd", // 已读文本跳过
-    }};
-    for (int i = 0; i < 3; i++) {{
-        config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "GALZOO Island" }};
+    const char *markers[] = {
+        "\xba\xda\xcc\xe5",                                         // 黑体
+        "\xcd\xf2\xc0\xef\xb3\xa4\xb3\xc7",                         // 万里长城
+        "\xd2\xd1\xb6\xc1\xce\xc4\xb1\xbe\xcc\xf8\xb9\xfd",         // 已读文本跳过
+    };
+    for (int i = 0; i < 3; i++) {
+        config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "GALZOO Island" };
         struct ain *ain_mod = make_galzoo_ain(5, "DrawDungeon14", "CDungeon", markers[i]);
         apply_game_specific_hacks(ain_mod);
         assert(game_galzoo && sys4_text_is_gbk);
         ain_free(ain_mod);
-    }}
+    }
 
     // 3. JP GALZOO AIN must stay non-GBK when GameName is JP.
-    config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "GALZOO\\x83" "A\\x83" "C\\x83\\x89\\x83\\x93\\x83h" }};
-    struct ain *ain_jp = make_galzoo_ain(5, "DrawDungeon14", "CDungeon", "\\x96\\x9c\\x97\\xa2\\x82\\xcc\\x92\\xb7\\x8f\\xe9");
+    config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "GALZOO\x83" "A\x83" "C\x83\x89\x83\x93\x83h" };
+    struct ain *ain_jp = make_galzoo_ain(5, "DrawDungeon14", "CDungeon", "\x96\x9c\x97\xa2\x82\xcc\x92\xb7\x8f\xe9");
     apply_game_specific_hacks(ain_jp);
     assert(game_galzoo && !sys4_text_is_gbk);
     ain_free(ain_jp);
 
     // 4. Rance VI does not trigger game_galzoo.
-    config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "Rance6" }};
-    struct ain *ain_r6 = make_galzoo_ain(4, "DrawDungeon", "CDungeon", "\\x93\\xfa\\x96\\x7b\\x8c\\xea");
+    config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "Rance6" };
+    struct ain *ain_r6 = make_galzoo_ain(4, "DrawDungeon", "CDungeon", "\x93\xfa\x96\x7b\x8c\xea");
+    ain_add_library(ain_r6, "ACXLoader");
     apply_game_specific_hacks(ain_r6);
     assert(game_rance6 && !game_galzoo);
     ain_free(ain_r6);
 
     puts("OK");
     return 0;
-}}
+}
 """
-        out = compile_and_run(harness, LIBSYS4_AIN, ["-lz", "-lm"])
+        out = compile_and_run(
+            harness,
+            [*LIBSYS4_AIN, ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c"],
+            ["-lz", "-lm"],
+        )
         self.assertEqual(out.strip(), "OK")
 
     def test_galzoo_gbk_text_conversion_and_source_wiring(self):

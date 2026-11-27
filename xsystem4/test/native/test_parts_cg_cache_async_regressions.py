@@ -441,6 +441,9 @@ void parts_render_update(void) {}
 float parts_message_window_mul_color_rate = 1.0f;
 float parts_message_window_alpha_rate = 1.0f;
 void parts_text_end_session(void) {}
+void parts_activity_end_session(void) {}
+void parts_motion_end_session(void) {}
+void parts_scrollbar_end_session(void) {}
 bool parts_is_dirty(void) { return false; }
 void parts_engine_dirty(void) {}
 void parts_engine_clean(void) {}

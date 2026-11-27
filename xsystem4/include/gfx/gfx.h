@@ -121,6 +121,7 @@ void gfx_run_job(struct gfx_render_job *job);
 void gfx_render(struct gfx_render_job *job);
 void _gfx_render_texture(struct shader *s, struct texture *t, Rectangle *r, void *data);
 void gfx_render_texture(struct texture *t, Rectangle *r);
+void _gfx_render_quadrilateral(struct shader *s, struct texture *t, struct gfx_vertex vertices[4], void *data);
 void gfx_render_quadrilateral(struct texture *t, struct gfx_vertex vertices[4]);
 
 // texture management
@@ -227,6 +228,9 @@ void gfx_draw_glyph(Texture *dst, float dx, int dy, Texture *glyph, SDL_Color co
 void gfx_draw_glyph_to_pmap(Texture *dst, float dx, int dy, Texture *glyph, Rectangle glyph_pos, SDL_Color color, float scale_x);
 void gfx_draw_glyph_to_amap(Texture *dst, float dx, int dy, Texture *glyph, Rectangle glyph_pos, float scale_x);
 void gfx_draw_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4]);
+void gfx_blend_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4], int a);
+void gfx_blend_amap_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4]);
+void gfx_blend_amap_alpha_quadrilateral(Texture *dst, Texture *src, struct gfx_vertex vertices[4], int a);
 
 void gfx_blend_alpha(Texture *dst, int dx, int dy, Texture *src, int sx, int sy, int w, int h);
 void gfx_copy_stretch_blend_straight_alpha(Texture *dst, int dx, int dy, int dw, int dh,

@@ -75,6 +75,7 @@ void vm_end_session(void);
 #include "debugger.h"
 #include "gfx/gfx.h"
 #include "gfx/font.h"
+#include "input.h"
 #include "mixer.h"
 #include "savedata.h"
 #include "vm.h"
@@ -560,7 +561,9 @@ static void config_init_with_utf8_codename(const char *utf8_code_name)
 				|| strstr(config.game_name, "\xd2\xec\xbf\xd5\xbf\xdf")
 				|| strstr(config.game_name, "\xd0\xb0\xd2\xb9")
 				|| strstr(config.game_name, "\xb6\xb7\xc9\xf1")
-				|| strstr(config.game_name, "\xb7\xdb\xb2\xca\xc1\xe5\xd2\xf4")))
+				|| strstr(config.game_name, "\xb7\xdb\xb2\xca\xc1\xe5\xd2\xf4")
+				|| strstr(config.game_name, "\xa4\xcf\xa1\xab\xa4\xc8\xa4\xd5\xa4\xeb\xa5\xde\xa5\xde\xa5\xf3")
+				|| strstr(config.game_name, "\xbf\xa8\xc0\xad\xb1\xa3\xbb\xa4\xd0\xad\xbb\xe1")))
 			|| (config.ain_filename && strstr(config.ain_filename, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea"))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
 				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
@@ -1414,9 +1417,12 @@ static void init_mai_word_table(void)
 	free(path);
 }
 
+#if defined(__SWITCH__) || defined(ALICEHUB_IOS)
+void ini_abort_parse(void);
+#endif
+
 #ifdef __SWITCH__
 static jmp_buf switch_startup;
-void ini_abort_parse(void);
 
 static void switch_startup_error(const char *message)
 {
@@ -1699,6 +1705,8 @@ int main(int argc, char *argv[])
 		|| game_night_remaster
 		|| game_evenicle2_rance
 		|| game_rance01
+		|| game_rance8
+		|| game_haniwapetit
 	);
 	init_mai_word_table();
 	init_text_dict();
@@ -1747,20 +1755,25 @@ int xsystem4_main(int argc, char **argv)
 	set_utf8_release(false);
 	if (setjmp(target) == 0)
 		ios_exit_code = run_xsystem4(argc, argv);
+	sys_exit_handler = NULL;
+	ios_exit_target = NULL;
+	ini_abort_parse();
 	vm_end_session();
 	savedir_cleanup_memory_saves();
 	audio_end_session();
+	input_end_session();
 	gfx_fini();
 	asset_manager_fini();
 	if (ios_program) {
 		ain_free(ios_program);
 		ios_program = NULL;
 	}
+	free(resolved_ain_path);
+	resolved_ain_path = NULL;
 	reset_config();
+	set_utf8_release(false);
 	for (size_t i = 0; i < NR_CRASH_SIGNALS; i++)
 		sigaction(crash_signals[i], &old_sigactions[i], NULL);
-	sys_exit_handler = NULL;
-	ios_exit_target = NULL;
 	return ios_exit_code;
 }
 #endif

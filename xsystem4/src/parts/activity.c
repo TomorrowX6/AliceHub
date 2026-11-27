@@ -1755,13 +1755,25 @@ static size_t pact_build_candidates(const char *orig, char *out[5], char *scratc
 	return n;
 }
 
+static struct hash_table *pact_miss_table = NULL;
+static size_t nr_pact_misses = 0;
+static int has_asra_dir = -1;
+static int has_config_dir = -1;
+
+void parts_activity_end_session(void)
+{
+	PE_ReleaseActivities();
+	if (pact_miss_table) {
+		ht_free(pact_miss_table);
+		pact_miss_table = NULL;
+	}
+	nr_pact_misses = 0;
+	has_asra_dir = -1;
+	has_config_dir = -1;
+}
+
 static bool pact_lookup_asset(const char *orig, struct archive_data **data_out, char **fs_path_out)
 {
-	static struct hash_table *pact_miss_table = NULL;
-	static size_t nr_pact_misses = 0;
-	static int has_asra_dir = -1;
-	static int has_config_dir = -1;
-
 	if (data_out)
 		*data_out = NULL;
 	if (fs_path_out)

@@ -873,6 +873,9 @@ void parts_render_family(struct parts *parts);
 
 // motion.c
 void parts_clear_motion(struct parts *parts);
+void parts_motion_end_session(void);
+void parts_activity_end_session(void);
+void parts_scrollbar_end_session(void);
 void parts_add_motion(struct parts *parts, struct parts_motion *motion);
 
 // input.c

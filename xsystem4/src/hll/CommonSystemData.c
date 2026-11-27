@@ -411,11 +411,11 @@ static bool CommonSystemData_GetDataString(struct string *name, struct string **
 	return false;
 }
 
-static bool CommonSystemData_GetDataBool(struct string *name, bool *value)
+static bool CommonSystemData_GetDataBool(struct string *name, int *value)
 {
 	struct csd_entry *entry = csd_get_key(name, CSD_BOOL);
 	if (entry) {
-		*value = !!entry->i;
+		*value = entry->i ? 1 : 0;
 		return true;
 	}
 	return false;

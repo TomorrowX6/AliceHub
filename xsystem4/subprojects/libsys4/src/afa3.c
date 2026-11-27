@@ -54,33 +54,33 @@
 
 typedef struct string *(*string_conv_fun)(const char*,size_t);
 
-static struct {
+struct afa3_rnd {
 	uint32_t state[521];
 	int current;
-} rnd;
+};
 
 /*
  * Munge PRNG state.
  */
-static void rnd_shuffle(void)
+static void rnd_shuffle(struct afa3_rnd *rnd)
 {
 	for (int i = 0; i < 32; i += 4) {
-		rnd.state[i  ] ^= rnd.state[i+489];
-		rnd.state[i+1] ^= rnd.state[i+490];
-		rnd.state[i+2] ^= rnd.state[i+491];
-		rnd.state[i+3] ^= rnd.state[i+492];
+		rnd->state[i  ] ^= rnd->state[i+489];
+		rnd->state[i+1] ^= rnd->state[i+490];
+		rnd->state[i+2] ^= rnd->state[i+491];
+		rnd->state[i+3] ^= rnd->state[i+492];
 	}
 	for (int i = 32; i < 521; i += 3) {
-		rnd.state[i  ] ^= rnd.state[i - 32];
-		rnd.state[i+1] ^= rnd.state[i - 31];
-		rnd.state[i+2] ^= rnd.state[i - 30];
+		rnd->state[i  ] ^= rnd->state[i - 32];
+		rnd->state[i+1] ^= rnd->state[i - 31];
+		rnd->state[i+2] ^= rnd->state[i - 30];
 	}
 }
 
 /*
  * Initialize the PRNG.
  */
-static void rnd_init(uint32_t seed)
+static void rnd_init(struct afa3_rnd *rnd, uint32_t seed)
 {
 	uint32_t val = 0;
 	for (int i = 0; i < 17; i++) {
@@ -88,30 +88,30 @@ static void rnd_init(uint32_t seed)
 			seed = 1566083941u * seed + 1;
 			val = (seed & 0x80000000) | (val >> 1);
 		}
-		rnd.state[i] = val;
+		rnd->state[i] = val;
 	}
-	rnd.state[16] = rnd.state[15] ^ (rnd.state[0] >> 9) ^ (rnd.state[16] << 23);
+	rnd->state[16] = rnd->state[15] ^ (rnd->state[0] >> 9) ^ (rnd->state[16] << 23);
 	for (int i = 17; i < 521; i++) {
-		rnd.state[i] = rnd.state[i-1] ^ (rnd.state[i-16] >> 9) ^ (rnd.state[i-17] << 23);
+		rnd->state[i] = rnd->state[i-1] ^ (rnd->state[i-16] >> 9) ^ (rnd->state[i-17] << 23);
 	}
-	rnd_shuffle();
-	rnd_shuffle();
-	rnd_shuffle();
-	rnd_shuffle();
-	rnd.current = -1;
+	rnd_shuffle(rnd);
+	rnd_shuffle(rnd);
+	rnd_shuffle(rnd);
+	rnd_shuffle(rnd);
+	rnd->current = -1;
 }
 
 /*
  * Get the next pseudo-random number.
  */
-static uint32_t rnd_get_next(void)
+static uint32_t rnd_get_next(struct afa3_rnd *rnd)
 {
-	rnd.current++;
-	if (rnd.current >= 521) {
-		rnd_shuffle();
-		rnd.current = 0;
+	rnd->current++;
+	if (rnd->current >= 521) {
+		rnd_shuffle(rnd);
+		rnd->current = 0;
 	}
-	return rnd.state[rnd.current];
+	return rnd->state[rnd->current];
 }
 
 /*
@@ -209,51 +209,52 @@ static bool bs_read_u32(struct bitstream *bs, uint32_t *out)
 /*
  * Dictionary for string decoding.
  */
-struct {
+struct afa3_dict {
 	uint8_t *bytes;
 	size_t size;
-} dict;
+};
 
-static void free_dict(void)
+static void free_dict(struct afa3_dict *dict)
 {
-	free(dict.bytes);
-	dict.bytes = NULL;
-	dict.size = 0;
+	free(dict->bytes);
+	dict->bytes = NULL;
+	dict->size = 0;
 }
 
 /*
  * Read the string decoding dictionary.
  * Encrypted via a PRNG seeded by the dictionary size.
  */
-static bool read_dict(struct bitstream *bs)
+static bool read_dict(struct bitstream *bs, struct afa3_dict *dict)
 {
-	free_dict();
+	free_dict(dict);
 
 	uint32_t raw_size = 0;
 	if (!bs_read_u32(bs, &raw_size) || raw_size > 64u * 1024u * 1024u) {
 		return false;
 	}
-	dict.size = raw_size;
-	dict.bytes = xmalloc(dict.size ? dict.size : 1);
+	dict->size = raw_size;
+	dict->bytes = xmalloc(dict->size ? dict->size : 1);
 
-	rnd_init((uint32_t)dict.size);
-	for (unsigned dst = 0; dst < dict.size; dst++) {
-		int count = (int)(rnd_get_next() & 3u);
+	struct afa3_rnd rnd;
+	rnd_init(&rnd, (uint32_t)dict->size);
+	for (unsigned dst = 0; dst < dict->size; dst++) {
+		int count = (int)(rnd_get_next(&rnd) & 3u);
 		int skipped = bs_read_bits(bs, count+1);
 		if (skipped == -1) {
 			goto err;
 		}
-		rnd_get_next();
+		rnd_get_next(&rnd);
 
 		int v = bs_read_bits(bs, 8);
 		if (v == -1) {
 			goto err;
 		}
-		dict.bytes[dst] = (uint8_t)v;
+		dict->bytes[dst] = (uint8_t)v;
 	}
 	return true;
 err:
-	free_dict();
+	free_dict(dict);
 	return false;
 }
 
@@ -270,14 +271,15 @@ static uint16_t *afa3_read_encrypted_chars(struct bitstream *bs, size_t *size)
 	}
 	uint16_t *buf = xmalloc(buf_size ? (size_t)buf_size * 2 : 2);
 
-	rnd_init(buf_size);
+	struct afa3_rnd rnd;
+	rnd_init(&rnd, buf_size);
 	for (unsigned dst = 0; dst < buf_size; dst++) {
-		int count = (int)(rnd_get_next() & 3u);
+		int count = (int)(rnd_get_next(&rnd) & 3u);
 		int skipped = bs_read_bits(bs, count+1);
 		if (skipped == -1) {
 			goto err;
 		}
-		rnd_get_next();
+		rnd_get_next(&rnd);
 
 		int lo = bs_read_bits(bs, 8);
 		int hi = bs_read_bits(bs, 8);
@@ -297,17 +299,17 @@ err:
 /*
  * Decrypt an encrypted string via the dictionary.
  */
-static char *afa3_decrypt_string(uint16_t *chars, size_t size)
+static char *afa3_decrypt_string(const struct afa3_dict *dict, uint16_t *chars, size_t size)
 {
-	if (!dict.bytes && size > 0)
+	if (!dict->bytes && size > 0)
 		return NULL;
 	char *buf = xmalloc(size+1);
 	for (size_t i = 0; i < size; i++) {
-		if (chars[i] >= dict.size) {
+		if (chars[i] >= dict->size) {
 			free(buf);
 			return NULL;
 		}
-		buf[i] = (char)(dict.bytes[chars[i]] ^ 0xa4);
+		buf[i] = (char)(dict->bytes[chars[i]] ^ 0xa4);
 	}
 	buf[size] = '\0';
 	return buf;
@@ -316,7 +318,7 @@ static char *afa3_decrypt_string(uint16_t *chars, size_t size)
 /*
  * Read the metadata for a single file.
  */
-static bool afa3_read_entry(struct bitstream *bs, struct afa_entry *entry, int *error, string_conv_fun conv)
+static bool afa3_read_entry(struct bitstream *bs, const struct afa3_dict *dict, struct afa_entry *entry, int *error, string_conv_fun conv)
 {
 	size_t size;
 	uint16_t *chars = NULL;
@@ -328,7 +330,7 @@ static bool afa3_read_entry(struct bitstream *bs, struct afa_entry *entry, int *
 		goto err;
 	}
 
-	name = afa3_decrypt_string(chars, size);
+	name = afa3_decrypt_string(dict, chars, size);
 	if (!name) {
 		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
 		goto err;
@@ -362,11 +364,12 @@ bool afa3_read_metadata(char *hdr, FILE *f, struct afa_archive *ar, int *error, 
 {
 	uint8_t *packed = NULL;
 	uint8_t *unpacked = NULL;
+	struct afa3_dict dict = {0};
 	uint32_t index_size = LittleEndian_getDW((uint8_t*)hdr, 4);
 
 	struct bitstream bs;
 	bs_init_file(&bs, f, 12);
-	if (bs_read_bits(&bs, 1) == -1 || !read_dict(&bs)) {
+	if (bs_read_bits(&bs, 1) == -1 || !read_dict(&bs, &dict)) {
 		*error = ARCHIVE_BAD_ARCHIVE_ERROR;
 		goto err;
 	}
@@ -412,7 +415,7 @@ bool afa3_read_metadata(char *hdr, FILE *f, struct afa_archive *ar, int *error, 
 			ar->nr_files = i;
 			break;
 		}
-		if (!afa3_read_entry(&bs, &ar->files[i], error, conv)) {
+		if (!afa3_read_entry(&bs, &dict, &ar->files[i], error, conv)) {
 			for (uint32_t j = 0; j < i; j++) {
 				free_string(ar->files[j].name);
 			}
@@ -429,12 +432,12 @@ bool afa3_read_metadata(char *hdr, FILE *f, struct afa_archive *ar, int *error, 
 	ar->compressed_size = packed_size;
 	ar->uncompressed_size = unpacked_size;
 
-	free_dict();
+	free_dict(&dict);
 	free(packed);
 	free(unpacked);
 	return true;
 err:
-	free_dict();
+	free_dict(&dict);
 	free(packed);
 	free(unpacked);
 	return false;

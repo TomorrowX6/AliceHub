@@ -28,7 +28,7 @@ extern FILE *yini_in;
 extern unsigned long yini_line;
 extern void yini_restart(FILE *input_file);
 
-#ifdef __SWITCH__
+#if defined(__SWITCH__) || defined(ALICEHUB_IOS)
 extern int yini_lex_destroy(void);
 static FILE *active_ini;
 
@@ -72,11 +72,11 @@ struct ini_entry *ini_parse(const char *path, int *nr_entries)
 	yini_restart(fp);
 	yini_line = 1;
 	yini_entries = NULL;
-#ifdef __SWITCH__
+#if defined(__SWITCH__) || defined(ALICEHUB_IOS)
 	active_ini = fp;
 #endif
 	yini_parse();
-#ifdef __SWITCH__
+#if defined(__SWITCH__) || defined(ALICEHUB_IOS)
 	active_ini = NULL;
 #endif
 	fclose(fp);

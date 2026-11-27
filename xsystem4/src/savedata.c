@@ -172,6 +172,7 @@ static bool is_background_flush_save(const char *path)
 		return false;
 #ifdef _WIN32
 	return !_stricmp(base, "GlobalSave.asd") ||
+	       !_stricmp(base, "GlobalSaveData.asd") ||
 	       !_stricmp(base, "Collection.asd") ||
 	       !_stricmp(base, "GameConfig.asd") ||
 	       !_stricmp(base, "GameEnquete.asd") ||
@@ -180,6 +181,7 @@ static bool is_background_flush_save(const char *path)
 	       !_stricmp(base, "AFInfo.asd");
 #else
 	return !strcasecmp(base, "GlobalSave.asd") ||
+	       !strcasecmp(base, "GlobalSaveData.asd") ||
 	       !strcasecmp(base, "Collection.asd") ||
 	       !strcasecmp(base, "GameConfig.asd") ||
 	       !strcasecmp(base, "GameEnquete.asd") ||
@@ -2232,6 +2234,8 @@ cleanup:
 	return retval;
 }
 
+static char *make_comment_sidecar_path(const char *base);
+
 int load_globals(const char *keyname, const char *filename, const char *group_name, int *n)
 {
 	if (n)
@@ -2240,11 +2244,13 @@ int load_globals(const char *keyname, const char *filename, const char *group_na
 	int retval;
 
 	bool is_cfg = is_game_config_save(filename);
+	bool primary_valid = false;
 
 	// First, try reading as a gsave.
 	enum savefile_error error;
 	struct gsave *save = gsave_read(path, &error);
 	if (error == SAVEFILE_SUCCESS) {
+		primary_valid = true;
 		retval = load_globals_from_gsave(save, keyname, group_name, n);
 		gsave_free(save);
 		if (retval) {
@@ -2274,28 +2280,29 @@ int load_globals(const char *keyname, const char *filename, const char *group_na
 		WARNING("%s: %s", display_utf0(path), savefile_strerror(error));
 	}
 
-	// Fall back to .bak if a backup exists (e.g. GlobalSave.asd.bak / Collection.asd.bak).
+	// Fall back to .bak if the primary save failed to parse and a backup exists.
 	char *bak_path = make_backup_path(path);
 	bool had_any_file = file_exists(path) || file_exists(bak_path);
-	if (file_exists(bak_path)) {
+	if (!primary_valid && file_exists(bak_path)) {
 		enum savefile_error bak_err;
 		struct gsave *bak_save = gsave_read(bak_path, &bak_err);
 		if (bak_err == SAVEFILE_SUCCESS) {
-			WARNING("Recovered corrupted save %s from backup %s", display_utf0(path), display_utf0(bak_path));
-			file_copy(bak_path, path);
-			free(bak_path);
-			free(path);
 			retval = load_globals_from_gsave(bak_save, keyname, group_name, n);
 			gsave_free(bak_save);
 			if (retval) {
+				WARNING("Recovered corrupted save %s from backup %s",
+						display_utf0(path), display_utf0(bak_path));
+				file_copy(bak_path, path);
+				free(bak_path);
+				free(path);
 				track_global_save(keyname, filename, group_name);
 				if (is_cfg)
 					modifier_on_config_loaded();
 				modifier_on_globals_loaded();
-			} else if (is_cfg) {
-				modifier_on_config_loaded();
+				return retval;
 			}
-			return retval;
+			if (n)
+				*n = 0;
 		}
 	}
 	free(bak_path);
@@ -2315,6 +2322,10 @@ int delete_save_file(const char *filename)
 	if (file_exists(bak_path))
 		remove_utf8(bak_path);
 	free(bak_path);
+	char *comment_path = make_comment_sidecar_path(path);
+	if (file_exists(comment_path))
+		remove_utf8(comment_path);
+	free(comment_path);
 	if (!file_exists(path)) {
 		free(path);
 		return 0;
@@ -2328,18 +2339,29 @@ int delete_save_file(const char *filename)
 	return 1;
 }
 
+static void (*background_flush_hook)(void) = NULL;
+
+void savedata_set_background_flush_hook(void (*hook)(void))
+{
+	background_flush_hook = hook;
+}
+
 void savedata_flush_on_background(void)
 {
-	if (flushing_background_saves || !ain || !heap || heap_size <= 0)
+	if (flushing_background_saves)
 		return;
 	flushing_background_saves = true;
-	for (int i = 0; i < nr_tracked_global_saves; i++) {
-		const struct tracked_global_save *entry = &tracked_global_saves[i];
-		if (!entry->keyname || !entry->filename || !entry->group_name)
-			continue;
-		if (get_group_index(entry->group_name) < 0)
-			continue;
-		save_globals(entry->keyname, entry->filename, entry->group_name, NULL);
+	if (background_flush_hook)
+		background_flush_hook();
+	if (ain && heap && heap_size > 0) {
+		for (int i = 0; i < nr_tracked_global_saves; i++) {
+			const struct tracked_global_save *entry = &tracked_global_saves[i];
+			if (!entry->keyname || !entry->filename || !entry->group_name)
+				continue;
+			if (get_group_index(entry->group_name) < 0)
+				continue;
+			save_globals(entry->keyname, entry->filename, entry->group_name, NULL);
+		}
 	}
 	flushing_background_saves = false;
 }
@@ -2857,6 +2879,19 @@ struct x4ss_load_ctx {
 	bool *is_root;
 };
 
+static void x4ss_skip_tagged_value_depth(struct x4ss_reader *r, uint8_t tag, int depth)
+{
+	switch (tag) {
+	case X4SS_VAL_NONE: break;
+	case X4SS_VAL_SCALAR: x4ss_get_i32(r); break;
+	case X4SS_VAL_STRING: { uint32_t l = x4ss_get_u32(r); x4ss_get_bytes(r, NULL, l); break; }
+	case X4SS_VAL_OBJ: x4ss_get_u32(r); break;
+	case X4SS_VAL_IFACE: case X4SS_VAL_PAGE_VAR: x4ss_get_u32(r); x4ss_get_i32(r); break;
+	case X4SS_VAL_OPTION: if (!x4ss_get_u8(r)) x4ss_skip_value_depth(r, depth + 1); break;
+	default: r->error = true; break;
+	}
+}
+
 static void x4ss_read_value_depth(struct x4ss_load_ctx *ctx, struct x4ss_reader *r,
 		union vm_value *dst, const struct ain_type *t, bool has_existing, int depth)
 {
@@ -2868,16 +2903,7 @@ static void x4ss_read_value_depth(struct x4ss_load_ctx *ctx, struct x4ss_reader 
 	if (r->error)
 		return;
 	if (!t || t->data == AIN_VOID || t->data == AIN_DELEGATE || t->data == AIN_REF_DELEGATE) {
-		/* Re-wind tag? No, consume remainder of tag payload cleanly */
-		switch (tag) {
-		case X4SS_VAL_NONE: break;
-		case X4SS_VAL_SCALAR: x4ss_get_i32(r); break;
-		case X4SS_VAL_STRING: { uint32_t l = x4ss_get_u32(r); x4ss_get_bytes(r, NULL, l); break; }
-		case X4SS_VAL_OBJ: x4ss_get_u32(r); break;
-		case X4SS_VAL_IFACE: case X4SS_VAL_PAGE_VAR: x4ss_get_u32(r); x4ss_get_i32(r); break;
-		case X4SS_VAL_OPTION: if (!x4ss_get_u8(r)) x4ss_skip_value_depth(r, depth + 1); break;
-		default: r->error = true; break;
-		}
+		x4ss_skip_tagged_value_depth(r, tag, depth);
 		return;
 	}
 
@@ -2891,7 +2917,8 @@ static void x4ss_read_value_depth(struct x4ss_load_ctx *ctx, struct x4ss_reader 
 	if (t->data == AIN_OPTION) {
 		int w = ain_type_slot_width(t);
 		if (tag != X4SS_VAL_OPTION) {
-			/* Fallback: default to none */
+			/* Consume mismatched payload so stream stays aligned, then default to none */
+			x4ss_skip_tagged_value_depth(r, tag, depth);
 			for (int k = 0; k < w - 1; k++)
 				dst[k].i = -1;
 			dst[w - 1].i = 1;
@@ -3187,7 +3214,10 @@ static bool gd_ss_parse(uint8_t *raw, uint32_t ulen, struct gd_ss_parsed *out)
 	}
 
 	/* C2: Root descriptor entries */
-	uint32_t root_cap = max(sec_cnt[2], 1u);
+	if (sec_cnt[2] > 16u * 1024u * 1024u)
+		goto fail;
+	uint32_t max_roots = (sec_off[3] - sec_off[2]) / 17u;
+	uint32_t root_cap = max(min(sec_cnt[2], max_roots), 1u);
 	out->root_ids = xcalloc(root_cap, sizeof(int32_t));
 	pos = sec_off[2];
 	for (uint32_t i = 0; i < sec_cnt[2] && pos < sec_off[3]; i++) {
@@ -5375,7 +5405,21 @@ int read_group_save_comment(const char *keyname, const char *filename, struct st
 			return 0;
 		}
 		if (gs->nr_comments > 0 && gs->comments && gs->comments[0]) {
-			*log_out = string_dup(gs->comments[0]);
+			const struct string *c = gs->comments[0];
+			if (c->size == 0 || cjk_is_ascii_only(c->text)) {
+				*log_out = string_dup(c);
+			} else {
+				bool src_is_gbk = gsave_detect_is_gbk(gs, NULL, keyname, gs->group, sys4_text_is_gbk);
+				if (gs->nr_strings == 0 && (!gs->key || cjk_is_ascii_only(gs->key))
+						&& (!gs->group || cjk_is_ascii_only(gs->group))) {
+					int bias = save_text_gbk_bias(c->text);
+					if (bias > 15)
+						src_is_gbk = true;
+					else if (bias < -15)
+						src_is_gbk = false;
+				}
+				*log_out = save_decode_vm_string(c->text, c->size, src_is_gbk);
+			}
 			gsave_free(gs);
 			free(path);
 			return 1;
@@ -5391,7 +5435,13 @@ int read_group_save_comment(const char *keyname, const char *filename, struct st
 	free(cpath);
 	if (!data)
 		return 0;
-	*log_out = make_string((const char *)data, (unsigned int)len);
+	if (len == 0 || cjk_is_ascii_only((const char *)data)) {
+		*log_out = make_string((const char *)data, (unsigned int)len);
+	} else {
+		int bias = save_text_gbk_bias((const char *)data);
+		bool src_is_gbk = bias > 15 ? true : (bias < -15 ? false : sys4_text_is_gbk);
+		*log_out = save_decode_vm_string((const char *)data, len, src_is_gbk);
+	}
 	free(data);
 	return 1;
 }

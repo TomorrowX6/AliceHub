@@ -742,6 +742,11 @@ static void service_variable_erase(struct service_variable **store, struct strin
 	static bool prefix##_IsExist(struct string *key) { return service_variable_exists(&store, key); } \
 	static void prefix##_Set(struct string *key, struct string *value) { service_variable_set(&store, key, value); } \
 	static struct string *prefix##_Get(struct string *key) { return service_variable_get(&store, key); } \
+	static void prefix##_Get_v8(struct string **out, struct string *key) { \
+		if (!out) return; \
+		if (*out) free_string(*out); \
+		*out = key ? service_variable_get(&store, key) : string_ref(&EMPTY_STRING); \
+	} \
 	static void prefix##_Erase(struct string *key) { service_variable_erase(&store, key); } \
 	static int prefix##_NumofKey(void) { \
 		int n = 0; for (struct service_variable *v = store; v; v = v->next) n++; return n; \
@@ -750,6 +755,14 @@ static void service_variable_erase(struct service_variable **store, struct strin
 		for (struct service_variable *v = store; v; v = v->next) \
 			if (!index--) return string_ref(v->value); \
 		return string_ref(&EMPTY_STRING); \
+	} \
+	static void prefix##_GetKey_v8(struct string **out, int index) { \
+		if (!out) return; \
+		if (*out) free_string(*out); \
+		for (struct service_variable *v = store; v; v = v->next) { \
+			if (!index--) { *out = string_ref(v->key); return; } \
+		} \
+		*out = string_ref(&EMPTY_STRING); \
 	}
 
 SERVICE_VARIABLE_FUNCTIONS(SystemVariable, system_variables)
@@ -1212,6 +1225,7 @@ static bool SystemService_Load(struct page **in)
 
 static void SystemService_ModuleFini(void)
 {
+	input_reset_close_hook();
 	for (int i = 0; i < nr_backup_save_files; i++)
 		free(backup_save_files[i]);
 	free(backup_save_files);
@@ -1391,5 +1405,25 @@ static void SystemService_PreLink(void)
 	if (fun && fun->nr_arguments == 1) {
 		static_library_replace(&lib_SystemService, "IsResetOnce",
 				SystemService_IsResetOnce_Drapeko);
+	}
+	fun = get_fun(libno, "GameVariable_Get");
+	if (fun && fun->return_type.data == AIN_VOID && fun->nr_arguments == 2) {
+		static_library_replace(&lib_SystemService, "GameVariable_Get",
+				GameVariable_Get_v8);
+	}
+	fun = get_fun(libno, "GameVariable_GetKey");
+	if (fun && fun->return_type.data == AIN_VOID && fun->nr_arguments == 2) {
+		static_library_replace(&lib_SystemService, "GameVariable_GetKey",
+				GameVariable_GetKey_v8);
+	}
+	fun = get_fun(libno, "SystemVariable_Get");
+	if (fun && fun->return_type.data == AIN_VOID && fun->nr_arguments == 2) {
+		static_library_replace(&lib_SystemService, "SystemVariable_Get",
+				SystemVariable_Get_v8);
+	}
+	fun = get_fun(libno, "SystemVariable_GetKey");
+	if (fun && fun->return_type.data == AIN_VOID && fun->nr_arguments == 2) {
+		static_library_replace(&lib_SystemService, "SystemVariable_GetKey",
+				SystemVariable_GetKey_v8);
 	}
 }

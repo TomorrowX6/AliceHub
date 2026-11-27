@@ -329,12 +329,14 @@ static int cb_read_frames(struct channel *ch, float *out, sf_count_t frame_count
 			if (looping && ch->frame + (uint64_t)frame_count >= ch->loop_end) {
 				sf_count_t to_read = (sf_count_t)(ch->loop_end - ch->frame);
 				sf_count_t n = to_read > 0 ? sf_readf_float(ch->file, out, to_read) : 0;
+				if (n < 0)
+					n = 0;
 				*num_read += (uint_least32_t)n;
 				ch->frame += (uint_least32_t)n;
 				out += n * ch->info.channels;
 				frame_count -= n;
 				if (n < to_read) {
-					if (n == 0 && !cb_loop(ch))
+					if (n == 0 && !(ch->frame > ch->loop_start && cb_loop(ch)))
 						return STS_STREAM_COMPLETE;
 					continue;
 				}
@@ -345,6 +347,8 @@ static int cb_read_frames(struct channel *ch, float *out, sf_count_t frame_count
 		}
 
 		sf_count_t n = sf_readf_float(ch->file, out, frame_count);
+		if (n < 0)
+			n = 0;
 		*num_read += (uint_least32_t)n;
 		ch->frame += (uint_least32_t)n;
 		out += n * ch->info.channels;
@@ -534,7 +538,9 @@ int channel_get_loop_count(struct channel *ch)
 int channel_set_loop_start_pos(struct channel *ch, int pos)
 {
 	audio_lock();
-	ch->loop_start = max(0, pos);
+	sf_count_t max_pos = max((sf_count_t)0, ch->info.frames);
+	sf_count_t clamped = min(max_pos, max((sf_count_t)0, (sf_count_t)pos));
+	ch->loop_start = (uint_least32_t)clamped;
 	audio_unlock();
 	return 1;
 }
@@ -542,7 +548,9 @@ int channel_set_loop_start_pos(struct channel *ch, int pos)
 int channel_set_loop_end_pos(struct channel *ch, int pos)
 {
 	audio_lock();
-	ch->loop_end = max(0, pos);
+	sf_count_t max_pos = max((sf_count_t)0, ch->info.frames);
+	sf_count_t clamped = min(max_pos, max((sf_count_t)0, (sf_count_t)pos));
+	ch->loop_end = (uint_least32_t)clamped;
 	audio_unlock();
 	return 1;
 }
@@ -1240,11 +1248,38 @@ bool mixer_stream_set_volume(int voice, int volume)
 	return true;
 }
 
+bool mixer_stream_set_volume_stream(sts_mixer_stream_t *stream, int volume)
+{
+	if (!master || !stream)
+		return false;
+	float gain = clamp(0.0f, 1.0f, (float)volume / 100.0f);
+	bool updated = false;
+	audio_lock();
+	for (int i = 0; i < STS_MIXER_VOICES; i++) {
+		if (master->mixer.voices[i].state == STS_MIXER_VOICE_STREAMING &&
+		    master->mixer.voices[i].stream == stream) {
+			master->mixer.voices[i].gain = gain;
+			updated = true;
+		}
+	}
+	audio_unlock();
+	return updated;
+}
+
 void mixer_stream_stop(int voice)
 {
 	if (!master || voice < 0 || voice >= STS_MIXER_VOICES)
 		return;
 	audio_lock();
 	sts_mixer_stop_voice(&master->mixer, voice);
+	audio_unlock();
+}
+
+void mixer_stream_stop_stream(sts_mixer_stream_t *stream)
+{
+	if (!master || !stream)
+		return;
+	audio_lock();
+	sts_mixer_stop_stream(&master->mixer, stream);
 	audio_unlock();
 }

@@ -642,6 +642,8 @@ bool PE_SetText(int a, struct string *b, int c) {{
     return true;
 }}
 void PE_SetTextBoxText(int a, struct string *b) {{}}
+void PE_SetTextBoxReadOnly(int a, bool b) {{}}
+void PE_SetTextBoxMaxTextLength(int a, int b) {{}}
 bool PE_SetTextCharSpace(int a, int b, int c) {{ return true; }}
 bool PE_SetTextLineSpace(int a, int b, int c) {{ return true; }}
 bool PE_SetVGaugeRate(int a, float b, float c, int d) {{ return true; }}

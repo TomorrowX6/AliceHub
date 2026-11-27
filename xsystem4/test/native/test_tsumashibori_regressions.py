@@ -180,14 +180,7 @@ LIBSYS4_ACX = [
 
 class TsumashiboriRegressionsTest(unittest.TestCase):
     def test_tsumashibori_hacks_and_gbk_detection(self):
-        hacks_src = (ROOT / "src/hacks.c").read_text(encoding="utf-8", errors="ignore")
-        extracted = "\n\n".join(
-            [
-                extract_c_function(hacks_src, "static bool ain_has_gbk_string("),
-                extract_c_function(hacks_src, "void apply_game_specific_hacks("),
-            ]
-        )
-        harness = f"""
+        harness = r"""
 #include <assert.h>
 #include <math.h>
 #include <stdbool.h>
@@ -204,42 +197,10 @@ class TsumashiboriRegressionsTest(unittest.TestCase):
 #include "xsystem4.h"
 
 struct config config;
-bool game_daibanchou_en = false;
-bool game_rance01 = false;
-bool game_rance02 = false;
-bool game_rance02_mg = false;
-bool game_rance6 = false;
-bool game_rance6_mg = false;
-bool game_rance7_mg = false;
-bool game_sengokurance = false;
-bool game_rance8 = false;
-bool game_rance8_mg = false;
-bool game_rance9 = false;
-bool game_rance10 = false;
-bool game_dohnadohna = false;
-bool game_evenicle = false;
-bool game_evenicle2 = false;
-bool game_rance03 = false;
-bool game_dungeons_and_dolls = false;
-bool game_escalayer_reboot = false;
-bool game_galzoo = false;
-bool game_ixseal = false;
-bool game_tsumashibori = false;
+void message_layout_init_rance03(void) {}
+void apply_game_specific_hacks(struct ain *ain);
 
-static bool ain_has_gbk_r03_strings(struct ain *ain) {{ (void)ain; return false; }}
-static void apply_rance03_message_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_card_caption_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_effect_sound_paths(struct ain *ain) {{ (void)ain; }}
-static void apply_rance03_skill_cooldown_layout(struct ain *ain) {{ (void)ain; }}
-static void apply_daibanchou_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance02_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance6_hacks(struct ain *ain) {{ (void)ain; }}
-static void apply_rance9_hacks(struct ain *ain) {{ (void)ain; }}
-static void escalayer_reboot_replace_cn_ui_text(struct string **strings, int nr_strings) {{ (void)strings; (void)nr_strings; }}
-
-{extracted}
-
-static struct ain *make_tsuma_ain(int version, const char *str_val) {{
+static struct ain *make_tsuma_ain(int version, const char *str_val) {
     struct ain *ain = ain_new(version, 0);
     ain_add_struct(ain, "PLAY_TABLE_SAKURA");
     ain_add_struct(ain, "PLAY_TABLE_MADOKA");
@@ -247,39 +208,39 @@ static struct ain *make_tsuma_ain(int version, const char *str_val) {{
     ain_add_string(ain, str_val);
     ain_init_member_functions(ain, strdup);
     return ain;
-}}
+}
 
-int main(void) {{
+int main(void) {
     // 1. Default CN GameName ("妻しぼり" in GBK) + Tsumashibori AIN v5.
-    config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "\\xc6\\xde\\xa4\\xb7\\xa4\\xdc\\xa4\\xea" }};
-    struct ain *ain_cn = make_tsuma_ain(5, "\\xc6\\xde\\xa4\\xb7\\xa4\\xdc\\xa4\\xea" "99.asd");
+    config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea" };
+    struct ain *ain_cn = make_tsuma_ain(5, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea" "99.asd");
     apply_game_specific_hacks(ain_cn);
     assert(game_tsumashibori && !game_galzoo && sys4_text_is_gbk);
     assert(config.view_width == 800 && config.view_height == 600);
     ain_free(ain_cn);
 
     // 2. Modified/English GameName + CN AIN strings still enables GBK.
-    const char *cn_markers[] = {{
-        "\\xc6\\xde\\xa4\\xb7\\xa4\\xdc\\xa4\\xea", // 妻しぼり (GBK)
-        "\\xba\\xda\\xcc\\xe5",                     // 黑体 (GBK)
-    }};
-    for (int i = 0; i < 2; i++) {{
-        config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "Tsumashibori" }};
+    const char *cn_markers[] = {
+        "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea", // 妻しぼり (GBK)
+        "\xba\xda\xcc\xe5",                 // 黑体 (GBK)
+    };
+    for (int i = 0; i < 2; i++) {
+        config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "Tsumashibori" };
         struct ain *ain_mod = make_tsuma_ain(5, cn_markers[i]);
         apply_game_specific_hacks(ain_mod);
         assert(game_tsumashibori && sys4_text_is_gbk);
         ain_free(ain_mod);
-    }}
+    }
 
     // 3. Original JP Tsumashibori ("妻しぼり" in Shift-JIS) stays non-GBK.
-    config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "\\x8d\\xc8\\x82\\xb5\\x82\\xda\\x82\\xe8" }};
-    struct ain *ain_jp = make_tsuma_ain(5, "\\x8d\\xc8\\x82\\xb5\\x82\\xda\\x82\\xe8" "99.asd");
+    config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "\x8d\xc8\x82\xb5\x82\xda\x82\xe8" };
+    struct ain *ain_jp = make_tsuma_ain(5, "\x8d\xc8\x82\xb5\x82\xda\x82\xe8" "99.asd");
     apply_game_specific_hacks(ain_jp);
     assert(game_tsumashibori && !sys4_text_is_gbk);
     ain_free(ain_jp);
 
     // 4. Other AIN v5 game (GALZOO) does not trigger game_tsumashibori.
-    config = (struct config){{ .view_width = 800, .view_height = 600, .game_name = "GALZOO" }};
+    config = (struct config){ .view_width = 800, .view_height = 600, .game_name = "GALZOO" };
     struct ain *ain_gal = ain_new(5, 0);
     ain_add_library(ain_gal, "DrawDungeon14");
     ain_add_struct(ain_gal, "CDungeon");
@@ -291,13 +252,18 @@ int main(void) {{
 
     puts("OK");
     return 0;
-}}
+}
 """
-        out = compile_and_run(harness, LIBSYS4_AIN, ["-lz", "-lm"])
+        out = compile_and_run(
+            harness,
+            [*LIBSYS4_AIN, ROOT / "src/hacks.c", ROOT / "src/escalayer_reboot_cn_ui.c"],
+            ["-lz", "-lm"],
+        )
         self.assertEqual(out.strip(), "OK")
 
     def test_tsumashibori_config_init_gbk_save_path(self):
         sys4_src = (ROOT / "src/system4.c").read_text(encoding="utf-8", errors="ignore")
+        config_init_utf8_src = extract_c_function(sys4_src, "static void config_init_with_utf8_codename(")
         config_init_src = extract_c_function(sys4_src, "static void config_init(")
         get_save_path_src = extract_c_function(sys4_src, "static char *get_save_path(")
         harness = f"""
@@ -307,6 +273,7 @@ int main(void) {{
 #include <stdlib.h>
 #include <string.h>
 #include "system4.h"
+#include "system4/file.h"
 #include "system4/utfsjis.h"
 #include "xsystem4.h"
 
@@ -314,6 +281,8 @@ struct config config;
 static char *get_xsystem4_home(void) {{ return xstrdup("/tmp/xsys4_home"); }}
 
 {get_save_path_src}
+
+{config_init_utf8_src}
 
 {config_init_src}
 

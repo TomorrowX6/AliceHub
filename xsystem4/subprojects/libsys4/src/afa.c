@@ -535,6 +535,7 @@ struct afa_archive *afa_open_conv(const char *file, int flags, int *error,
 		ar->mmap_ptr = mmap(0, ar->file_size, PROT_READ, MAP_SHARED, fd, 0);
 		close(fd);
 		if (ar->mmap_ptr == MAP_FAILED) {
+			ar->mmap_ptr = NULL;
 			WARNING("mmap failed: %s", strerror(errno));
 			*error = ARCHIVE_FILE_ERROR;
 			goto exit_err;
@@ -548,7 +549,7 @@ struct afa_archive *afa_open_conv(const char *file, int flags, int *error,
 	ar->ar.conv = conv;
 	return ar;
 exit_err:
-	free(ar);
+	afa_free(&ar->ar);
 	return NULL;
 }
 

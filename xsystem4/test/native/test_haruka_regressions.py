@@ -336,18 +336,23 @@ int main(void) {
 #include <stdbool.h>
 #include <stdio.h>
 
+struct sts_mixer_stream_t {{
+    int dummy;
+}};
+
 struct movie_context {{
     int voice;
     int volume;
+    struct sts_mixer_stream_t sts_stream;
 }};
 
 static int mixer_calls = 0;
-static int last_voice = -99;
+static struct sts_mixer_stream_t *last_stream = NULL;
 static int last_mixer_vol = -99;
 
-static bool mixer_stream_set_volume(int voice, int volume) {{
+static bool mixer_stream_set_volume_stream(struct sts_mixer_stream_t *stream, int volume) {{
     mixer_calls++;
-    last_voice = voice;
+    last_stream = stream;
     last_mixer_vol = volume;
     return true;
 }}
@@ -358,23 +363,22 @@ int main(void) {{
     assert(movie_set_volume(NULL, 50) == false);
     assert(mixer_calls == 0);
 
-    // Before playback (voice == -1): clamp & store without touching mixer.
+    // Clamp & forward stream pointer cleanly (safe no-op in mixer when not streaming).
     struct movie_context mc = {{ .voice = -1, .volume = 100 }};
     assert(movie_set_volume(&mc, -25) == true);
-    assert(mc.volume == 0 && mixer_calls == 0);
+    assert(mc.volume == 0 && mixer_calls == 1 && last_stream == &mc.sts_stream && last_mixer_vol == 0);
     assert(movie_set_volume(&mc, 180) == true);
-    assert(mc.volume == 100 && mixer_calls == 0);
+    assert(mc.volume == 100 && mixer_calls == 2 && last_stream == &mc.sts_stream && last_mixer_vol == 100);
     assert(movie_set_volume(&mc, 42) == true);
-    assert(mc.volume == 42 && mixer_calls == 0);
+    assert(mc.volume == 42 && mixer_calls == 3 && last_stream == &mc.sts_stream && last_mixer_vol == 42);
 
-    // During playback (voice >= 0): clamp & forward live to mixer.
     mc.voice = 3;
     assert(movie_set_volume(&mc, -10) == true);
-    assert(mc.volume == 0 && mixer_calls == 1 && last_voice == 3 && last_mixer_vol == 0);
+    assert(mc.volume == 0 && mixer_calls == 4 && last_stream == &mc.sts_stream && last_mixer_vol == 0);
     assert(movie_set_volume(&mc, 250) == true);
-    assert(mc.volume == 100 && mixer_calls == 2 && last_voice == 3 && last_mixer_vol == 100);
+    assert(mc.volume == 100 && mixer_calls == 5 && last_stream == &mc.sts_stream && last_mixer_vol == 100);
     assert(movie_set_volume(&mc, 37) == true);
-    assert(mc.volume == 37 && mixer_calls == 3 && last_voice == 3 && last_mixer_vol == 37);
+    assert(mc.volume == 37 && mixer_calls == 6 && last_stream == &mc.sts_stream && last_mixer_vol == 37);
 
     puts("OK");
     return 0;

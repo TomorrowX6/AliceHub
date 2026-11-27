@@ -51,3 +51,48 @@ HLL_LIBRARY(vmDialog,
 	    HLL_TODO_EXPORT(InputOpenFile, vmDialog_InputOpenFile),
 	    HLL_TODO_EXPORT(InputSaveFile, vmDialog_InputSaveFile)
 	    );
+
+static int Dialog_MsgBox(struct string *title, struct string *msg, possibly_unused int button,
+		int icon, int default_button)
+{
+	return vmDialog_MsgBox(title, msg, icon, default_button);
+}
+
+static int Dialog_InputNum(possibly_unused struct string *title, possibly_unused int min_val,
+		possibly_unused int max_val, possibly_unused int *num)
+{
+	return 1;
+}
+
+static int Dialog_InputMsg(possibly_unused struct string *title, possibly_unused int max_len,
+		possibly_unused struct string **msg)
+{
+	return 1;
+}
+
+static int Dialog_MenuMsg(possibly_unused struct string *title, possibly_unused struct page **items,
+		possibly_unused int *num)
+{
+	return 1;
+}
+
+static int Dialog_LoadFile(possibly_unused struct string *title, possibly_unused struct string **file,
+		possibly_unused struct string *default_dir, possibly_unused struct string *filter)
+{
+	return 0;
+}
+
+static int Dialog_SaveFile(possibly_unused struct string *title, possibly_unused struct string **file,
+		possibly_unused struct string *default_dir, possibly_unused struct string *filter)
+{
+	return 0;
+}
+
+HLL_LIBRARY(Dialog,
+	    HLL_EXPORT(MsgBox, Dialog_MsgBox),
+	    HLL_EXPORT(InputNum, Dialog_InputNum),
+	    HLL_EXPORT(InputMsg, Dialog_InputMsg),
+	    HLL_EXPORT(MenuMsg, Dialog_MenuMsg),
+	    HLL_EXPORT(LoadFile, Dialog_LoadFile),
+	    HLL_EXPORT(SaveFile, Dialog_SaveFile)
+	    );

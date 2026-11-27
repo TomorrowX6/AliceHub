@@ -815,8 +815,16 @@ void PE_GetPartsTextSurfaceArea(int no, int *x, int *y, int *w, int *h, int stat
 void PE_GetPartsTextFontProperty(int no, int *face, int *size, int *r, int *g, int *b,
 		float *bold, int *er, int *eg, int *eb, float *edge, int state)
 {
-	if (!parts_state_valid(--state)) return;
-	struct text_style *ts = &parts_get_text(parts_get(no), state)->ts;
+	struct parts_text *t = try_get_text(no, state);
+	if (!t) {
+		*face = 0; *size = 16;
+		*r = 255; *g = 255; *b = 255;
+		*bold = 0.0f;
+		*er = 0; *eg = 0; *eb = 0;
+		*edge = 0.0f;
+		return;
+	}
+	struct text_style *ts = &t->ts;
 	*face = ts->face; *size = ts->size;
 	*r = ts->color.r; *g = ts->color.g; *b = ts->color.b;
 	*bold = ts->bold_width;

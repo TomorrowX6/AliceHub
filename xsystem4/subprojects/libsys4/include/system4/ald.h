@@ -49,6 +49,7 @@ struct ald_archive {
 	short *map_ptr;
 	// pointer maps
 	int *fileptr[ALD_FILEMAX];
+	int filecnt[ALD_FILEMAX];
 	// filename conv function
 	char *(*conv)(const char*);
 };
