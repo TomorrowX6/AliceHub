@@ -1281,6 +1281,20 @@ static void test_load_archive_gen_invalidates_live_cache_and_async_dedup(void) {
     assert(parts_try_get(767)->states[0].common.surface_area.w == 20 && parts_try_get(767)->states[0].common.surface_area.h == 22);
     assert(parts_try_get(767)->states[0].common.hitbox.w == 20 && parts_try_get(767)->states[0].common.hitbox.h == 22);
 
+    // Explicitly overridden logical dimensions (e.g. SetTextBoxSize 180x32 on a 48x48 CG)
+    // must be preserved across suspend/resume on both same-archive and replacement-archive resumes.
+    assert(PE_SetPartsCG(768, s_ovr, 0, 1));
+    parts_set_dims(parts_try_get(768), &parts_try_get(768)->states[0].common, 180, 32);
+    PE_SuspendTexture(768);
+    PE_ResumeTexture(768); // same archive (cache hit)
+    assert(parts_try_get(768)->states[0].common.w == 180 && parts_try_get(768)->states[0].common.h == 32);
+    assert(parts_try_get(768)->states[0].common.hitbox.w == 180 && parts_try_get(768)->states[0].common.hitbox.h == 32);
+    PE_SuspendTexture(768);
+    atomic_store(&mock_cg_archive_gen, 1); // replacement archive (48x48 -> 32x32)
+    PE_ResumeTexture(768);
+    assert(parts_try_get(768)->states[0].common.w == 180 && parts_try_get(768)->states[0].common.h == 32);
+    assert(parts_try_get(768)->states[0].common.hitbox.w == 180 && parts_try_get(768)->states[0].common.hitbox.h == 32);
+
     free_string(s_ovr);
     free_string(s_idle);
     free_string(s_async);

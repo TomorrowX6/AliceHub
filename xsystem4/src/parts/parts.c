@@ -640,6 +640,8 @@ static void parts_cg_detach(struct parts_cg *cg)
 		cg->name = NULL;
 	}
 	cg->no = 0;
+	cg->suspended_w = 0;
+	cg->suspended_h = 0;
 }
 
 static inline bool is_save_cg_name(const char *s)
@@ -647,10 +649,30 @@ static inline bool is_save_cg_name(const char *s)
 	return s && !strncmp(s, "<save>", 6);
 }
 
+static void parts_cg_resume_update_dims(struct parts *parts, struct parts_cg *cg,
+		struct parts_cg_asset *asset)
+{
+	bool intrinsic_changed = cg->suspended_w > 0 && cg->suspended_h > 0
+		&& (asset->w != cg->suspended_w || asset->h != cg->suspended_h);
+	bool dims_match_intrinsic = cg->common.w == cg->suspended_w && cg->common.h == cg->suspended_h;
+	if (intrinsic_changed && dims_match_intrinsic) {
+		if (parts)
+			parts_set_dims(parts, &cg->common, asset->w, asset->h);
+		else {
+			cg->common.w = asset->w;
+			cg->common.h = asset->h;
+		}
+	}
+	cg->suspended_w = 0;
+	cg->suspended_h = 0;
+}
+
 void parts_cg_suspend(struct parts_cg *cg)
 {
 	if (!cg || !cg->cg_asset)
 		return;
+	cg->suspended_w = cg->cg_asset->w;
+	cg->suspended_h = cg->cg_asset->h;
 	parts_cg_asset_unref(cg->cg_asset);
 	cg->cg_asset = NULL;
 	cg->common.texture = (Texture){0};
@@ -671,14 +693,7 @@ void parts_cg_resume(struct parts *parts, struct parts_cg *cg)
 		parts_cg_asset_ref(asset);
 		cg->cg_asset = asset;
 		cg->common.texture = asset->texture;
-		if (cg->common.w != asset->w || cg->common.h != asset->h) {
-			if (parts)
-				parts_set_dims(parts, &cg->common, asset->w, asset->h);
-			else {
-				cg->common.w = asset->w;
-				cg->common.h = asset->h;
-			}
-		}
+		parts_cg_resume_update_dims(parts, cg, asset);
 		return;
 	}
 	struct cg *loaded = NULL;
@@ -702,14 +717,7 @@ void parts_cg_resume(struct parts *parts, struct parts_cg *cg)
 	cg->common.texture = asset->texture;
 	if (cg_no > 0)
 		cg->no = cg_no;
-	if (cg->common.w != asset->w || cg->common.h != asset->h) {
-		if (parts)
-			parts_set_dims(parts, &cg->common, asset->w, asset->h);
-		else {
-			cg->common.w = asset->w;
-			cg->common.h = asset->h;
-		}
-	}
+	parts_cg_resume_update_dims(parts, cg, asset);
 }
 
 static void parts_cg_cache_clear(void)

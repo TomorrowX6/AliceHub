@@ -144,6 +144,8 @@ struct parts_cg {
 	int no;
 	struct string *name;
 	struct parts_cg_asset *cg_asset;
+	int suspended_w;
+	int suspended_h;
 	uint64_t load_gen;
 	uint64_t async_gen;
 };
