@@ -1260,6 +1260,7 @@ int main(void) {{
             harness = r"""
 #include <assert.h>
 #include <dirent.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1274,9 +1275,14 @@ struct ain *ain;
 bool game_dohnadohna = true;
 
 static int g_opendir_calls = 0;
+static bool g_fail_opendir_eacces = false;
 DIR *__real_opendir(const char *name);
 DIR *__wrap_opendir(const char *name) {
     g_opendir_calls++;
+    if (g_fail_opendir_eacces) {
+        errno = EACCES;
+        return NULL;
+    }
     return __real_opendir(name);
 }
 
@@ -1340,6 +1346,16 @@ int main(int argc, char **argv) {
     savedir_cache_invalidate();
     assert(savedir_file_exists("SystemData.asd") == true);
     assert(g_opendir_calls == 5);
+
+    // 7. Unlistable (traverse-only / EACCES on opendir) directory falls back to direct file_exists()
+    //    so known save paths are NOT falsely reported as missing!
+    savedir_cache_invalidate();
+    g_fail_opendir_eacces = true;
+    assert(savedir_file_exists("Save001.asd") == true);
+    assert(savedir_file_exists("Save999.asd") == false);
+    g_fail_opendir_eacces = false;
+    savedir_cache_invalidate();
+    assert(savedir_file_exists("Save001.asd") == true);
 
     puts("OK");
     return 0;

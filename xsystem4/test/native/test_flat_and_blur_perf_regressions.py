@@ -1305,6 +1305,23 @@ static void run_blur_matrix(void) {
         gfx_delete_texture(&fsrc);
     }
 
+    // 6. RGB-only (pixel-only) texture blurred in-place via copy+blur retains RGB format so
+    //    subsequent gfx_fill_amap(..., 0) writes are discarded (alpha stays 255).
+    {
+        Texture rgb = {0}, snap = {0};
+        gfx_init_texture_rgb(&rgb, SW, SH, (SDL_Color){ 120, 180, 220, 255 });
+        gfx_init_texture_blank(&snap, SW, SH);
+        gfx_copy_with_alpha_map(&snap, 0, 0, &rgb, 0, 0, SW, SH);
+        gfx_copy_width_blur(&rgb, 0, 0, &snap, 0, 0, SW, SH, 4);
+        gfx_fill_amap(&rgb, 0, 0, SW, SH, 0);
+        uint8_t *got = gfx_get_pixels(&rgb);
+        for (int i = 0; i < SW * SH; i++)
+            assert(got[i * 4 + 3] == 255);
+        free(got);
+        gfx_delete_texture(&snap);
+        gfx_delete_texture(&rgb);
+    }
+
     assert(glGetError() == GL_NO_ERROR);
 }
 

@@ -1164,7 +1164,8 @@ static bool build_blur_filter_pair(struct parts_construction_process *cproc,
 	return true;
 }
 
-static bool build_blur_filter(struct parts_construction_process *cproc, struct parts_cp_filter *op, bool vertical)
+static bool build_blur_filter_ex(struct parts_construction_process *cproc, struct parts_cp_filter *op,
+		bool vertical, bool preserve_target)
 {
 	if (!cproc->common.texture.handle)
 		return false;
@@ -1177,7 +1178,8 @@ static bool build_blur_filter(struct parts_construction_process *cproc, struct p
 	if (w <= 0 || h <= 0 || op->blur <= 0)
 		return true;
 
-	if (x == 0 && y == 0 && w == cproc->common.texture.w && h == cproc->common.texture.h) {
+	if (!preserve_target && x == 0 && y == 0
+			&& w == cproc->common.texture.w && h == cproc->common.texture.h) {
 		Texture dst = {0};
 		gfx_init_texture_blank(&dst, w, h);
 		gfx_blur_rgb_to_fresh(&dst, &cproc->common.texture, op->blur, vertical);
@@ -1186,8 +1188,9 @@ static bool build_blur_filter(struct parts_construction_process *cproc, struct p
 		return true;
 	}
 
-	// Sub-rect blur keeps an immutable copy of the source so sampling never
-	// creates a GLES framebuffer feedback loop while preserving outside pixels.
+	// Sub-rect or format-preserving (RGB pixel-only) blur keeps an immutable copy of
+	// the source so sampling never creates a GLES framebuffer feedback loop while
+	// preserving outside pixels and the destination texture's GL storage format.
 	Texture source = {0};
 	gfx_init_texture_blank(&source, cproc->common.texture.w, cproc->common.texture.h);
 	gfx_copy_with_alpha_map(&source, 0, 0, &cproc->common.texture, 0, 0, source.w, source.h);
@@ -1197,6 +1200,11 @@ static bool build_blur_filter(struct parts_construction_process *cproc, struct p
 		gfx_copy_width_blur(&cproc->common.texture, x, y, &source, x, y, w, h, op->blur);
 	gfx_delete_texture(&source);
 	return true;
+}
+
+static bool build_blur_filter(struct parts_construction_process *cproc, struct parts_cp_filter *op, bool vertical)
+{
+	return build_blur_filter_ex(cproc, op, vertical, false);
 }
 
 static inline float cp_seg_dist2(float px, float py, float x0, float y0, float x1, float y1, bool round_cap)
@@ -1565,6 +1573,7 @@ bool parts_build_construction_process(struct parts *parts,
 	                 first_op->type == PARTS_CP_CG)) {
 		cproc->needs_pixel_snapshot = false;
 	} else if (first_op && cproc->common.texture.handle) {
+		is_rgb_tex = cproc->common.texture.opaque;
 		gfx_begin_draw_target(&cproc->common.texture);
 	}
 	struct parts_cp_op *op;
@@ -1690,9 +1699,9 @@ bool parts_build_construction_process(struct parts *parts,
 				break;
 			}
 			GLuint prev_handle = cproc->common.texture.handle;
-			if (blur_op_is_full_texture(cproc, &op->filter))
+			if (!is_rgb_tex && blur_op_is_full_texture(cproc, &op->filter))
 				gfx_end_draw_target();
-			if (!build_blur_filter(cproc, &op->filter, vert1))
+			if (!build_blur_filter_ex(cproc, &op->filter, vert1, is_rgb_tex))
 				goto done;
 			if (cproc->common.texture.handle != prev_handle)
 				gfx_begin_draw_target(&cproc->common.texture);

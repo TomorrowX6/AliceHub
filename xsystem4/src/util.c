@@ -357,6 +357,7 @@ struct savedir_cache_entry {
 struct savedir_cache_slot {
 	char *dir_path;
 	bool dir_missing;
+	bool dir_unreadable;
 	uint64_t mutation_gen;
 	uint64_t last_validated_ms;
 	uint64_t last_used_seq;
@@ -451,7 +452,9 @@ static void savedir_slot_populate(struct savedir_cache_slot *slot, const char *p
 
 	UDIR *d = opendir_utf8(parent_dir);
 	if (!d) {
-		slot->dir_missing = true;
+		// Directory exists (stat_utf8 succeeded with S_ISDIR) but cannot be listed
+		// (e.g. traverse-only permissions): fall back to direct file_exists() probes.
+		slot->dir_unreadable = true;
 		return;
 	}
 
@@ -568,6 +571,10 @@ static bool savedir_cache_lookup(const char *resolved, char **matched_out, bool 
 			int rc = stat_utf8(parent_dir, &st);
 			if (slot->dir_missing) {
 				valid = (rc != 0 || !S_ISDIR(st.st_mode));
+			} else if (slot->dir_unreadable) {
+				valid = (rc == 0 && S_ISDIR(st.st_mode)
+						&& slot->dir_stat.st_mode == st.st_mode
+						&& savedir_stat_eq(&slot->dir_stat, &st));
 			} else {
 				valid = (rc == 0 && S_ISDIR(st.st_mode) && savedir_stat_eq(&slot->dir_stat, &st));
 			}
@@ -592,6 +599,11 @@ static bool savedir_cache_lookup(const char *resolved, char **matched_out, bool 
 	}
 
 	slot->last_used_seq = ++savedir_cache_seq;
+	if (slot->dir_unreadable) {
+		savedir_unlock();
+		free(parent_dir);
+		return false;
+	}
 	if (dir_missing_out)
 		*dir_missing_out = slot->dir_missing;
 

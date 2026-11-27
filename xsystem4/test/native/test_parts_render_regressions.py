@@ -346,6 +346,17 @@ static void test_blur(void) {
              full?7:4, full?5:3, 1, vertical);
         assert(build_blur_filter(&cp, &op, vertical));
         assert(!memcmp(expected.pixels, cp.common.texture.pixels, sizeof original));
+        // Format-preserving full-texture blur (RGB pixel-only target) keeps the original handle!
+        if (full) {
+            struct parts_construction_process cp_rgb = {0};
+            gfx_init_texture_blank(&cp_rgb.common.texture, 7, 5);
+            memcpy(cp_rgb.common.texture.pixels, original, sizeof original);
+            int rgb_handle = cp_rgb.common.texture.handle;
+            assert(build_blur_filter_ex(&cp_rgb, &op, vertical, true));
+            assert(cp_rgb.common.texture.handle == rgb_handle);
+            assert(!memcmp(expected.pixels, cp_rgb.common.texture.pixels, sizeof original));
+            gfx_delete_texture(&cp_rgb.common.texture);
+        }
         // A zero radius or empty rect does not allocate/copy or touch the target.
         int before = allocated;
         op.blur = 0;
@@ -621,6 +632,7 @@ int main(void) {
             function('src/hll/PartsEngine.c', 'PartsEngine_SetComponentReverseTB'),
             function('src/parts/construction.c', 'blur_op_is_full_texture'),
             function('src/parts/construction.c', 'build_blur_filter_pair'),
+            function('src/parts/construction.c', 'build_blur_filter_ex'),
             function('src/parts/construction.c', 'build_blur_filter'),
             function('src/parts/construction.c', 'build_gray_filter'),
         ]) + TESTS
