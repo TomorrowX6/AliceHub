@@ -451,12 +451,16 @@ struct config config = {0};
 bool game_maman = false;
 bool game_haharanman = false;
 bool game_rance10 = false;
+bool game_rance01 = false;
 bool game_rance03 = false;
 bool game_rance8 = false;
 bool game_evenicle = false;
 bool game_evenicle2 = false;
 bool game_dohnadohna = false;
 bool game_escalayer_reboot = false;
+bool game_pascha3 = false;
+bool game_night_remaster = false;
+bool game_haruka = false;
 bool game_beatblade = false;
 
 static char g_test_savedir[1024] = ".";

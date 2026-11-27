@@ -2072,8 +2072,35 @@ static int *resolve_gsave_globals(struct gsave *save, const char *group_name)
 
 static bool gsave_is_raw_lookup_extra_group(const char *keyname, const char *group_name)
 {
-	return (game_maman && !strcmp(keyname, "MAMAN_EXTRA") && !strcmp(group_name, "MAMAN_EXTRA_DATA"))
-		|| (game_haharanman && !strcmp(keyname, "MIBOUJIN_EXTRA") && !strcmp(group_name, "MIBOUJIN_EXTRA_DATA"));
+	if (!keyname || !group_name)
+		return false;
+	if (game_maman && !strcmp(keyname, "MAMAN_EXTRA") && !strcmp(group_name, "MAMAN_EXTRA_DATA"))
+		return true;
+	if (game_haharanman
+			&& ((!strcmp(keyname, "MIBOUJIN_EXTRA") && !strcmp(group_name, "MIBOUJIN_EXTRA_DATA"))
+				|| (!strcmp(keyname, "MIBOUJIN_USER") && !strcmp(group_name, "MIBOUJIN_USER_DATA"))))
+		return true;
+	if (game_escalayer_reboot
+			&& ((!strcmp(keyname, "ESCA_OMAKE") && !strcmp(group_name, "ESCA_OMAKE_DATA"))
+				|| (!strcmp(keyname, "ESCA_USER") && !strcmp(group_name, "ESCA_USER_DATA"))))
+		return true;
+	if (game_pascha3
+			&& ((!strcmp(keyname, "PC3_OMAKE") && !strcmp(group_name, "PC3_OMAKE_DATA"))
+				|| (!strcmp(keyname, "PC3_USER") && !strcmp(group_name, "PC3_USER_DATA"))))
+		return true;
+	if (game_night_remaster
+			&& !strcmp(keyname, "seEfa0ea?d8sdvaAekfe")
+			&& !strcmp(group_name, "SaveGroup_MemModeInfo"))
+		return true;
+	if (game_rance01
+			&& save_names_equal(keyname, "\x89\xbc\x83\x4c\x81\x5b\x96\xbc")
+			&& save_names_equal(group_name, "\x8b\xa4\x97\x4c\x83\x66\x81\x5b\x83\x5e"))
+		return true;
+	if (game_haruka
+			&& save_names_equal(keyname, "\x92\xb4\x8d\x56\x91\x4d\x94\x45\x83\x5a\x81\x5b\x83\x75\x83\x4c\x81\x5b")
+			&& !strcmp(group_name, "SomeFlag"))
+		return true;
+	return false;
 }
 
 static bool gsave_target_is_gbk(const char *keyname, const char *group_name)

@@ -70,6 +70,7 @@ bool game_dungeons_and_dolls = false;
 bool game_escalayer_reboot = false;
 bool game_galzoo = false;
 bool game_ixseal = false;
+bool game_haruka = false;
 bool game_tsumashibori = false;
 bool game_tsumamigui3 = false;
 bool game_tsumamigui3_jun = false;
@@ -1309,6 +1310,7 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_escalayer_reboot = false;
 	game_galzoo = false;
 	game_ixseal = false;
+	game_haruka = false;
 	game_tsumashibori = false;
 	game_tsumamigui3 = false;
 	game_tsumamigui3_jun = false;
@@ -1385,6 +1387,10 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_function(ain, "C_BATTLE_PLAYER_RESULT_COMMAND@SetEscalayerPunch") >= 0;
 	game_ixseal = ain->version == 11
 		&& ain_get_struct(ain, "TrainingSelect::C_EXECUTE") >= 0;
+	game_haruka = ain->version == 5
+		&& ain_get_struct(ain, "C_CG_DATA_AT_FUNC") >= 0
+		&& ain_get_global(ain, "g_FunctionString") >= 0
+		&& ain_get_global(ain, "g_cCGData") >= 0;
 	game_rance6 = ain->version == 4
 		&& ain_get_library(ain, "DrawDungeon") >= 0
 		&& ain_get_library(ain, "ACXLoader") >= 0

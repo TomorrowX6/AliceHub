@@ -6794,6 +6794,70 @@ object GameCatalog {
         return resolved
     }
 
+    private val OKUSAMA_NTR_WORD_REGEX = Regex("(^|[^a-z0-9])ntr([^a-z0-9]|$)")
+
+    private fun isExplicitOkusamaJunHint(hint: String): Boolean {
+        if (isOkusamaJunAlias(hint)) return true
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(hint).lowercase()
+        return lower.contains("纯爱") || lower.contains("純愛") ||
+            lower.contains("pure love") || lower.contains("purelove")
+    }
+
+    private fun isExplicitOkusamaNtrHint(hint: String): Boolean {
+        if (isOkusamaJunAlias(hint)) return false
+        if (isOkusamaNtrAlias(hint)) return true
+        val lower = ArchiveExtractor.repairSjisAsGbkMojibake(hint).lowercase()
+        return OKUSAMA_NTR_WORD_REGEX.containsMatchIn(lower) ||
+            lower.contains("夺爱") ||
+            lower.contains("奪愛") ||
+            lower.contains("寝取")
+    }
+
+    @JvmOverloads
+    fun isAmbiguousOkusamaSaveDir(
+        gameDir: File?,
+        dirName: String,
+        saveDir: File?,
+        displayName: String? = null
+    ): Boolean {
+        if (classifyByGameDirOnly(gameDir, dirName) != null) return false
+        if (saveDir == null || !saveDir.isDirectory) return false
+        val saveFiles = saveDir.listFiles()?.filter { it.isFile }.orEmpty()
+        val hasGlobalSave = saveFiles.any {
+            it.name.equals("GlobalSave.asd", ignoreCase = true) ||
+                it.name.equals("GlobalSaveData.asd", ignoreCase = true)
+        }
+        if (hasGlobalSave) return false
+        val hasSharedOkusama = saveFiles.any {
+            it.name.equals("MemModeInfo.asd", ignoreCase = true) ||
+                it.name.equals("CommonGameData.asd", ignoreCase = true)
+        }
+        if (!hasSharedOkusama) return false
+        val classified = classifyDirectory(gameDir, dirName, saveDir, displayName)
+        if (classified != ID_OKUSAMAJUN && classified != ID_OKUSAMANTR) return false
+        val hints = listOfNotNull(dirName, displayName)
+        return hints.none { isExplicitOkusamaJunHint(it) || isExplicitOkusamaNtrHint(it) }
+    }
+
+    @JvmOverloads
+    fun matchesScopedSaveDirectory(
+        scopedGameId: String,
+        gameDir: File?,
+        dirName: String,
+        saveDir: File?,
+        displayName: String? = null
+    ): Boolean {
+        val classified = classifyDirectory(
+            gameDir = gameDir,
+            dirName = dirName,
+            saveDir = saveDir,
+            displayName = displayName
+        )
+        if (classified == scopedGameId) return true
+        return (scopedGameId == ID_OKUSAMAJUN || scopedGameId == ID_OKUSAMANTR) &&
+            isAmbiguousOkusamaSaveDir(gameDir, dirName, saveDir, displayName)
+    }
+
     fun classifyDirectory(
         gameDir: File?,
         dirName: String,
@@ -6869,6 +6933,69 @@ object GameCatalog {
             val hasGlobalSave = saveFiles.any {
                 it.name.equals("GlobalSave.asd", ignoreCase = true) ||
                     it.name.equals("GlobalSaveData.asd", ignoreCase = true)
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.equals("Haharanman_Collection.sav", ignoreCase = true) ||
+                        it.name.equals("Haharanman_User.sav", ignoreCase = true) ||
+                        it.name.lowercase().startsWith("haharanman_")
+                }
+            ) {
+                return ID_HAHARANMAN
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    val lower = it.name.lowercase()
+                    lower == "nightrmemmodeinfo.asd" ||
+                        lower == "nightrcommongamedata.asd" ||
+                        lower.startsWith("nightraf") ||
+                        lower.startsWith("nightr_")
+                }
+            ) {
+                return ID_YORUGAKURU
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    val lower = ArchiveExtractor.repairSjisAsGbkMojibake(it.name).lowercase()
+                    lower == "pc3.sav" ||
+                        lower == "pc3user.sav" ||
+                        lower == "pc3conf.sav" ||
+                        lower == "pc3enquete.sav" ||
+                        lower.startsWith("パステルチャイム３_") ||
+                        lower.startsWith("パステルチャイム3_") ||
+                        lower.endsWith("_pc3.sav") ||
+                        lower.endsWith("_pc3user.sav") ||
+                        lower.endsWith("_pc3conf.sav") ||
+                        lower.endsWith("_pc3enquete.sav")
+                }
+            ) {
+                return ID_PASCHA3
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.lowercase().startsWith("tsuma3so_junai_")
+                }
+            ) {
+                return ID_TSUMAMIGUI3JUN
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.lowercase().startsWith("tsuma3so_netorare_")
+                }
+            ) {
+                return ID_TSUMAMIGUI3NTR
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.equals("Tuma3Extra.sav", ignoreCase = true) ||
+                        it.name.equals("Tuma3User.sav", ignoreCase = true) ||
+                        it.name.equals("Tuma3Enquete.sav", ignoreCase = true)
+                }
+            ) {
+                return ID_TSUMAMIGUI3
+            }
+            if (!hasGlobalSave && saveFiles.any {
+                    it.name.equals("MemModeInfo.asd", ignoreCase = true) ||
+                        it.name.equals("CommonGameData.asd", ignoreCase = true)
+                }
+            ) {
+                val hints = listOfNotNull(dirName, displayName)
+                val looksNtr = hints.any { isExplicitOkusamaNtrHint(it) }
+                return if (looksNtr) ID_OKUSAMANTR else ID_OKUSAMAJUN
             }
             val hasPrefixedE2Af = saveFiles.any { f ->
                 val lowerRepaired = ArchiveExtractor.repairSjisAsGbkMojibake(f.name).lowercase()

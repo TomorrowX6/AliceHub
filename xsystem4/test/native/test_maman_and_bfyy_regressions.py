@@ -409,6 +409,7 @@ int main(void) {
 #include "vm/page.h"
 
 bool game_maman, game_haharanman;
+bool game_escalayer_reboot, game_pascha3, game_night_remaster, game_rance01, game_haruka;
 int load_globals_from_gsave(struct gsave *save, const char *key, const char *group, int *count);
 struct ain *ain;
 union vm_value *stack;
@@ -498,7 +499,8 @@ int main(void)
     check_group(false, "MAMAN_EXTRA", "MAMAN_EXTRA_DATA", false);
     game_haharanman = true;
     check_group(true, "MIBOUJIN_EXTRA", "MIBOUJIN_EXTRA_DATA", true);
-    check_group(true, "MIBOUJIN_USER", "MIBOUJIN_USER_DATA", false);
+    check_group(true, "MIBOUJIN_USER", "MIBOUJIN_USER_DATA", true);
+    check_group(true, "MIBOUJIN_ENQUETE", "MIBOUJIN_ENQUETE_DATA", false);
     game_haharanman = false;
     check_group(true, "TYOUKOU3_EXTRA", "TYOUKOU3_EXTRA_DATA", false);
     puts("OK");
@@ -837,7 +839,18 @@ int main(void) {
     def test_maman_mixed_parts_display_text(self):
         # Verify system4.c wires parts_set_mixed_display_text(game_maman) after apply_game_specific_hacks(ain).
         system4_src = (ROOT / "src/system4.c").read_text(encoding="utf-8")
-        self.assertIn("parts_set_mixed_display_text(game_maman);", system4_src)
+        mixed_start = system4_src.rindex("parts_set_mixed_display_text(")
+        mixed_call = system4_src[mixed_start:system4_src.index(");", mixed_start)]
+        for flag in (
+            "game_maman",
+            "game_haharanman",
+            "game_escalayer_reboot",
+            "game_pascha3",
+            "game_night_remaster",
+            "game_evenicle2_rance",
+            "game_rance01",
+        ):
+            self.assertIn(flag, mixed_call)
 
         def c_esc(b: bytes) -> str:
             return "".join(f"\\x{x:02x}" for x in b)
@@ -848,6 +861,15 @@ int main(void) {
         cp932_recall_exit = c_esc("回想を終了します".encode("cp932"))
         cp932_music1 = c_esc("飛べない風船 ～Reach not think～ (short)".encode("cp932"))
         cp932_music2 = c_esc("ウェルカムママン".encode("cp932"))
+        # Real CP932 UI/EX strings from sibling partial-CN releases:
+        cp932_hhr_recall = c_esc("初めての召喚".encode("cp932"))
+        cp932_hhr_music = c_esc("緋桜咲きて遠き空に憂う".encode("cp932"))
+        cp932_esca_music = c_esc("侵略する帝国".encode("cp932"))
+        cp932_esca_dex = c_esc("属性：生物系 出没：閂市街".encode("cp932"))
+        cp932_yk_exit = c_esc("このまま終了しますか？".encode("cp932"))
+        cp932_yk_skill = c_esc("モンスター感知Ⅰ".encode("cp932"))
+        cp932_e2r_chapter = c_esc("ランス外伝　イブニクル２".encode("cp932"))
+        cp932_r01_cfg = c_esc("クイックセーブ時に確認をおこなう".encode("cp932"))
 
         utf8_exit_l1 = c_esc("ゲームを終了しますか？".encode("utf-8"))
         utf8_exit_l2 = c_esc("※セーブされていないデータは失われます".encode("utf-8"))
@@ -855,6 +877,14 @@ int main(void) {
         utf8_recall_exit = c_esc("回想を終了します".encode("utf-8"))
         utf8_music1 = c_esc("飛べない風船 ～Reach not think～ (short)".encode("utf-8"))
         utf8_music2 = c_esc("ウェルカムママン".encode("utf-8"))
+        utf8_hhr_recall = c_esc("初めての召喚".encode("utf-8"))
+        utf8_hhr_music = c_esc("緋桜咲きて遠き空に憂う".encode("utf-8"))
+        utf8_esca_music = c_esc("侵略する帝国".encode("utf-8"))
+        utf8_esca_dex = c_esc("属性：生物系 出没：閂市街".encode("utf-8"))
+        utf8_yk_exit = c_esc("このまま終了しますか？".encode("utf-8"))
+        utf8_yk_skill = c_esc("モンスター感知Ⅰ".encode("utf-8"))
+        utf8_e2r_chapter = c_esc("ランス外伝　イブニクル２".encode("utf-8"))
+        utf8_r01_cfg = c_esc("クイックセーブ時に確認をおこなう".encode("utf-8"))
 
         gbk_titles = [
             c_esc(t.encode("gbk"))
@@ -960,6 +990,14 @@ int main(void)
     check_converted_utf8("{cp932_recall_exit}", "{utf8_recall_exit}");
     check_converted_utf8("{cp932_music1}", "{utf8_music1}");
     check_converted_utf8("{cp932_music2}", "{utf8_music2}");
+    check_converted_utf8("{cp932_hhr_recall}", "{utf8_hhr_recall}");
+    check_converted_utf8("{cp932_hhr_music}", "{utf8_hhr_music}");
+    check_converted_utf8("{cp932_esca_music}", "{utf8_esca_music}");
+    check_converted_utf8("{cp932_esca_dex}", "{utf8_esca_dex}");
+    check_converted_utf8("{cp932_yk_exit}", "{utf8_yk_exit}");
+    check_converted_utf8("{cp932_yk_skill}", "{utf8_yk_skill}");
+    check_converted_utf8("{cp932_e2r_chapter}", "{utf8_e2r_chapter}");
+    check_converted_utf8("{cp932_r01_cfg}", "{utf8_r01_cfg}");
 
     // Unlocked GBK Recall titles and GBK character nameplates must stay unchanged (0 false positives).
     const char *gbk_titles[] = {{ {gbk_titles_init} }};
@@ -1016,6 +1054,7 @@ int main(void)
 #include "vm/page.h"
 
 bool game_maman, game_haharanman;
+bool game_escalayer_reboot, game_pascha3, game_night_remaster, game_rance01, game_haruka;
 int load_globals_from_gsave(struct gsave *save, const char *key, const char *group, int *count);
 struct ain *ain;
 union vm_value *stack;
@@ -1321,6 +1360,8 @@ int main(void)
 struct ain *ain;
 struct config config;
 bool game_maman = true, game_haharanman = false;
+bool game_escalayer_reboot = false, game_pascha3 = false, game_night_remaster = false;
+bool game_rance01 = false, game_haruka = false;
 union vm_value *stack;
 int32_t stack_ptr;
 extern struct static_library lib_PassRegister;
@@ -1390,6 +1431,204 @@ int main(void)
                 ["-DRELEASE", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
             )
             self.assertEqual(out.strip(), "OK")
+
+    def test_sibling_games_extra_save_raw_lookup_keys(self):
+        def c_esc(b: bytes) -> str:
+            return "".join(f"\\x{x:02x}" for x in b)
+
+        cases = [
+            ("haharanman", 14, "MIBOUJIN_USER", "MIBOUJIN_USER_DATA", "管理／ＥＶ／エンディング"),
+            ("escalayer_reboot", 6, "ESCA_OMAKE", "ESCA_OMAKE_DATA", "沙由香０１／部屋Ｈ／視姦"),
+            ("escalayer_reboot", 6, "ESCA_USER", "ESCA_USER_DATA", "凌辱イベント／初回"),
+            ("pascha3", 6, "PC3_OMAKE", "PC3_OMAKE_DATA", "ＥＶ／リリアム／０１／０１"),
+            ("pascha3", 6, "PC3_USER", "PC3_USER_DATA", "勲章キー／ＣＧモード１００％"),
+            ("night_remaster", 14, "seEfa0ea?d8sdvaAekfe", "SaveGroup_MemModeInfo", "ＥＶ／元／E00001"),
+            ("rance01", 6, "仮キー名", "共有データ", "シィル／学生服Ｈ"),
+            ("haruka", 5, "超昂閃忍セーブキー", "SomeFlag", "ハルカ／初回Ｈ"),
+        ]
+        cfg_group = "コンフィグデータ"
+        fn_marker = "■システム初期化"
+
+        case_calls = []
+        for flag, ver, key_s, grp_s, lookup_s in cases:
+            case_calls.append(
+                f'verify_sibling("{flag}", {ver}, '
+                f'"{c_esc(key_s.encode("cp932"))}", "{c_esc(key_s.encode("gbk"))}", '
+                f'"{c_esc(grp_s.encode("cp932"))}", "{c_esc(grp_s.encode("gbk"))}", '
+                f'"{c_esc(lookup_s.encode("cp932"))}", "{c_esc(lookup_s.encode("gbk"))}");'
+            )
+        calls_src = "\n    ".join(case_calls)
+
+        harness = f"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "system4/ain.h"
+#include "savedata.h"
+#include "system4/savefile.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "vm.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+#include "xsystem4.h"
+
+void apply_game_specific_hacks(struct ain *ain);
+struct config config;
+bool message_layout_init_rance03(struct ain *a) {{ (void)a; return false; }}
+void escalayer_reboot_replace_cn_ui_text(struct string **s, int n) {{ (void)s; (void)n; }}
+
+int load_globals_from_gsave(struct gsave *save, const char *key, const char *group, int *count);
+struct ain *ain;
+union vm_value *stack;
+int32_t stack_ptr;
+
+union vm_value global_get(int i) {{ return heap[0].page->values[i]; }}
+void global_set(int i, union vm_value val, bool dtors) {{ (void)dtors; heap[0].page->values[i] = val; }}
+union vm_value stack_pop(void) {{ abort(); }}
+union vm_value vm_copy(union vm_value val, enum ain_data_type type) {{ (void)val; (void)type; abort(); }}
+void vm_call(int fno, int slot) {{ (void)fno; (void)slot; abort(); }}
+_Noreturn void _vm_error(const char *fmt, ...) {{ (void)fmt; abort(); }}
+
+static void reset_flags(void)
+{{
+    game_maman = false;
+    game_haharanman = false;
+    game_escalayer_reboot = false;
+    game_pascha3 = false;
+    game_night_remaster = false;
+    game_rance01 = false;
+    game_haruka = false;
+}}
+
+static void set_flag(const char *name)
+{{
+    reset_flags();
+    if (!strcmp(name, "haharanman")) game_haharanman = true;
+    else if (!strcmp(name, "escalayer_reboot")) game_escalayer_reboot = true;
+    else if (!strcmp(name, "pascha3")) game_pascha3 = true;
+    else if (!strcmp(name, "night_remaster")) game_night_remaster = true;
+    else if (!strcmp(name, "rance01")) game_rance01 = true;
+    else if (!strcmp(name, "haruka")) game_haruka = true;
+    else abort();
+}}
+
+static void run_one(const char *flag, int ver, bool ain_ids_gbk,
+                    const char *ain_key, const char *ain_grp,
+                    const char *save_key, const char *save_grp,
+                    const char *saved_val, const char *expected_val)
+{{
+    sys4_set_text_gbk(true);
+    sys4_set_source_utf8(false);
+    set_flag(flag);
+
+    char *groups[] = {{
+        (char *)ain_grp,
+        ain_ids_gbk ? "{c_esc(cfg_group.encode('gbk'))}" : "{c_esc(cfg_group.encode('cp932'))}",
+    }};
+    struct ain_function funcs[] = {{
+        {{ .name = ain_ids_gbk ? "{c_esc(fn_marker.encode('gbk'))}" : "{c_esc(fn_marker.encode('cp932'))}" }},
+    }};
+    struct ain_type elem_str = {{ .data = AIN_STRING }};
+    struct ain_variable globals[] = {{
+        {{
+            .name = "g_keys",
+            .group_index = 0,
+            .type = ver >= 12
+                ? (struct ain_type){{ .data = AIN_ARRAY, .rank = 1, .array_type = &elem_str }}
+                : (struct ain_type){{ .data = AIN_ARRAY_STRING, .rank = 1 }},
+        }},
+    }};
+    struct ain script = {{
+        .version = ver,
+        .nr_globals = 1, .globals = globals,
+        .nr_global_groups = 2, .global_group_names = groups,
+        .nr_functions = 1, .functions = funcs,
+    }};
+    ain = &script;
+
+    struct gsave *save = gsave_create(7, save_key, 1, save_grp);
+    struct string *sv = make_string(saved_val, strlen(saved_val));
+    int32_t idx = gsave_add_string(save, sv);
+    free_string(sv);
+
+    struct gsave_array_value *vals = xmalloc(sizeof(*vals));
+    vals[0] = (struct gsave_array_value){{ .type = AIN_STRING, .value = idx }};
+    int32_t *dim = xmalloc(sizeof(*dim));
+    *dim = 1;
+    struct gsave_flat_array *flat = xmalloc(sizeof(*flat));
+    *flat = (struct gsave_flat_array){{ .type = AIN_STRING, .nr_values = 1, .values = vals }};
+    struct gsave_array arr = {{ .rank = 1, .dimensions = dim, .nr_flat_arrays = 1, .flat_arrays = flat }};
+
+    gsave_add_globals_record(save, 1);
+    save->globals[0] = (struct gsave_global){{
+        .name = xstrdup("g_keys"),
+        .type = ver >= 12 ? AIN_ARRAY : AIN_ARRAY_STRING,
+        .value = gsave_add_array(save, &arr),
+    }};
+
+    int count = 0;
+    assert(load_globals_from_gsave(save, ain_key, ain_grp, &count) && count == 1);
+    struct page *loaded = heap_get_page(global_get(0).i);
+    assert(loaded && loaded->nr_vars == 1);
+    assert(!strcmp(heap[loaded->values[0].i].s->text, expected_val));
+    heap_unref(global_get(0).i);
+    gsave_free(save);
+}}
+
+static void verify_sibling(const char *flag, int ver,
+                           const char *key_cp, const char *key_gb,
+                           const char *grp_cp, const char *grp_gb,
+                           const char *val_cp, const char *val_gb)
+{{
+    // Partial CN build (CP932 identifiers): JP CP932 save stays CP932, GBK save normalizes to CP932.
+    run_one(flag, ver, false, key_cp, grp_cp, key_cp, grp_cp, val_cp, val_cp);
+    run_one(flag, ver, false, key_cp, grp_cp, key_gb, grp_gb, val_gb, val_cp);
+    // Fully-GBK repack (GBK identifiers): JP CP932 save transcodes to GBK, GBK save stays GBK.
+    run_one(flag, ver, true, key_gb, grp_gb, key_cp, grp_cp, val_cp, val_gb);
+    run_one(flag, ver, true, key_gb, grp_gb, key_gb, grp_gb, val_gb, val_gb);
+}}
+
+static void verify_haruka_detection(void)
+{{
+    struct ain *h = ain_new(5, 0);
+    ain_add_struct(h, "C_CG_DATA_AT_FUNC");
+    ain_add_global(h, "g_FunctionString");
+    ain_add_global(h, "g_cCGData");
+    apply_game_specific_hacks(h);
+    assert(game_haruka);
+    ain_free(h);
+
+    struct ain *other = ain_new(5, 0);
+    ain_add_global(other, "g_other");
+    apply_game_specific_hacks(other);
+    assert(!game_haruka);
+    ain_free(other);
+}}
+
+int main(void)
+{{
+    verify_haruka_detection();
+
+    heap_init();
+    heap[0].ref = 1;
+    heap_set_page(0, alloc_page(GLOBAL_PAGE, 0, 1));
+
+    {calls_src}
+
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(
+            harness,
+            [ROOT / "src/hacks.c", ROOT / "src/savedata.c", ROOT / "src/util.c",
+             ROOT / "src/heap.c", ROOT / "src/page.c", ROOT / "src/vm_v12.c",
+             ROOT / "src/cJSON.c", ROOT / "subprojects/libsys4/src/savefile.c", *LIBSYS4_CORE],
+            ["-DRELEASE", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":
