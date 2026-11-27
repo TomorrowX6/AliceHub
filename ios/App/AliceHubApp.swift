@@ -103,6 +103,9 @@ struct AliceHubApp: App {
         GameLibrary.cnPatchResolver = { url in
             InstalledModInfo.read(url)?.kind == "cn_patch"
         }
+        GameLibrary.catalogIDResolver = { game in
+            OnlineGame.catalogEntry(for: game)?.id
+        }
     }
 
     var body: some Scene {

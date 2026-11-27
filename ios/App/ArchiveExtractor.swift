@@ -18,6 +18,8 @@ enum ArchiveError: LocalizedError {
 enum ArchiveExtractor {
     static let gbk = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GBK_95.rawValue))
     static let sjis = String.Encoding.shiftJIS.rawValue
+    private static let gb18030 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
+    private static let cp932 = CFStringConvertEncodingToNSStringEncoding(CFStringConvertWindowsCodepageToEncoding(932))
 
     static func isSupportedArchiveName(_ name: String) -> Bool {
         [".zip", ".rar", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".iso", ".mdf"]
@@ -75,21 +77,25 @@ enum ArchiveExtractor {
         let separator = input.contains("\\") && !input.contains("/") ? "\\" : "/"
         return input.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/").map { segment in
             guard segment.unicodeScalars.contains(where: { $0.value >= 128 }),
-                  let data = segment.data(using: String.Encoding(rawValue: gbk), allowLossyConversion: false)
+                  let data = segment.data(using: String.Encoding(rawValue: gb18030), allowLossyConversion: false)
             else { return segment }
             let bytes = Array(data)
             var i = 0, pairs = 0
             while i < bytes.count {
                 let a = bytes[i]
-                if a < 128 { i += 1; continue }
-                guard ((0x81...0x9F).contains(a) || (0xE0...0xEF).contains(a)), i + 1 < bytes.count else { return segment }
+                if a < 0x80 { i += 1; continue }
+                guard !(0xA1...0xDF).contains(a),
+                      ((0x81...0x9F).contains(a) || (0xE0...0xEF).contains(a)), i + 1 < bytes.count else { return segment }
                 let b = bytes[i + 1]
                 guard ((0x40...0x7E).contains(b) || (0x80...0xFC).contains(b)), a < 0xA1 || b < 0xA1 else { return segment }
                 pairs += 1
                 i += 2
             }
-            guard pairs > 0 else { return segment }
-            return String(data: data, encoding: .shiftJIS) ?? segment
+            guard pairs > 0,
+                  let repaired = String(data: data, encoding: String.Encoding(rawValue: cp932)) ?? String(data: data, encoding: .shiftJIS),
+                  !repaired.contains("\u{FFFD}")
+            else { return segment }
+            return repaired
         }.joined(separator: separator)
     }
 

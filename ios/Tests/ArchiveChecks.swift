@@ -58,6 +58,10 @@ enum ArchiveChecks {
         let chinese = "测试游戏.ain"
         precondition(ArchiveExtractor.decodeBestCjkText(chinese.data(using: String.Encoding(rawValue: ArchiveExtractor.gbk))!) == chinese)
         precondition(ArchiveExtractor.repairSjisAsGbkMojibake("愴崙儔儞僗_Sys.ASD") == "戦国ランス_Sys.ASD")
+        precondition(ArchiveExtractor.repairSjisAsGbkMojibake("愴崙儔儞僗GA.ald") == "戦国ランスGA.ald")
+        precondition(ArchiveExtractor.repairSjisAsGbkMojibake("儔儞僗丒僋僄僗僩.ain") == "ランス・クエスト.ain")
+        precondition(ArchiveExtractor.repairSjisAsGbkMojibake("战国兰斯中文版/测试游戏.ain") == "战国兰斯中文版/测试游戏.ain")
+        precondition(ArchiveExtractor.repairSjisAsGbkMojibake("戦国ランスGA.ald") == "戦国ランスGA.ald")
         precondition(ArchiveExtractor.decodeBestCjkText(Data(name.utf8)) == name)
         let malformed = ArchiveExtractor.decodeBestCjkText(Data([0xFF]) + Data("suffix.ain".utf8))
         precondition(malformed.hasSuffix("suffix.ain"))

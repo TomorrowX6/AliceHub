@@ -75,6 +75,17 @@ final class GameLibrary: ObservableObject {
     // Registered by the app entrypoint to reuse InstalledModInfo.read without coupling
     // GameLibrary to ModCatalog in standalone library checks.
     static var cnPatchResolver: ((URL) -> Bool)? = nil
+    // Registered by the app entrypoint to resolve OnlineGame catalog IDs without coupling
+    // GameLibrary to OnlineGameCatalog in standalone library checks.
+    static var catalogIDResolver: ((Game) -> String?)? = nil
+
+    private static func resolvedCatalogID(for game: Game) -> String? {
+        if let resolver = catalogIDResolver {
+            return resolver(game)
+        }
+        guard let key = game.artworkKey else { return nil }
+        return key == "escalayer_reboot" ? "escalayerreboot" : key
+    }
 
     fileprivate struct InspectedGame {
         let isValidGame: Bool
@@ -113,9 +124,20 @@ final class GameLibrary: ObservableObject {
         return false
     }
 
-    static func hasLocalChineseMarkers(regularFiles: [URL]) -> Bool {
+    static func hasLocalChineseMarkerDirectories(_ contents: [URL]) -> Bool {
+        contents.contains { item in
+            guard item.lastPathComponent.lowercased() == "nspic",
+                  let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else {
+                return false
+            }
+            return values.isDirectory == true && values.isSymbolicLink != true
+        }
+    }
+
+    static func hasLocalChineseMarkers(regularFiles: [URL], directoryContents: [URL] = []) -> Bool {
         hasLocalChineseMarkers(fileNames: regularFiles.map(\.lastPathComponent)) ||
-            regularFiles.contains(where: isHarukaChineseScript)
+            regularFiles.contains(where: isHarukaChineseScript) ||
+            hasLocalChineseMarkerDirectories(directoryContents)
     }
 
     private static func isHarukaChineseScript(_ file: URL) -> Bool {
@@ -149,7 +171,7 @@ final class GameLibrary: ObservableObject {
         ("rance10", ["rance10", "rancex", "兰斯10", "ランス10"]),
         ("dohnadohna", ["dohnadohna", "多娜多娜", "ドーナドーナ"]),
         ("sanbiki", ["sanbiki", "三匹が", "三匹", "slash!thrust!burn!"]),
-        ("sengokurance", ["sengoku", "戦国", "战国"]),
+        ("sengokurance", ["sengoku", "戦国", "战国", "戰國", "rance7", "愴崙", "daisengoku", "大战国", "大戦国"]),
         ("rance1digest", ["rance1digest", "rance1.ain", "兰斯1摘要", "兰斯１摘要", "蘭斯1摘要", "ランス1ダイジェスト", "ランス１ダイジェスト"]),
         ("rance1classic", ["rance1classic", "rancesa.ald", "rancega.ald", "兰斯1原版", "兰斯1（原版）", "兰斯i寻找小光"]),
         ("rance2classic", ["rance2classic", "rance2sa.ald", "rance2ga.ald", "兰斯2原版", "兰斯2（原版）", "兰斯ii反叛的少女"]),
@@ -333,10 +355,12 @@ final class GameLibrary: ObservableObject {
         var directory = root
         for (index, component) in components.enumerated() {
             let leaf = String(component)
+            let repairedLeaf = ArchiveExtractor.repairSjisAsGbkMojibake(leaf)
             guard let children = try? FileManager.default.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: Array(keys)
             ), let match = children.first(where: { $0.lastPathComponent == leaf }) ??
-                children.first(where: { $0.lastPathComponent.caseInsensitiveCompare(leaf) == .orderedSame }),
+                children.first(where: { $0.lastPathComponent.caseInsensitiveCompare(leaf) == .orderedSame }) ??
+                children.first(where: { ArchiveExtractor.repairSjisAsGbkMojibake($0.lastPathComponent).caseInsensitiveCompare(repairedLeaf) == .orderedSame }),
                 let values = try? match.resourceValues(forKeys: keys),
                 values.isSymbolicLink != true else { return nil }
             if index == components.count - 1 { return values.isRegularFile == true ? match : nil }
@@ -535,7 +559,9 @@ final class GameLibrary: ObservableObject {
 
     fileprivate static func inspect(_ url: URL) -> InspectedGame {
         guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
-              let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
+              let contents = try? FileManager.default.contentsOfDirectory(
+                  at: url, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey]
+              ) else {
             return InspectedGame(isValidGame: false, displayName: url.lastPathComponent, engine: .system4, artworkKey: nil, isRance04: false, isRance5d: false, hasLocalChineseMarkers: false, hasExplicitNonChineseEdition: false, hasInstalledCnPatch: false)
         }
         let regularFiles = contents.filter {
@@ -747,7 +773,7 @@ final class GameLibrary: ObservableObject {
             })?.0
         }
 
-        let hasLocalChinese = hasLocalChineseMarkers(regularFiles: regularFiles)
+        let hasLocalChinese = hasLocalChineseMarkers(regularFiles: regularFiles, directoryContents: contents)
         let hasExplicitNonChinese = legacyId?.hasSuffix("_eng") == true
         let hasCnPatch = hasInstalledCnPatch(url, regularFiles: regularFiles)
 
@@ -1006,6 +1032,26 @@ final class GameLibrary: ObservableObject {
         UserDefaults.standard.set(entry.isEmpty ? nil : entry, forKey: Self.bootEntryKey(game))
     }
 
+    private static func selectedInstallationKey(_ catalogID: String) -> String { "hub.selectedInstallation." + catalogID }
+
+    func selectedInstallation(for catalogID: String) -> String? {
+        guard !catalogID.isEmpty,
+              let value = UserDefaults.standard.string(forKey: Self.selectedInstallationKey(catalogID)),
+              !value.isEmpty else { return nil }
+        return value
+    }
+
+    func setSelectedInstallation(_ installationID: String?, for catalogID: String) {
+        guard !catalogID.isEmpty else { return }
+        objectWillChange.send()
+        let key = Self.selectedInstallationKey(catalogID)
+        if let installationID, !installationID.isEmpty {
+            UserDefaults.standard.set(installationID, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
     static func launchArguments(_ url: URL, saves: URL, bootEntry: String = "") throws -> [String] {
         launchArguments(url, saves: saves, info: try launchInfo(url, bootEntry: bootEntry))
     }
@@ -1113,6 +1159,7 @@ final class GameLibrary: ObservableObject {
             defer { if access { source.stopAccessingSecurityScopedResource() } }
             let work = self.gamesDirectory.appendingPathComponent(".import-\(UUID().uuidString)")
             var result: Error?
+            var importedDestination: URL?
             let coordinator = NSFileCoordinator()
             var coordinationError: NSError?
             coordinator.coordinate(readingItemAt: source, options: .withoutChanges, error: &coordinationError) { readable in
@@ -1122,13 +1169,18 @@ final class GameLibrary: ObservableObject {
                     let destination = self.gamesDirectory.appendingPathComponent(name, isDirectory: true)
                     guard !self.files.fileExists(atPath: destination.path) else { throw LibraryError.alreadyExists }
                     try self.files.moveItem(at: root, to: destination)
+                    importedDestination = destination
                 } catch { result = error }
             }
             try? self.files.removeItem(at: work)
             let message = (result ?? coordinationError)?.localizedDescription
+            let imported = (result == nil && coordinationError == nil) ? importedDestination.map(Game.init(url:)) : nil
             DispatchQueue.main.async {
                 self.importing = false
                 self.importProgress = ""
+                if let imported, let catalogID = Self.resolvedCatalogID(for: imported) {
+                    self.setSelectedInstallation(imported.id, for: catalogID)
+                }
                 self.refresh()
                 self.error = message
             }
@@ -1247,6 +1299,10 @@ final class GameLibrary: ObservableObject {
         do {
             try files.removeItem(at: game.url)
             setBootEntry("", for: game)
+            if let catalogID = Self.resolvedCatalogID(for: game),
+               selectedInstallation(for: catalogID) == game.id {
+                setSelectedInstallation(nil, for: catalogID)
+            }
             refresh()
         } catch { self.error = error.localizedDescription }
     }
@@ -1276,8 +1332,19 @@ final class GameLibrary: ObservableObject {
     static let daiSengokuSaveDirSuffix = "__SaveDataDSR"
 
     private static func usesDaiSengokuSaveFolder(_ gameURL: URL) -> Bool {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+        let regularFiles = ((try? FileManager.default.contentsOfDirectory(
+            at: gameURL, includingPropertiesForKeys: keys, options: .skipsHiddenFiles
+        )) ?? []).filter {
+            guard let values = try? $0.resourceValues(forKeys: Set(keys)) else { return false }
+            return values.isRegularFile == true && values.isSymbolicLink != true
+        }
         for fileName in ["System40.ini", "AliceStart.ini"] {
-            if let usesDSR = iniUsesDaiSengokuSaveFolder(gameURL.appendingPathComponent(fileName)) { return usesDSR }
+            guard let iniURL = regularFiles.first(where: { $0.lastPathComponent == fileName }) ??
+                regularFiles.first(where: { $0.lastPathComponent.caseInsensitiveCompare(fileName) == .orderedSame }) else {
+                continue
+            }
+            if let usesDSR = iniUsesDaiSengokuSaveFolder(iniURL) { return usesDSR }
         }
         return false
     }

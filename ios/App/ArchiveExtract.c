@@ -85,7 +85,9 @@ static int replace_hard_link(const char *source, const char *destination)
 int AHExtractArchiveFD(int fd, void *context, AHArchiveEntry on_entry,
                        AHArchiveProgress progress, char *error, size_t error_size)
 {
-    locale_t utf8_locale = newlocale(LC_CTYPE_MASK, "en_US.UTF-8", NULL);
+    locale_t utf8_locale = newlocale(LC_CTYPE_MASK, "UTF-8", NULL);
+    if (!utf8_locale) utf8_locale = newlocale(LC_CTYPE_MASK, "C.UTF-8", NULL);
+    if (!utf8_locale) utf8_locale = newlocale(LC_CTYPE_MASK, "en_US.UTF-8", NULL);
     locale_t previous_locale = utf8_locale ? uselocale(utf8_locale) : (locale_t)0;
     struct archive *a = archive_read_new();
     char *path = NULL;
@@ -114,8 +116,9 @@ int AHExtractArchiveFD(int fd, void *context, AHArchiveEntry on_entry,
             archive_read_data_skip(a);
             continue;
         }
-        /* Do not request libarchive's locale-dependent pathname conversion. */
-        const char *raw = archive_entry_pathname(entry);
+        /* Prefer UTF-8 pathnames (RAR5/7z/UTF-8 ZIP), falling back to raw bytes for legacy SJIS/GBK ZIPs. */
+        const char *raw = archive_entry_pathname_utf8(entry);
+        if (!raw || !*raw) raw = archive_entry_pathname(entry);
         if (!raw || !*raw) { failure = "无法解码压缩包文件名"; goto done; }
         int64_t size = archive_entry_size_is_set(entry) ? archive_entry_size(entry) : -1;
         size_t raw_length = strlen(raw);
@@ -131,7 +134,8 @@ int AHExtractArchiveFD(int fd, void *context, AHArchiveEntry on_entry,
         free(directory_path);
         if (accepted < 0) { failure = "已取消解压"; goto done; }
         if (!accepted || !path) { archive_read_data_skip(a); continue; }
-        const char *hardlink = archive_entry_hardlink(entry);
+        const char *hardlink = archive_entry_hardlink_utf8(entry);
+        if (!hardlink || !*hardlink) hardlink = archive_entry_hardlink(entry);
         if (hardlink) {
             char *target = relative_link_name(hardlink);
             if (!target) { failure = "压缩包包含不安全的硬链接"; goto done; }

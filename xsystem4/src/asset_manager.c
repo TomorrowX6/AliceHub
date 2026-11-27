@@ -20,6 +20,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <limits.h>
+#include <sys/stat.h>
 #include <assert.h>
 #include <zlib.h>
 
@@ -72,6 +73,7 @@ struct asset_manager_ald {
 	struct archive *archive;
 	struct afa_archive **cg_overlays;
 	size_t nr_cg_overlays;
+	struct archive *loose_cg_override;
 };
 
 enum afa_archive_priority {
@@ -385,6 +387,187 @@ bool asset_cg_get_metrics_by_name(const char *name, struct cg_metrics *metrics)
 	return r;
 }
 
+struct loose_cg_entry {
+	char *path;
+	char *name;
+};
+
+struct loose_cg_archive {
+	struct archive ar;
+	struct hash_table *by_id;
+};
+
+static int compare_cstr_ptr(const void *a, const void *b)
+{
+	const char *sa = *(const char * const *)a;
+	const char *sb = *(const char * const *)b;
+	return strcmp(sa, sb);
+}
+
+static void loose_cg_entry_free(void *p)
+{
+	struct loose_cg_entry *entry = p;
+	if (!entry)
+		return;
+	free(entry->path);
+	free(entry->name);
+	free(entry);
+}
+
+static bool is_supported_loose_cg_ext(const char *ext)
+{
+	static const char * const exts[] = {
+		"qnt", "pms", "ajp", "dcf", "webp", "png", "bmp", "jpg", "jpeg"
+	};
+	for (size_t i = 0; i < sizeof(exts) / sizeof(exts[0]); i++) {
+		if (!strcasecmp(ext, exts[i]))
+			return true;
+	}
+	return false;
+}
+
+static bool parse_loose_cg_id(const char *filename, int *id_out)
+{
+	if (!filename)
+		return false;
+	if ((filename[0] != 'c' && filename[0] != 'C') ||
+	    (filename[1] != 'g' && filename[1] != 'G'))
+		return false;
+	const char *p = filename + 2;
+	if (*p < '0' || *p > '9')
+		return false;
+	int id = 0;
+	while (*p >= '0' && *p <= '9') {
+		int digit = *p - '0';
+		if (id > (INT_MAX - digit) / 10)
+			return false;
+		id = id * 10 + digit;
+		p++;
+	}
+	if (id <= 0 || *p != '.')
+		return false;
+	if (!is_supported_loose_cg_ext(p + 1))
+		return false;
+	*id_out = id;
+	return true;
+}
+
+static bool loose_cg_exists(struct archive *_ar, int no)
+{
+	struct loose_cg_archive *ar = (struct loose_cg_archive *)_ar;
+	return no >= 0 && no < INT_MAX && ht_get_int(ar->by_id, no + 1, NULL) != NULL;
+}
+
+static struct archive_data *loose_cg_get(struct archive *_ar, int no)
+{
+	if (no < 0 || no >= INT_MAX)
+		return NULL;
+	struct loose_cg_archive *ar = (struct loose_cg_archive *)_ar;
+	struct loose_cg_entry *entry = ht_get_int(ar->by_id, no + 1, NULL);
+	if (!entry)
+		return NULL;
+	size_t size = 0;
+	uint8_t *buf = file_read(entry->path, &size);
+	if (!buf || size == 0) {
+		free(buf);
+		return NULL;
+	}
+	struct archive_data *d = xcalloc(1, sizeof(*d));
+	d->size = size;
+	d->data = buf;
+	d->name = xstrdup(entry->name);
+	d->no = no;
+	d->archive = _ar;
+	return d;
+}
+
+static void loose_cg_free_data(struct archive_data *data)
+{
+	free(data->data);
+	free(data->name);
+	free(data);
+}
+
+static void loose_cg_free(struct archive *_ar)
+{
+	struct loose_cg_archive *ar = (struct loose_cg_archive *)_ar;
+	if (ar->by_id) {
+		ht_foreach_value(ar->by_id, loose_cg_entry_free);
+		ht_free_int(ar->by_id);
+	}
+	free(ar);
+}
+
+static struct archive_ops loose_cg_archive_ops = {
+	.exists = loose_cg_exists,
+	.get = loose_cg_get,
+	.free_data = loose_cg_free_data,
+	.free = loose_cg_free,
+};
+
+static struct archive *loose_cg_open_dir(const char *dir_path)
+{
+	UDIR *dir = opendir_utf8(dir_path);
+	if (!dir)
+		return NULL;
+
+	char **names = NULL;
+	size_t nr_names = 0;
+	size_t cap_names = 0;
+	char *d_name;
+	while ((d_name = readdir_utf8(dir))) {
+		int id = 0;
+		if (d_name[0] == '.' || !parse_loose_cg_id(d_name, &id)) {
+			free(d_name);
+			continue;
+		}
+		char *full_path = path_join(dir_path, d_name);
+		ustat st;
+		bool is_reg = stat_utf8(full_path, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0;
+		free(full_path);
+		if (!is_reg) {
+			free(d_name);
+			continue;
+		}
+		if (nr_names == cap_names) {
+			size_t new_cap = cap_names ? cap_names * 2 : 64;
+			names = xrealloc(names, new_cap * sizeof(*names));
+			cap_names = new_cap;
+		}
+		names[nr_names++] = d_name;
+	}
+	closedir_utf8(dir);
+
+	if (nr_names == 0) {
+		free(names);
+		return NULL;
+	}
+
+	if (nr_names > 1)
+		qsort(names, nr_names, sizeof(*names), compare_cstr_ptr);
+
+	struct loose_cg_archive *ar = xcalloc(1, sizeof(*ar));
+	ar->ar.ops = &loose_cg_archive_ops;
+	ar->by_id = ht_create(max((size_t)64, nr_names * 2));
+
+	for (size_t i = 0; i < nr_names; i++) {
+		int id = 0;
+		if (!parse_loose_cg_id(names[i], &id)) {
+			free(names[i]);
+			continue;
+		}
+		struct loose_cg_entry *entry = xmalloc(sizeof(*entry));
+		entry->path = path_join(dir_path, names[i]);
+		entry->name = names[i];
+		struct ht_slot *slot = ht_put_int(ar->by_id, id, NULL);
+		if (slot->value)
+			loose_cg_entry_free(slot->value);
+		slot->value = entry;
+	}
+	free(names);
+	return &ar->ar;
+}
+
 static bool ald_exists_by_id(struct asset_manager *_manager, int id)
 {
 	struct asset_manager_ald *manager = (struct asset_manager_ald*)_manager;
@@ -395,6 +578,8 @@ static bool ald_exists_by_id(struct asset_manager *_manager, int id)
 			if (archive_exists(&manager->cg_overlays[i]->ar, id - 1))
 				return true;
 		}
+		if (manager->loose_cg_override && archive_exists(manager->loose_cg_override, id - 1))
+			return true;
 	}
 	return archive_exists(manager->archive, id - 1);
 }
@@ -407,6 +592,11 @@ static struct archive_data *ald_get_by_id(struct asset_manager *_manager, int id
 			if (!manager->cg_overlays[i]->has_number)
 				continue;
 			struct archive_data *data = archive_get(&manager->cg_overlays[i]->ar, id - 1);
+			if (data)
+				return data;
+		}
+		if (manager->loose_cg_override) {
+			struct archive_data *data = archive_get(manager->loose_cg_override, id - 1);
 			if (data)
 				return data;
 		}
@@ -977,6 +1167,8 @@ void asset_manager_fini(void)
 			for (size_t i = 0; i < manager->nr_cg_overlays; i++)
 				archive_free(&manager->cg_overlays[i]->ar);
 			free(manager->cg_overlays);
+			if (manager->loose_cg_override)
+				archive_free(manager->loose_cg_override);
 			archive_free(manager->archive);
 		}
 		free(assets[type]);
@@ -1193,6 +1385,23 @@ static struct cg *asset_cg_load_base_by_id(struct archive *src_ar, int id)
 				return cg;
 			}
 		}
+		if (manager->loose_cg_override) {
+			if (src_ar != manager->loose_cg_override) {
+				struct archive_data *data = archive_get(manager->loose_cg_override, id - 1);
+				if (data) {
+					struct cg *cg = cg_load_data(data);
+					archive_free_data(data);
+					return cg;
+				}
+			} else if (!archive_exists(manager->loose_cg_override, id - 1) && manager->archive) {
+				struct archive_data *data = archive_get(manager->archive, id - 1);
+				if (data) {
+					struct cg *cg = cg_load_data(data);
+					archive_free_data(data);
+					return cg;
+				}
+			}
+		}
 		return NULL;
 	}
 	if (assets[ASSET_CG]->get_by_id == afa_get_by_id) {
@@ -1370,6 +1579,9 @@ void asset_manager_init(void)
 	}
 	free(fallback_fnl_name);
 
+	if (nr_fallback_alds > 1)
+		qsort(fallback_alds, nr_fallback_alds, sizeof(*fallback_alds), compare_cstr_ptr);
+
 	if (!has_base_ald) {
 		register_fallback_alds(ald_filenames, ald_count, fallback_alds, nr_fallback_alds, "BGWD", false);
 	} else {
@@ -1450,6 +1662,16 @@ void asset_manager_init(void)
 		for (size_t i = 0; i < nr_afa_uncensored_cgs; i++)
 			free(afa_uncensored_cgs[i]);
 		free(afa_uncensored_cgs);
+	}
+
+	if (assets[ASSET_CG] && assets[ASSET_CG]->get_by_id == ald_get_by_id
+			&& (sys4_text_is_gbk || sys4_source_is_utf8)) {
+		char *nspic_dir = gamedir_path_icase("NSPic");
+		if (nspic_dir && is_directory(nspic_dir)) {
+			((struct asset_manager_ald *)assets[ASSET_CG])->loose_cg_override =
+				loose_cg_open_dir(nspic_dir);
+		}
+		free(nspic_dir);
 	}
 
 	cg_set_base_loader_by_name(asset_cg_load_base_by_name);
