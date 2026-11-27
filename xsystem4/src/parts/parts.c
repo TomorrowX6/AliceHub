@@ -230,38 +230,54 @@ void parts_common_free_alpha_mask(struct parts_common *common)
 	common->alpha_h = 0;
 }
 
+static void build_alpha_mask_bits(const uint8_t *rgba, int w, int h, bool has_alpha,
+		uint8_t **mask_out, int *aw_out, int *ah_out)
+{
+	*mask_out = NULL;
+	*aw_out = 0;
+	*ah_out = 0;
+	if (w <= 0 || h <= 0)
+		return;
+	if (!has_alpha || !rgba) {
+		*aw_out = -1;
+		*ah_out = -1;
+		return;
+	}
+	size_t n = (size_t)w * (size_t)h;
+	size_t first_zero = n;
+	for (size_t i = 0; i < n; i++) {
+		if (rgba[i * 4 + 3] == 0) {
+			first_zero = i;
+			break;
+		}
+	}
+	if (first_zero == n) {
+		*aw_out = -1;
+		*ah_out = -1;
+		return;
+	}
+	uint8_t *mask = xcalloc((n + 7) >> 3, 1);
+	size_t full_bytes = first_zero >> 3;
+	if (full_bytes > 0)
+		memset(mask, 0xff, full_bytes);
+	unsigned rem = (unsigned)(first_zero & 7);
+	if (rem > 0)
+		mask[full_bytes] = (uint8_t)((1u << rem) - 1u);
+	for (size_t i = first_zero + 1; i < n; i++) {
+		if (rgba[i * 4 + 3] != 0)
+			mask[i >> 3] |= (uint8_t)(1u << (i & 7));
+	}
+	*mask_out = mask;
+	*aw_out = w;
+	*ah_out = h;
+}
+
 static void parts_common_build_alpha_mask(struct parts_common *common,
 		const uint8_t *rgba, int w, int h, bool has_alpha)
 {
 	parts_common_free_alpha_mask(common);
-	if (w <= 0 || h <= 0)
-		return;
-	if (!has_alpha || !rgba) {
-		common->alpha_w = -1;
-		common->alpha_h = -1;
-		return;
-	}
-	size_t n = (size_t)w * (size_t)h;
-	bool has_transparent = false;
-	for (size_t i = 0; i < n; i++) {
-		if (rgba[i * 4 + 3] == 0) {
-			has_transparent = true;
-			break;
-		}
-	}
-	if (!has_transparent) {
-		common->alpha_w = -1;
-		common->alpha_h = -1;
-		return;
-	}
-	uint8_t *mask = xcalloc((n + 7) >> 3, 1);
-	for (size_t i = 0; i < n; i++) {
-		if (rgba[i * 4 + 3] != 0)
-			mask[i >> 3] |= (uint8_t)(1u << (i & 7));
-	}
-	common->alpha_mask = mask;
-	common->alpha_w = w;
-	common->alpha_h = h;
+	build_alpha_mask_bits(rgba, w, h, has_alpha,
+			&common->alpha_mask, &common->alpha_w, &common->alpha_h);
 }
 
 void parts_common_set_alpha_from_cg(struct parts_common *common, const struct cg *cg)
@@ -274,11 +290,305 @@ void parts_common_set_alpha_from_cg(struct parts_common *common, const struct cg
 			cg->metrics.has_alpha);
 }
 
+#define PARTS_CG_HASH_BUCKETS 2048
+
+#ifndef PARTS_CG_IDLE_VRAM_BUDGET
+#ifdef __SWITCH__
+#define PARTS_CG_IDLE_VRAM_BUDGET (128u * 1024u * 1024u)
+#else
+#define PARTS_CG_IDLE_VRAM_BUDGET (192u * 1024u * 1024u)
+#endif
+#endif
+
+#ifndef PARTS_CG_IDLE_MAX_COUNT
+#define PARTS_CG_IDLE_MAX_COUNT 512
+#endif
+
+struct parts_cg_asset {
+	char *name;
+	int cg_no;
+	uint64_t archive_gen;
+	Texture texture;
+	int w, h;
+	bool has_alpha;
+	int refcount;
+	size_t vram_bytes;
+	uint8_t *alpha_mask;
+	int alpha_w, alpha_h;
+	bool alpha_mask_built;
+	bool in_idle_lru;
+	bool in_name_table;
+	bool in_id_table;
+	TAILQ_ENTRY(parts_cg_asset) all_entry;
+	TAILQ_ENTRY(parts_cg_asset) idle_lru_entry;
+	struct parts_cg_asset *name_next;
+	struct parts_cg_asset *id_next;
+};
+
+static TAILQ_HEAD(parts_cg_asset_list, parts_cg_asset) cg_asset_all =
+	TAILQ_HEAD_INITIALIZER(cg_asset_all);
+static TAILQ_HEAD(parts_cg_asset_lru, parts_cg_asset) cg_asset_idle_lru =
+	TAILQ_HEAD_INITIALIZER(cg_asset_idle_lru);
+static struct parts_cg_asset *cg_asset_by_name[PARTS_CG_HASH_BUCKETS];
+static struct parts_cg_asset *cg_asset_by_id[PARTS_CG_HASH_BUCKETS];
+static int cg_asset_idle_count = 0;
+static size_t cg_asset_idle_vram_bytes = 0;
+static size_t parts_cg_idle_vram_budget = PARTS_CG_IDLE_VRAM_BUDGET;
+static int parts_cg_idle_max_count = PARTS_CG_IDLE_MAX_COUNT;
+static uint64_t next_cg_load_gen = 1;
+static uint64_t cg_cache_archive_gen = 0;
+
+static unsigned cg_hash_str(const char *s)
+{
+	unsigned h = 5381u;
+	for (const unsigned char *p = (const unsigned char *)s; *p; p++)
+		h = ((h << 5) + h) + *p;
+	return h;
+}
+
+static unsigned cg_hash_int(int k)
+{
+	uint32_t x = (uint32_t)k;
+	x = ((x >> 16) ^ x) * 0x45d9f3bu;
+	x = ((x >> 16) ^ x) * 0x45d9f3bu;
+	x = (x >> 16) ^ x;
+	return (unsigned)x;
+}
+
+static void parts_cg_asset_insert_tables(struct parts_cg_asset *asset)
+{
+	if (asset->name && asset->name[0]) {
+		unsigned b = cg_hash_str(asset->name) & (PARTS_CG_HASH_BUCKETS - 1);
+		asset->name_next = cg_asset_by_name[b];
+		cg_asset_by_name[b] = asset;
+		asset->in_name_table = true;
+	}
+	if (asset->cg_no > 0) {
+		unsigned b = cg_hash_int(asset->cg_no) & (PARTS_CG_HASH_BUCKETS - 1);
+		bool duplicate = false;
+		for (struct parts_cg_asset *e = cg_asset_by_id[b]; e; e = e->id_next) {
+			if (e->cg_no == asset->cg_no) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate) {
+			asset->id_next = cg_asset_by_id[b];
+			cg_asset_by_id[b] = asset;
+			asset->in_id_table = true;
+		}
+	}
+}
+
+static void parts_cg_asset_remove_tables(struct parts_cg_asset *asset)
+{
+	if (asset->in_name_table && asset->name) {
+		unsigned b = cg_hash_str(asset->name) & (PARTS_CG_HASH_BUCKETS - 1);
+		for (struct parts_cg_asset **pp = &cg_asset_by_name[b]; *pp; pp = &(*pp)->name_next) {
+			if (*pp == asset) {
+				*pp = asset->name_next;
+				break;
+			}
+		}
+		asset->name_next = NULL;
+		asset->in_name_table = false;
+	}
+	if (asset->in_id_table) {
+		unsigned b = cg_hash_int(asset->cg_no) & (PARTS_CG_HASH_BUCKETS - 1);
+		for (struct parts_cg_asset **pp = &cg_asset_by_id[b]; *pp; pp = &(*pp)->id_next) {
+			if (*pp == asset) {
+				*pp = asset->id_next;
+				break;
+			}
+		}
+		asset->id_next = NULL;
+		asset->in_id_table = false;
+	}
+}
+
+static void parts_cg_asset_destroy(struct parts_cg_asset *asset)
+{
+	if (asset->in_idle_lru) {
+		TAILQ_REMOVE(&cg_asset_idle_lru, asset, idle_lru_entry);
+		asset->in_idle_lru = false;
+		cg_asset_idle_count--;
+		cg_asset_idle_vram_bytes -= asset->vram_bytes;
+	}
+	parts_cg_asset_remove_tables(asset);
+	TAILQ_REMOVE(&cg_asset_all, asset, all_entry);
+	gfx_delete_texture(&asset->texture);
+	free(asset->alpha_mask);
+	free(asset->name);
+	free(asset);
+}
+
+static void parts_cg_asset_evict_idle(size_t max_bytes, int max_count)
+{
+	while (!TAILQ_EMPTY(&cg_asset_idle_lru) &&
+			(cg_asset_idle_vram_bytes > max_bytes || cg_asset_idle_count > max_count)) {
+		struct parts_cg_asset *victim = TAILQ_FIRST(&cg_asset_idle_lru);
+		parts_cg_asset_destroy(victim);
+	}
+}
+
+static void parts_cg_cache_sync_archive_gen(void)
+{
+	uint64_t gen = asset_cg_archive_gen();
+	if (gen == cg_cache_archive_gen)
+		return;
+	cg_cache_archive_gen = gen;
+	parts_cg_asset_evict_idle(0, 0);
+	struct parts_cg_asset *asset;
+	TAILQ_FOREACH(asset, &cg_asset_all, all_entry) {
+		parts_cg_asset_remove_tables(asset);
+	}
+}
+
+static void parts_cg_asset_ref(struct parts_cg_asset *asset)
+{
+	if (!asset)
+		return;
+	if (asset->refcount == 0 && asset->in_idle_lru) {
+		TAILQ_REMOVE(&cg_asset_idle_lru, asset, idle_lru_entry);
+		asset->in_idle_lru = false;
+		cg_asset_idle_count--;
+		cg_asset_idle_vram_bytes -= asset->vram_bytes;
+	}
+	asset->refcount++;
+}
+
+static void parts_cg_asset_unref(struct parts_cg_asset *asset)
+{
+	if (!asset)
+		return;
+	assert(asset->refcount > 0);
+	asset->refcount--;
+	if (asset->refcount == 0) {
+		if (!asset->texture.handle || (!asset->in_name_table && !asset->in_id_table)) {
+			parts_cg_asset_destroy(asset);
+			return;
+		}
+		if (!asset->in_idle_lru) {
+			TAILQ_INSERT_TAIL(&cg_asset_idle_lru, asset, idle_lru_entry);
+			asset->in_idle_lru = true;
+			cg_asset_idle_count++;
+			cg_asset_idle_vram_bytes += asset->vram_bytes;
+		}
+		parts_cg_asset_evict_idle(parts_cg_idle_vram_budget, parts_cg_idle_max_count);
+	}
+}
+
+static struct parts_cg_asset *parts_cg_asset_find_by_name(const char *name)
+{
+	if (!name || !name[0])
+		return NULL;
+	unsigned b = cg_hash_str(name) & (PARTS_CG_HASH_BUCKETS - 1);
+	for (struct parts_cg_asset *e = cg_asset_by_name[b]; e; e = e->name_next) {
+		if (e->name && !strcmp(e->name, name)) {
+			if (e->texture.handle && gfx_remap_texture(&e->texture) && e->texture.handle)
+				return e;
+			if (e->refcount == 0)
+				parts_cg_asset_destroy(e);
+			return NULL;
+		}
+	}
+	return NULL;
+}
+
+static struct parts_cg_asset *parts_cg_asset_find_by_id(int cg_no)
+{
+	if (cg_no <= 0)
+		return NULL;
+	unsigned b = cg_hash_int(cg_no) & (PARTS_CG_HASH_BUCKETS - 1);
+	for (struct parts_cg_asset *e = cg_asset_by_id[b]; e; e = e->id_next) {
+		if (e->cg_no == cg_no) {
+			if (e->texture.handle && gfx_remap_texture(&e->texture) && e->texture.handle)
+				return e;
+			if (e->refcount == 0)
+				parts_cg_asset_destroy(e);
+			return NULL;
+		}
+	}
+	return NULL;
+}
+
+static struct parts_cg_asset *parts_cg_asset_create_from_cg(struct cg *cg, int cg_no,
+		const char *name, uint64_t archive_gen, bool insert_tables)
+{
+	struct parts_cg_asset *asset = xcalloc(1, sizeof(*asset));
+	gfx_init_texture_with_cg(&asset->texture, cg);
+	asset->w = cg->metrics.w;
+	asset->h = cg->metrics.h;
+	asset->has_alpha = cg->metrics.has_alpha;
+	asset->cg_no = cg_no;
+	asset->archive_gen = archive_gen;
+	if (name && name[0])
+		asset->name = xstrdup(name);
+	asset->vram_bytes = (asset->w > 0 && asset->h > 0)
+		? (size_t)asset->w * (size_t)asset->h * 4u : 0u;
+	asset->refcount = 1;
+	TAILQ_INSERT_TAIL(&cg_asset_all, asset, all_entry);
+	if (insert_tables)
+		parts_cg_asset_insert_tables(asset);
+	return asset;
+}
+
+static void parts_cg_asset_ensure_alpha_mask(struct parts_cg_asset *asset)
+{
+	if (asset->alpha_mask_built)
+		return;
+	asset->alpha_mask_built = true;
+	if (asset->w <= 0 || asset->h <= 0)
+		return;
+	if (!asset->has_alpha || asset->texture.opaque) {
+		asset->alpha_w = -1;
+		asset->alpha_h = -1;
+		return;
+	}
+	if (asset->texture.handle != 0 && gfx_remap_texture(&asset->texture)
+			&& asset->texture.handle != 0
+			&& asset->texture.w > 0 && asset->texture.h > 0) {
+		uint8_t *pixels = gfx_get_pixels(&asset->texture);
+		if (pixels) {
+			build_alpha_mask_bits(pixels, asset->texture.w, asset->texture.h, true,
+					&asset->alpha_mask, &asset->alpha_w, &asset->alpha_h);
+			free(pixels);
+			return;
+		}
+	}
+	struct cg *cg = NULL;
+	if (asset->name && asset->name[0]) {
+		int unused_no = 0;
+		cg = asset_cg_load_by_name(asset->name, &unused_no);
+	}
+	if (!cg && asset->cg_no > 0)
+		cg = asset_cg_load(asset->cg_no);
+	if (cg) {
+		build_alpha_mask_bits(cg->pixels, cg->metrics.w, cg->metrics.h, cg->metrics.has_alpha,
+				&asset->alpha_mask, &asset->alpha_w, &asset->alpha_h);
+		cg_free(cg);
+	} else {
+		asset->alpha_w = -1;
+		asset->alpha_h = -1;
+	}
+}
+
 bool parts_common_check_alpha(struct parts_state *state, int px, int py)
 {
 	struct parts_common *common = &state->common;
 	if (px < 0 || py < 0 || px >= common->w || py >= common->h)
 		return false;
+	if (state->type == PARTS_CG && state->cg.cg_asset) {
+		struct parts_cg_asset *asset = state->cg.cg_asset;
+		if (!asset->alpha_mask_built)
+			parts_cg_asset_ensure_alpha_mask(asset);
+		if (asset->alpha_w == -1)
+			return true;
+		if (!asset->alpha_mask || px >= asset->alpha_w || py >= asset->alpha_h)
+			return false;
+		size_t bit = (size_t)py * (size_t)asset->alpha_w + (size_t)px;
+		return (asset->alpha_mask[bit >> 3] & (1u << (bit & 7))) != 0;
+	}
 	if (common->alpha_w == -1)
 		return true;
 	if (common->alpha_w == 0) {
@@ -315,92 +625,561 @@ bool parts_common_check_alpha(struct parts_state *state, int px, int py)
 	return (common->alpha_mask[bit >> 3] & (1u << (bit & 7))) != 0;
 }
 
-#define PARTS_CG_CACHE_SIZE 128
-
-struct parts_cg_cache_entry {
-	int cg_no;
-	struct string *name;
-	Texture texture;
-	int w, h;
-	uint8_t *alpha_mask;
-	int alpha_w, alpha_h;
-};
-
-static struct parts_cg_cache_entry parts_cg_cache[PARTS_CG_CACHE_SIZE];
-static int nr_parts_cg_cache = 0;
-
-static void parts_cg_cache_put(struct parts_cg *cg)
+static void parts_cg_detach(struct parts_cg *cg)
 {
-	if (cg->no <= 0 || !cg->common.texture.handle || cg->common.w <= 0 || cg->common.h <= 0) {
+	if (cg->cg_asset) {
+		parts_cg_asset_unref(cg->cg_asset);
+		cg->cg_asset = NULL;
+		cg->common.texture = (Texture){0};
+	} else {
 		gfx_delete_texture(&cg->common.texture);
-		parts_common_free_alpha_mask(&cg->common);
-		if (cg->name) {
-			free_string(cg->name);
-			cg->name = NULL;
-		}
-		cg->no = 0;
-		return;
 	}
-	if (nr_parts_cg_cache == PARTS_CG_CACHE_SIZE) {
-		struct parts_cg_cache_entry *evict = &parts_cg_cache[PARTS_CG_CACHE_SIZE - 1];
-		gfx_delete_texture(&evict->texture);
-		free(evict->alpha_mask);
-		if (evict->name)
-			free_string(evict->name);
-		nr_parts_cg_cache--;
+	parts_common_free_alpha_mask(&cg->common);
+	if (cg->name) {
+		free_string(cg->name);
+		cg->name = NULL;
 	}
-	if (nr_parts_cg_cache > 0) {
-		memmove(&parts_cg_cache[1], &parts_cg_cache[0],
-				nr_parts_cg_cache * sizeof(struct parts_cg_cache_entry));
-	}
-	parts_cg_cache[0] = (struct parts_cg_cache_entry) {
-		.cg_no = cg->no,
-		.name = cg->name,
-		.texture = cg->common.texture,
-		.w = cg->common.w,
-		.h = cg->common.h,
-		.alpha_mask = cg->common.alpha_mask,
-		.alpha_w = cg->common.alpha_w,
-		.alpha_h = cg->common.alpha_h,
-	};
-	nr_parts_cg_cache++;
-	cg->common.texture.handle = 0;
-	cg->common.alpha_mask = NULL;
-	cg->common.alpha_w = 0;
-	cg->common.alpha_h = 0;
-	cg->name = NULL;
 	cg->no = 0;
+	cg->suspended_w = 0;
+	cg->suspended_h = 0;
 }
 
-static bool parts_cg_cache_take(int cg_no, const char *cg_name,
-		struct parts_cg_cache_entry *out)
+static inline bool is_save_cg_name(const char *s)
 {
-	for (int i = 0; i < nr_parts_cg_cache; i++) {
-		struct parts_cg_cache_entry *e = &parts_cg_cache[i];
-		bool match = (cg_no > 0 && e->cg_no == cg_no) ||
-			(cg_name && e->name && !strcmp(e->name->text, cg_name));
-		if (match) {
-			*out = *e;
-			nr_parts_cg_cache--;
-			if (i < nr_parts_cg_cache) {
-				memmove(&parts_cg_cache[i], &parts_cg_cache[i + 1],
-						(nr_parts_cg_cache - i) * sizeof(struct parts_cg_cache_entry));
-			}
-			return true;
+	return s && !strncmp(s, "<save>", 6);
+}
+
+static void parts_cg_resume_update_dims(struct parts *parts, struct parts_cg *cg,
+		struct parts_cg_asset *asset)
+{
+	bool intrinsic_changed = cg->suspended_w > 0 && cg->suspended_h > 0
+		&& (asset->w != cg->suspended_w || asset->h != cg->suspended_h);
+	bool dims_match_intrinsic = cg->common.w == cg->suspended_w && cg->common.h == cg->suspended_h;
+	if (intrinsic_changed && dims_match_intrinsic) {
+		if (parts)
+			parts_set_dims(parts, &cg->common, asset->w, asset->h);
+		else {
+			cg->common.w = asset->w;
+			cg->common.h = asset->h;
 		}
 	}
-	return false;
+	cg->suspended_w = 0;
+	cg->suspended_h = 0;
+}
+
+void parts_cg_suspend(struct parts_cg *cg)
+{
+	if (!cg || !cg->cg_asset)
+		return;
+	cg->suspended_w = cg->cg_asset->w;
+	cg->suspended_h = cg->cg_asset->h;
+	parts_cg_asset_unref(cg->cg_asset);
+	cg->cg_asset = NULL;
+	cg->common.texture = (Texture){0};
+}
+
+void parts_cg_resume(struct parts *parts, struct parts_cg *cg)
+{
+	if (!cg || cg->cg_asset || cg->common.texture.handle)
+		return;
+	const char *name = (cg->name && cg->name->size > 0) ? cg->name->text : NULL;
+	if (is_save_cg_name(name))
+		return;
+	parts_cg_cache_sync_archive_gen();
+	struct parts_cg_asset *asset = name ? parts_cg_asset_find_by_name(name) : NULL;
+	if (!asset && cg->no > 0)
+		asset = parts_cg_asset_find_by_id(cg->no);
+	if (asset) {
+		parts_cg_asset_ref(asset);
+		cg->cg_asset = asset;
+		cg->common.texture = asset->texture;
+		parts_cg_resume_update_dims(parts, cg, asset);
+		return;
+	}
+	struct cg *loaded = NULL;
+	int cg_no = cg->no;
+	const char *cache_name = NULL;
+	if (name && asset_cg_supports_name()) {
+		loaded = asset_cg_load_by_name(name, &cg_no);
+		if (loaded)
+			cache_name = name;
+	}
+	if (!loaded && cg->no > 0) {
+		cg_no = cg->no;
+		loaded = asset_cg_load(cg->no);
+		cache_name = NULL;
+	}
+	if (!loaded)
+		return;
+	asset = parts_cg_asset_create_from_cg(loaded, cg_no, cache_name, cg_cache_archive_gen, true);
+	cg_free(loaded);
+	cg->cg_asset = asset;
+	cg->common.texture = asset->texture;
+	if (cg_no > 0)
+		cg->no = cg_no;
+	parts_cg_resume_update_dims(parts, cg, asset);
 }
 
 static void parts_cg_cache_clear(void)
 {
-	for (int i = 0; i < nr_parts_cg_cache; i++) {
-		gfx_delete_texture(&parts_cg_cache[i].texture);
-		free(parts_cg_cache[i].alpha_mask);
-		if (parts_cg_cache[i].name)
-			free_string(parts_cg_cache[i].name);
+	parts_cg_asset_evict_idle(0, 0);
+}
+
+/*
+ * Portable SDL2 background CG decode worker pool for PartsEngine.SetPartsCGThread.
+ * Workers run lock-protected archive raw reads + lock-free parallel CPU decode;
+ * GL texture upload and part attachment run on the render thread with a frame budget.
+ */
+#define PARTS_CG_ASYNC_BUCKETS 256
+#define PARTS_CG_MAX_WORKERS 4
+#define PARTS_CG_UPLOAD_BUDGET_MS 6
+
+enum parts_cg_job_state {
+	CG_JOB_QUEUED = 0,
+	CG_JOB_DECODING = 1,
+	CG_JOB_DONE = 2,
+};
+
+struct parts_cg_async_target {
+	int parts_no;
+	int state;
+	uint64_t gen;
+	struct parts_cg_async_target *next;
+};
+
+struct parts_cg_async_job {
+	char *cg_name;
+	uint64_t archive_gen;
+	enum parts_cg_job_state state;
+	struct cg *cg;
+	int cg_no;
+	bool sync_claimed;
+	struct parts_cg_async_target *targets;
+	struct parts_cg_async_target *targets_tail;
+	TAILQ_ENTRY(parts_cg_async_job) queue_entry;
+	struct parts_cg_async_job *hash_next;
+};
+
+static struct {
+	SDL_mutex *mutex;
+	SDL_cond *work_cond;
+	SDL_cond *done_cond;
+	SDL_Thread *workers[PARTS_CG_MAX_WORKERS];
+	int nr_workers;
+	bool initialized;
+	bool shutdown;
+	int nr_queued;
+	int nr_decoding;
+	int nr_ready;
+	TAILQ_HEAD(, parts_cg_async_job) pending_q;
+	TAILQ_HEAD(, parts_cg_async_job) ready_q;
+	struct parts_cg_async_job *active_buckets[PARTS_CG_ASYNC_BUCKETS];
+} cg_async;
+
+static void parts_cg_attach_asset(struct parts *parts, struct parts_cg *parts_cg,
+		struct parts_cg_asset *asset, struct string *name);
+
+static struct parts_cg_async_job *cg_async_find_job_locked(const char *cg_name, uint64_t archive_gen)
+{
+	unsigned b = cg_hash_str(cg_name) & (PARTS_CG_ASYNC_BUCKETS - 1);
+	for (struct parts_cg_async_job *j = cg_async.active_buckets[b]; j; j = j->hash_next) {
+		if (j->archive_gen == archive_gen && !strcmp(j->cg_name, cg_name))
+			return j;
 	}
-	nr_parts_cg_cache = 0;
+	return NULL;
+}
+
+static void cg_async_insert_job_locked(struct parts_cg_async_job *job)
+{
+	unsigned b = cg_hash_str(job->cg_name) & (PARTS_CG_ASYNC_BUCKETS - 1);
+	job->hash_next = cg_async.active_buckets[b];
+	cg_async.active_buckets[b] = job;
+}
+
+static void cg_async_remove_job_locked(struct parts_cg_async_job *job)
+{
+	unsigned b = cg_hash_str(job->cg_name) & (PARTS_CG_ASYNC_BUCKETS - 1);
+	for (struct parts_cg_async_job **pp = &cg_async.active_buckets[b]; *pp; pp = &(*pp)->hash_next) {
+		if (*pp == job) {
+			*pp = job->hash_next;
+			break;
+		}
+	}
+	job->hash_next = NULL;
+}
+
+static void parts_cg_async_free_job(struct parts_cg_async_job *job)
+{
+	if (!job)
+		return;
+	if (job->cg)
+		cg_free(job->cg);
+	struct parts_cg_async_target *t = job->targets;
+	while (t) {
+		struct parts_cg_async_target *next = t->next;
+		free(t);
+		t = next;
+	}
+	free(job->cg_name);
+	free(job);
+}
+
+static int parts_cg_worker_main(void *unused)
+{
+	(void)unused;
+	SDL_LockMutex(cg_async.mutex);
+	for (;;) {
+		while (!cg_async.shutdown && TAILQ_EMPTY(&cg_async.pending_q)) {
+			SDL_CondWait(cg_async.work_cond, cg_async.mutex);
+		}
+		if (cg_async.shutdown)
+			break;
+		struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.pending_q);
+		TAILQ_REMOVE(&cg_async.pending_q, job, queue_entry);
+		cg_async.nr_queued--;
+		job->state = CG_JOB_DECODING;
+		cg_async.nr_decoding++;
+		const char *name = job->cg_name;
+		SDL_UnlockMutex(cg_async.mutex);
+
+		int cg_no = 0;
+		struct cg *cg = asset_cg_load_by_name(name, &cg_no);
+
+		SDL_LockMutex(cg_async.mutex);
+		job->cg = cg;
+		job->cg_no = cg_no;
+		job->state = CG_JOB_DONE;
+		cg_async.nr_decoding--;
+		if (!job->sync_claimed) {
+			TAILQ_INSERT_TAIL(&cg_async.ready_q, job, queue_entry);
+			cg_async.nr_ready++;
+		}
+		SDL_CondBroadcast(cg_async.done_cond);
+	}
+	SDL_UnlockMutex(cg_async.mutex);
+	return 0;
+}
+
+static bool parts_cg_async_ensure_started(void)
+{
+	if (cg_async.initialized)
+		return true;
+	cg_async.mutex = SDL_CreateMutex();
+	cg_async.work_cond = SDL_CreateCond();
+	cg_async.done_cond = SDL_CreateCond();
+	if (!cg_async.mutex || !cg_async.work_cond || !cg_async.done_cond) {
+		if (cg_async.done_cond) SDL_DestroyCond(cg_async.done_cond);
+		if (cg_async.work_cond) SDL_DestroyCond(cg_async.work_cond);
+		if (cg_async.mutex) SDL_DestroyMutex(cg_async.mutex);
+		cg_async.mutex = NULL;
+		cg_async.work_cond = NULL;
+		cg_async.done_cond = NULL;
+		return false;
+	}
+	TAILQ_INIT(&cg_async.pending_q);
+	TAILQ_INIT(&cg_async.ready_q);
+	memset(cg_async.active_buckets, 0, sizeof(cg_async.active_buckets));
+	cg_async.shutdown = false;
+	cg_async.nr_queued = 0;
+	cg_async.nr_decoding = 0;
+	cg_async.nr_ready = 0;
+
+	int cpus = SDL_GetCPUCount();
+	int n = cpus / 2;
+	if (n < 2)
+		n = 2;
+	if (n > PARTS_CG_MAX_WORKERS)
+		n = PARTS_CG_MAX_WORKERS;
+
+	cg_async.nr_workers = 0;
+	for (int i = 0; i < n; i++) {
+		SDL_Thread *th = SDL_CreateThread(parts_cg_worker_main, "parts-cg", NULL);
+		if (th)
+			cg_async.workers[cg_async.nr_workers++] = th;
+	}
+	if (cg_async.nr_workers == 0) {
+		SDL_DestroyCond(cg_async.done_cond);
+		SDL_DestroyCond(cg_async.work_cond);
+		SDL_DestroyMutex(cg_async.mutex);
+		cg_async.done_cond = NULL;
+		cg_async.work_cond = NULL;
+		cg_async.mutex = NULL;
+		return false;
+	}
+	cg_async.initialized = true;
+	return true;
+}
+
+static void parts_cg_async_shutdown(void)
+{
+	if (!cg_async.initialized)
+		return;
+	SDL_LockMutex(cg_async.mutex);
+	cg_async.shutdown = true;
+	SDL_CondBroadcast(cg_async.work_cond);
+	SDL_UnlockMutex(cg_async.mutex);
+
+	for (int i = 0; i < cg_async.nr_workers; i++) {
+		if (cg_async.workers[i]) {
+			SDL_WaitThread(cg_async.workers[i], NULL);
+			cg_async.workers[i] = NULL;
+		}
+	}
+	cg_async.nr_workers = 0;
+
+	while (!TAILQ_EMPTY(&cg_async.pending_q)) {
+		struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.pending_q);
+		TAILQ_REMOVE(&cg_async.pending_q, job, queue_entry);
+		parts_cg_async_free_job(job);
+	}
+	while (!TAILQ_EMPTY(&cg_async.ready_q)) {
+		struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.ready_q);
+		TAILQ_REMOVE(&cg_async.ready_q, job, queue_entry);
+		parts_cg_async_free_job(job);
+	}
+	memset(cg_async.active_buckets, 0, sizeof(cg_async.active_buckets));
+	cg_async.nr_queued = 0;
+	cg_async.nr_decoding = 0;
+	cg_async.nr_ready = 0;
+
+	SDL_DestroyCond(cg_async.done_cond);
+	SDL_DestroyCond(cg_async.work_cond);
+	SDL_DestroyMutex(cg_async.mutex);
+	cg_async.done_cond = NULL;
+	cg_async.work_cond = NULL;
+	cg_async.mutex = NULL;
+	cg_async.shutdown = false;
+	cg_async.initialized = false;
+}
+
+static struct parts_cg_asset *parts_cg_async_finish_job(struct parts_cg_async_job *job, bool retain_asset)
+{
+	parts_cg_cache_sync_archive_gen();
+	bool current_gen = (job->archive_gen == cg_cache_archive_gen);
+	bool any_live = false;
+	for (struct parts_cg_async_target *t = job->targets; t; t = t->next) {
+		struct parts *p = parts_try_get(t->parts_no);
+		if (p && p->states[t->state].type == PARTS_CG
+				&& p->states[t->state].cg.load_gen == t->gen) {
+			any_live = true;
+			break;
+		}
+	}
+
+	struct parts_cg_asset *asset = NULL;
+	if (job->cg && (any_live || retain_asset)) {
+		if (current_gen) {
+			asset = parts_cg_asset_find_by_name(job->cg_name);
+			if (asset) {
+				parts_cg_asset_ref(asset);
+			} else {
+				asset = parts_cg_asset_create_from_cg(job->cg, job->cg_no,
+						job->cg_name, job->archive_gen, true);
+				parts_frame_did_heavy_load = true;
+			}
+		} else {
+			asset = parts_cg_asset_create_from_cg(job->cg, job->cg_no,
+					job->cg_name, job->archive_gen, false);
+			parts_frame_did_heavy_load = true;
+		}
+	}
+
+	size_t name_len = strlen(job->cg_name);
+	for (struct parts_cg_async_target *t = job->targets; t; t = t->next) {
+		struct parts *p = parts_try_get(t->parts_no);
+		if (!p || p->states[t->state].type != PARTS_CG
+				|| p->states[t->state].cg.load_gen != t->gen)
+			continue;
+		p->states[t->state].cg.async_gen = 0;
+		if (asset) {
+			struct parts_cg *pcg = parts_get_cg(p, t->state);
+			parts_cg_attach_asset(p, pcg, asset, make_string(job->cg_name, name_len));
+			if (p->textures_suspended)
+				parts_cg_suspend(pcg);
+		}
+	}
+
+	parts_cg_async_free_job(job);
+	if (asset && !retain_asset) {
+		parts_cg_asset_unref(asset);
+		return NULL;
+	}
+	return asset;
+}
+
+static bool parts_has_pending_async_cg(int parts_no)
+{
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts)
+		return false;
+	for (int st = 0; st < PARTS_NR_STATES; st++) {
+		if (parts->states[st].type == PARTS_CG && parts->states[st].cg.async_gen != 0)
+			return true;
+	}
+	return false;
+}
+
+static bool cg_async_job_targets_live_part(const struct parts_cg_async_job *job, int parts_no)
+{
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts)
+		return false;
+	for (const struct parts_cg_async_target *t = job->targets; t; t = t->next) {
+		if (t->parts_no == parts_no && parts->states[t->state].type == PARTS_CG
+				&& parts->states[t->state].cg.load_gen == t->gen)
+			return true;
+	}
+	return false;
+}
+
+void parts_cg_async_flush_part(int parts_no)
+{
+	if (!cg_async.initialized || parts_current != &live_context)
+		return;
+	if (!parts_has_pending_async_cg(parts_no))
+		return;
+	SDL_LockMutex(cg_async.mutex);
+	while (parts_has_pending_async_cg(parts_no)) {
+		if (!TAILQ_EMPTY(&cg_async.ready_q)) {
+			struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.ready_q);
+			TAILQ_REMOVE(&cg_async.ready_q, job, queue_entry);
+			cg_async.nr_ready--;
+			cg_async_remove_job_locked(job);
+			SDL_UnlockMutex(cg_async.mutex);
+
+			parts_cg_async_finish_job(job, false);
+
+			SDL_LockMutex(cg_async.mutex);
+			continue;
+		}
+		struct parts_cg_async_job *queued = NULL;
+		TAILQ_FOREACH(queued, &cg_async.pending_q, queue_entry) {
+			if (cg_async_job_targets_live_part(queued, parts_no))
+				break;
+		}
+		if (queued) {
+			TAILQ_REMOVE(&cg_async.pending_q, queued, queue_entry);
+			cg_async.nr_queued--;
+			cg_async_remove_job_locked(queued);
+			SDL_UnlockMutex(cg_async.mutex);
+
+			queued->archive_gen = asset_cg_archive_gen();
+			int cg_no = 0;
+			queued->cg = asset_cg_load_by_name(queued->cg_name, &cg_no);
+			queued->cg_no = cg_no;
+			parts_cg_async_finish_job(queued, false);
+
+			SDL_LockMutex(cg_async.mutex);
+			continue;
+		}
+		if (cg_async.shutdown || (cg_async.nr_queued == 0 && cg_async.nr_decoding == 0))
+			break;
+		SDL_CondWait(cg_async.done_cond, cg_async.mutex);
+	}
+	SDL_UnlockMutex(cg_async.mutex);
+}
+
+void parts_cg_async_flush_all(void)
+{
+	if (!cg_async.initialized || parts_current != &live_context)
+		return;
+	SDL_LockMutex(cg_async.mutex);
+	for (;;) {
+		while (!TAILQ_EMPTY(&cg_async.ready_q)) {
+			struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.ready_q);
+			TAILQ_REMOVE(&cg_async.ready_q, job, queue_entry);
+			cg_async.nr_ready--;
+			cg_async_remove_job_locked(job);
+			SDL_UnlockMutex(cg_async.mutex);
+
+			parts_cg_async_finish_job(job, false);
+
+			SDL_LockMutex(cg_async.mutex);
+		}
+		if (cg_async.shutdown || (cg_async.nr_queued == 0 && cg_async.nr_decoding == 0))
+			break;
+		SDL_CondWait(cg_async.done_cond, cg_async.mutex);
+	}
+	SDL_UnlockMutex(cg_async.mutex);
+}
+
+static void parts_cg_async_drain_ready(int budget_ms)
+{
+	if (!cg_async.initialized || parts_current != &live_context)
+		return;
+	SDL_LockMutex(cg_async.mutex);
+	if (TAILQ_EMPTY(&cg_async.ready_q)) {
+		SDL_UnlockMutex(cg_async.mutex);
+		return;
+	}
+	uint64_t freq = SDL_GetPerformanceFrequency();
+	uint64_t budget_ticks = (budget_ms > 0 && freq)
+		? (freq * (uint64_t)budget_ms) / 1000u : 0u;
+	uint64_t t_start = SDL_GetPerformanceCounter();
+	int processed = 0;
+
+	while (!TAILQ_EMPTY(&cg_async.ready_q)) {
+		struct parts_cg_async_job *job = TAILQ_FIRST(&cg_async.ready_q);
+		TAILQ_REMOVE(&cg_async.ready_q, job, queue_entry);
+		cg_async.nr_ready--;
+		cg_async_remove_job_locked(job);
+		SDL_UnlockMutex(cg_async.mutex);
+
+		parts_cg_async_finish_job(job, false);
+		processed++;
+
+		SDL_LockMutex(cg_async.mutex);
+		if (budget_ticks && processed >= 1
+				&& (SDL_GetPerformanceCounter() - t_start) >= budget_ticks)
+			break;
+	}
+	SDL_UnlockMutex(cg_async.mutex);
+}
+
+static bool parts_cg_async_claim_sync(const char *cg_name, struct parts_cg_asset **asset_out)
+{
+	*asset_out = NULL;
+	if (!cg_async.initialized || parts_current != &live_context)
+		return false;
+	parts_cg_cache_sync_archive_gen();
+	uint64_t archive_gen = cg_cache_archive_gen;
+	SDL_LockMutex(cg_async.mutex);
+	struct parts_cg_async_job *job = cg_async_find_job_locked(cg_name, archive_gen);
+	if (!job) {
+		SDL_UnlockMutex(cg_async.mutex);
+		return false;
+	}
+	if (job->state == CG_JOB_QUEUED) {
+		TAILQ_REMOVE(&cg_async.pending_q, job, queue_entry);
+		cg_async.nr_queued--;
+		cg_async_remove_job_locked(job);
+		SDL_UnlockMutex(cg_async.mutex);
+
+		int cg_no = 0;
+		job->cg = asset_cg_load_by_name(job->cg_name, &cg_no);
+		job->cg_no = cg_no;
+		*asset_out = parts_cg_async_finish_job(job, true);
+		return true;
+	}
+	if (job->state == CG_JOB_DONE) {
+		TAILQ_REMOVE(&cg_async.ready_q, job, queue_entry);
+		cg_async.nr_ready--;
+		cg_async_remove_job_locked(job);
+		SDL_UnlockMutex(cg_async.mutex);
+
+		*asset_out = parts_cg_async_finish_job(job, true);
+		return true;
+	}
+	// CG_JOB_DECODING: wait for worker currently decoding this exact CG.
+	job->sync_claimed = true;
+	while (job->state == CG_JOB_DECODING) {
+		SDL_CondWait(cg_async.done_cond, cg_async.mutex);
+	}
+	cg_async_remove_job_locked(job);
+	SDL_UnlockMutex(cg_async.mutex);
+
+	*asset_out = parts_cg_async_finish_job(job, true);
+	return true;
 }
 
 void PE_SetEventID(int parts_no, int delegate_index, int unique_id)
@@ -440,7 +1219,7 @@ static void parts_state_free(struct parts_state *state)
 	case PARTS_LAYOUT_BOX:
 		break;
 	case PARTS_CG:
-		parts_cg_cache_put(&state->cg);
+		parts_cg_detach(&state->cg);
 		break;
 	case PARTS_TEXT:
 		parts_text_free(&state->text);
@@ -568,7 +1347,7 @@ void parts_state_reset(struct parts_state *state, enum parts_type type)
 
 struct parts_cg *parts_get_cg(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_CG) {
 		parts_state_reset(&parts->states[state], PARTS_CG);
 	}
@@ -577,7 +1356,7 @@ struct parts_cg *parts_get_cg(struct parts *parts, int state)
 
 struct parts_text *parts_get_text(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_TEXT) {
 		parts_state_reset(&parts->states[state], PARTS_TEXT);
 	}
@@ -586,7 +1365,7 @@ struct parts_text *parts_get_text(struct parts *parts, int state)
 
 struct parts_animation *parts_get_animation(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_ANIMATION) {
 		parts_state_reset(&parts->states[state], PARTS_ANIMATION);
 	}
@@ -595,7 +1374,7 @@ struct parts_animation *parts_get_animation(struct parts *parts, int state)
 
 struct parts_numeral *parts_get_numeral(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_NUMERAL) {
 		parts_state_reset(&parts->states[state], PARTS_NUMERAL);
 	}
@@ -604,7 +1383,7 @@ struct parts_numeral *parts_get_numeral(struct parts *parts, int state)
 
 struct parts_gauge *parts_get_hgauge(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_HGAUGE) {
 		parts_state_reset(&parts->states[state], PARTS_HGAUGE);
 	}
@@ -613,7 +1392,7 @@ struct parts_gauge *parts_get_hgauge(struct parts *parts, int state)
 
 struct parts_gauge *parts_get_vgauge(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_VGAUGE) {
 		parts_state_reset(&parts->states[state], PARTS_VGAUGE);
 	}
@@ -622,7 +1401,7 @@ struct parts_gauge *parts_get_vgauge(struct parts *parts, int state)
 
 struct parts_construction_process *parts_get_construction_process(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_CONSTRUCTION_PROCESS) {
 		parts_state_reset(&parts->states[state], PARTS_CONSTRUCTION_PROCESS);
 	}
@@ -631,7 +1410,7 @@ struct parts_construction_process *parts_get_construction_process(struct parts *
 
 struct parts_flash *parts_get_flash(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_FLASH) {
 		parts_state_reset(&parts->states[state], PARTS_FLASH);
 	}
@@ -640,7 +1419,7 @@ struct parts_flash *parts_get_flash(struct parts *parts, int state)
 
 struct parts_flat *parts_get_flat(struct parts *parts, int state)
 {
-	parts_state_resume_textures(&parts->states[state]);
+	parts_state_resume_textures(parts, &parts->states[state]);
 	if (parts->states[state].type != PARTS_FLAT) {
 		parts_state_reset(&parts->states[state], PARTS_FLAT);
 	}
@@ -1165,6 +1944,19 @@ void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int
 	parts_common_recalculate_hitbox(parts, common);
 }
 
+static void parts_cg_attach_asset(struct parts *parts, struct parts_cg *parts_cg,
+		struct parts_cg_asset *asset, struct string *name)
+{
+	parts_cg_asset_ref(asset);
+	parts_cg_detach(parts_cg);
+	parts_cg->cg_asset = asset;
+	parts_cg->common.texture = asset->texture;
+	parts_set_dims(parts, &parts_cg->common, asset->w, asset->h);
+	parts_cg->no = asset->cg_no;
+	parts_cg->name = name;
+	parts_dirty(parts);
+}
+
 bool _parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct cg *cg, int cg_no,
 		struct string *name)
 {
@@ -1173,13 +1965,23 @@ bool _parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct cg *cg
 			free_string(name);
 		return false;
 	}
-	parts_cg_cache_put(parts_cg);
+	bool cacheable = !(name && is_save_cg_name(name->text))
+		&& ((name && name->size > 0) || cg_no > 0);
+	if (cacheable) {
+		parts_cg_cache_sync_archive_gen();
+		struct parts_cg_asset *asset = parts_cg_asset_create_from_cg(
+				cg, cg_no, name ? name->text : NULL, cg_cache_archive_gen, true);
+		parts_cg_attach_asset(parts, parts_cg, asset, name);
+		parts_cg_asset_unref(asset);
+		parts_frame_did_heavy_load = true;
+		cg_free(cg);
+		return true;
+	}
+	parts_cg_detach(parts_cg);
 	gfx_init_texture_with_cg(&parts_cg->common.texture, cg);
 	parts_common_set_alpha_from_cg(&parts_cg->common, cg);
 	parts_set_dims(parts, &parts_cg->common, cg->metrics.w, cg->metrics.h);
 	parts_cg->no = cg_no;
-	if (parts_cg->name)
-		free_string(parts_cg->name);
 	parts_cg->name = name;
 	parts_frame_did_heavy_load = true;
 	parts_dirty(parts);
@@ -1187,26 +1989,14 @@ bool _parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct cg *cg
 	return true;
 }
 
-static void parts_cg_apply_cached(struct parts *parts, struct parts_cg *parts_cg,
-		struct parts_cg_cache_entry *cached, struct string *name)
-{
-	parts_cg_cache_put(parts_cg);
-	parts_cg->common.texture = cached->texture;
-	parts_cg->common.alpha_mask = cached->alpha_mask;
-	parts_cg->common.alpha_w = cached->alpha_w;
-	parts_cg->common.alpha_h = cached->alpha_h;
-	parts_set_dims(parts, &parts_cg->common, cached->w, cached->h);
-	parts_cg->no = cached->cg_no;
-	if (cached->name)
-		free_string(cached->name);
-	parts_cg->name = name;
-	parts_dirty(parts);
-}
-
 bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no)
 {
 	assert(cg_no);
-	if (cg->no == cg_no && cg->common.texture.handle) {
+	parts_cg_cache_sync_archive_gen();
+	cg->load_gen = ++next_cg_load_gen;
+	cg->async_gen = 0;
+	if (cg->cg_asset && cg->cg_asset->archive_gen == cg_cache_archive_gen
+			&& cg->no == cg_no && cg->common.texture.handle) {
 		if (cg->name) {
 			free_string(cg->name);
 			cg->name = NULL;
@@ -1215,9 +2005,9 @@ bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no)
 		parts_dirty(parts);
 		return true;
 	}
-	struct parts_cg_cache_entry cached;
-	if (parts_cg_cache_take(cg_no, NULL, &cached)) {
-		parts_cg_apply_cached(parts, cg, &cached, NULL);
+	struct parts_cg_asset *cached = parts_cg_asset_find_by_id(cg_no);
+	if (cached) {
+		parts_cg_attach_asset(parts, cg, cached, NULL);
 		return true;
 	}
 	return _parts_cg_set(parts, cg, asset_cg_load(cg_no), cg_no, NULL);
@@ -1226,21 +2016,33 @@ bool parts_cg_set_by_index(struct parts *parts, struct parts_cg *cg, int cg_no)
 bool parts_cg_set(struct parts *parts, struct parts_cg *parts_cg, struct string *cg_name)
 {
 	assert(cg_name && *(cg_name->text) != '\0');
-	int no;
+	parts_cg->load_gen = ++next_cg_load_gen;
+	parts_cg->async_gen = 0;
+	int no = 0;
 	struct cg *cg;
-	if (!memcmp(cg_name->text, "<save>", 6)) {
+	if (is_save_cg_name(cg_name->text)) {
 		cg = asset_cg_load_by_name(cg_name->text, &no);
 	} else {
-		if (parts_cg->no > 0 && parts_cg->common.texture.handle &&
-				parts_cg->name && !strcmp(parts_cg->name->text, cg_name->text)) {
+		parts_cg_cache_sync_archive_gen();
+		if (parts_cg->cg_asset && parts_cg->cg_asset->archive_gen == cg_cache_archive_gen
+				&& parts_cg->common.texture.handle
+				&& parts_cg->name && !strcmp(parts_cg->name->text, cg_name->text)) {
 			parts_set_dims(parts, &parts_cg->common,
 					parts_cg->common.texture.w, parts_cg->common.texture.h);
 			parts_dirty(parts);
 			return true;
 		}
-		struct parts_cg_cache_entry cached;
-		if (parts_cg_cache_take(0, cg_name->text, &cached)) {
-			parts_cg_apply_cached(parts, parts_cg, &cached, string_dup(cg_name));
+		struct parts_cg_asset *cached = parts_cg_asset_find_by_name(cg_name->text);
+		if (cached) {
+			parts_cg_attach_asset(parts, parts_cg, cached, string_dup(cg_name));
+			return true;
+		}
+		struct parts_cg_asset *claimed = NULL;
+		if (parts_cg_async_claim_sync(cg_name->text, &claimed)) {
+			if (!claimed)
+				return false;
+			parts_cg_attach_asset(parts, parts_cg, claimed, string_dup(cg_name));
+			parts_cg_asset_unref(claimed);
 			return true;
 		}
 		cg = asset_cg_load_by_name(cg_name->text, &no);
@@ -1849,11 +2651,13 @@ bool PE_Init(void)
 
 static void parts_clear(void)
 {
+	parts_cg_async_shutdown();
 	PE_ClearBackScene();
 	parts_input_reset();
 	PE_ReleaseActivities();
 	PE_ReleaseAllParts();
 	parts_cg_cache_clear();
+	cg_cache_archive_gen = 0;
 	parts_cproc_cache_clear();
 	parts_flat_cache_clear();
 	PE_ReleaseMessage();
@@ -1966,6 +2770,7 @@ static void parts_update_component(struct parts *parts)
 
 void PE_UpdateComponent(possibly_unused int passed_time)
 {
+	parts_cg_async_drain_ready(PARTS_CG_UPLOAD_BUDGET_MS);
 	// After loading a save, the game script may compute a negative time delta
 	// because it stores an absolute system.GetTime() value in the save data,
 	// which is meaningless across process restarts.
@@ -2115,6 +2920,7 @@ void PE_UpdateWithTimeScale(int passed_time, int scaled_time, bool message_windo
 
 void PE_UpdateParts(int passed_time, possibly_unused bool is_skip, bool message_window_show)
 {
+	parts_cg_async_drain_ready(PARTS_CG_UPLOAD_BUDGET_MS);
 	PE_SetMessageWindowShow(message_window_show);
 	audio_update();
 	parts_update_animation(passed_time, passed_time);
@@ -2160,6 +2966,100 @@ bool PE_SetPartsCG(int parts_no, struct string *cg_name, int sprite_deform, int 
 	return parts_cg_set(parts, cg, cg_name);
 }
 
+bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state)
+{
+	if (!parts_state_valid(--state))
+		return false;
+
+	struct parts *parts = parts_get(parts_no);
+	parts->sprite_deform = 0;
+	if (!cg_name || *(cg_name->text) == '\0') {
+		parts_state_reset(&parts->states[state], PARTS_CG);
+		parts_dirty(parts);
+		return true;
+	}
+	if (is_save_cg_name(cg_name->text) || parts_current != &live_context) {
+		struct parts_cg *cg = parts_get_cg(parts, state);
+		return parts_cg_set(parts, cg, cg_name);
+	}
+
+	parts_cg_cache_sync_archive_gen();
+	uint64_t archive_gen = cg_cache_archive_gen;
+
+	struct parts_cg *pcg = parts_get_cg(parts, state);
+	if (pcg->cg_asset && pcg->cg_asset->archive_gen == archive_gen
+			&& pcg->common.texture.handle
+			&& pcg->name && !strcmp(pcg->name->text, cg_name->text)) {
+		pcg->load_gen = ++next_cg_load_gen;
+		pcg->async_gen = 0;
+		parts_set_dims(parts, &pcg->common, pcg->common.texture.w, pcg->common.texture.h);
+		parts_dirty(parts);
+		return true;
+	}
+	struct parts_cg_asset *cached = parts_cg_asset_find_by_name(cg_name->text);
+	if (cached) {
+		pcg->load_gen = ++next_cg_load_gen;
+		pcg->async_gen = 0;
+		parts_cg_attach_asset(parts, pcg, cached, string_dup(cg_name));
+		return true;
+	}
+	if (!parts_cg_async_ensure_started())
+		return parts_cg_set(parts, pcg, cg_name);
+
+	uint64_t gen = ++next_cg_load_gen;
+	pcg->load_gen = gen;
+	pcg->async_gen = gen;
+
+	struct parts_cg_async_target *target = xcalloc(1, sizeof(*target));
+	target->parts_no = parts_no;
+	target->state = state;
+	target->gen = gen;
+
+	SDL_LockMutex(cg_async.mutex);
+	struct parts_cg_async_job *job = cg_async_find_job_locked(cg_name->text, archive_gen);
+	if (job) {
+		if (job->targets_tail)
+			job->targets_tail->next = target;
+		else
+			job->targets = target;
+		job->targets_tail = target;
+	} else {
+		job = xcalloc(1, sizeof(*job));
+		job->cg_name = xstrdup(cg_name->text);
+		job->archive_gen = archive_gen;
+		job->state = CG_JOB_QUEUED;
+		job->targets = job->targets_tail = target;
+		cg_async_insert_job_locked(job);
+		TAILQ_INSERT_TAIL(&cg_async.pending_q, job, queue_entry);
+		cg_async.nr_queued++;
+		SDL_CondSignal(cg_async.work_cond);
+	}
+	SDL_UnlockMutex(cg_async.mutex);
+	return true;
+}
+
+bool PE_IsThreadLoading(int parts_no, int state)
+{
+	parts_cg_async_drain_ready(PARTS_CG_UPLOAD_BUDGET_MS);
+	if (!parts_state_valid(--state))
+		return false;
+	struct parts *parts = parts_try_get(parts_no);
+	if (!parts || parts->states[state].type != PARTS_CG)
+		return false;
+	return parts->states[state].cg.async_gen != 0;
+}
+
+bool PE_IsExistWorkerThread(void)
+{
+	parts_cg_async_drain_ready(PARTS_CG_UPLOAD_BUDGET_MS);
+	if (!cg_async.initialized)
+		return false;
+	SDL_LockMutex(cg_async.mutex);
+	bool busy = (cg_async.nr_queued + cg_async.nr_decoding + cg_async.nr_ready) > 0;
+	SDL_UnlockMutex(cg_async.mutex);
+	return busy;
+}
+
 bool PE_SetPartsCG_by_index(int parts_no, int cg_no, int sprite_deform, int state)
 {
 	if (!parts_state_valid(--state))
@@ -2199,7 +3099,7 @@ bool PE_SetPartsCG_by_string_index(int parts_no, struct string *cg_name,
 			return false;
 		cg->name = string_ref(cg_name);
 		return true;
-	} else if (!memcmp(cg_name->text, "<save>SaveData\\", 15)) {
+	} else if (!strncmp(cg_name->text, "<save>SaveData\\", 15)) {
 		char *path = savedir_path(cg_name->text + 15);
 		bool result = _parts_cg_set(parts, cg, cg_load_file(path), 0, string_ref(cg_name));
 		free(path);
@@ -4342,28 +5242,87 @@ static void recover_parts_in_current_context(void)
 	parts_engine_dirty();
 }
 
+static void parts_cg_asset_on_gl_reset(void)
+{
+	parts_cg_cache_sync_archive_gen();
+	struct parts_cg_asset *asset = TAILQ_FIRST(&cg_asset_all);
+	while (asset) {
+		struct parts_cg_asset *next = TAILQ_NEXT(asset, all_entry);
+		if (asset->texture.handle && gfx_remap_texture(&asset->texture) && asset->texture.handle) {
+			asset = next;
+			continue;
+		}
+		if (asset->refcount == 0) {
+			parts_cg_asset_destroy(asset);
+			asset = next;
+			continue;
+		}
+		struct cg *cg = NULL;
+		int no = asset->cg_no;
+		if (asset->name && asset->name[0])
+			cg = asset_cg_load_by_name(asset->name, &no);
+		if (!cg && asset->cg_no > 0)
+			cg = asset_cg_load(asset->cg_no);
+		if (cg) {
+			gfx_init_texture_with_cg(&asset->texture, cg);
+			cg_free(cg);
+		} else {
+			asset->texture = (Texture){0};
+		}
+		asset = next;
+	}
+}
+
+static void parts_cg_sync_state_after_gl_reset(struct parts_state *s, bool suspended)
+{
+	if (s->type != PARTS_CG || !s->cg.cg_asset)
+		return;
+	if (!suspended && s->cg.cg_asset->texture.handle) {
+		s->common.texture = s->cg.cg_asset->texture;
+	} else {
+		parts_cg_asset_unref(s->cg.cg_asset);
+		s->cg.cg_asset = NULL;
+		s->common.texture = (Texture){0};
+	}
+}
+
+static void parts_cg_sync_context_after_gl_reset(void)
+{
+	if (!parts_table)
+		return;
+	struct parts *p;
+	PARTS_LIST_FOREACH(p) {
+		for (int st = 0; st < PARTS_NR_STATES; st++)
+			parts_cg_sync_state_after_gl_reset(&p->states[st], p->textures_suspended);
+		if (p->widget) {
+			for (int i = 0; i < PARTS_NR_STATES; i++)
+				parts_cg_sync_state_after_gl_reset(&p->widget->checked_states[i], p->textures_suspended);
+			parts_cg_sync_state_after_gl_reset(&p->widget->disabled, p->textures_suspended);
+			parts_cg_sync_state_after_gl_reset(&p->widget->checked_disabled, p->textures_suspended);
+		}
+		if (p->scrollbar) {
+			for (int piece = 0; piece < 4; piece++) {
+				for (int st = 0; st < 4; st++)
+					parts_cg_sync_state_after_gl_reset(&p->scrollbar->skins[piece][st], p->textures_suspended);
+			}
+		}
+		if (p->message_box)
+			parts_cg_sync_state_after_gl_reset(&p->message_box->key_wait, p->textures_suspended);
+	}
+}
+
 static void parts_on_gl_reset(void *user)
 {
 	(void)user;
 	if (!parts_engine_initialized)
 		return;
-	int out = 0;
-	for (int i = 0; i < nr_parts_cg_cache; i++) {
-		if (gfx_remap_texture(&parts_cg_cache[i].texture) && parts_cg_cache[i].texture.handle) {
-			if (out != i)
-				parts_cg_cache[out] = parts_cg_cache[i];
-			out++;
-		} else {
-			free(parts_cg_cache[i].alpha_mask);
-			if (parts_cg_cache[i].name)
-				free_string(parts_cg_cache[i].name);
-		}
-	}
-	nr_parts_cg_cache = out;
+	parts_cg_asset_on_gl_reset();
+	parts_cg_sync_context_after_gl_reset();
 	recover_parts_in_current_context();
 	struct parts_context *bs = parts_get_back_scene();
 	if (bs && bs != parts_current) {
 		struct parts_context *prev = parts_context_select(bs);
+		parts_cg_sync_context_after_gl_reset();
 		recover_parts_in_current_context();
 		parts_context_select(prev);
 	}

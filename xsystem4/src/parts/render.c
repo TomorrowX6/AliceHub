@@ -537,14 +537,51 @@ struct emitter_render_ud {
 	vec3 mul_color;
 };
 
+static void resolve_flat_cg_draw_tex(struct parts_flat *f, int cg_idx,
+		Texture *out_tex, Rectangle *out_sub)
+{
+	Texture *tex = &f->textures[cg_idx];
+	*out_tex = *tex;
+	*out_sub = (Rectangle){ 0, 0, tex->w, tex->h };
+	if (!f->asset || !f->asset->base_atlas_idx || !f->asset->base_rects
+			|| (f->owns_texture && f->owns_texture[cg_idx]))
+		return;
+	int src_idx = cg_idx;
+	if (f->proxy_cg_names && f->proxy_cg_names[cg_idx]) {
+		int resolved = parts_flat_find_library(f->flat, f->proxy_cg_names[cg_idx]->text);
+		if (resolved >= 0 && (size_t)resolved < f->asset->nr_libraries)
+			src_idx = resolved;
+	}
+	if ((size_t)src_idx >= f->asset->nr_libraries)
+		return;
+	int aidx = f->asset->base_atlas_idx[src_idx];
+	if (aidx < 0 || (size_t)aidx >= f->asset->nr_talt_atlases)
+		return;
+	Texture *atlas = &f->asset->talt_atlases[aidx];
+	if (gfx_remap_texture(tex)) {
+		atlas->handle = tex->handle;
+		atlas->ctx_gen = tex->ctx_gen;
+	}
+	*out_tex = (Texture){
+		.handle = tex->handle,
+		.w = atlas->w,
+		.h = atlas->h,
+		.opaque = tex->opaque,
+		.ctx_gen = tex->ctx_gen,
+	};
+	*out_sub = f->asset->base_rects[src_idx];
+}
+
 static void render_emitter_particle_cb(const struct flat_emitter_particle *p,
 		void *ud)
 {
 	struct emitter_render_ud *d = ud;
 	if (p->cg_lib_idx < 0 || (size_t)p->cg_lib_idx >= d->f->nr_libraries)
 		return;
-	Texture *tex = &d->f->textures[p->cg_lib_idx];
-	if (!tex->handle)
+	Texture draw_tex;
+	Rectangle sub;
+	resolve_flat_cg_draw_tex(d->f, p->cg_lib_idx, &draw_tex, &sub);
+	if (!draw_tex.handle || sub.w <= 0 || sub.h <= 0)
 		return;
 
 	mat4 m = GLM_MAT4_IDENTITY_INIT;
@@ -562,11 +599,12 @@ static void render_emitter_particle_cb(const struct flat_emitter_particle *p,
 	// clip_z stays at the near plane.
 	glm_mat4_mul(d->transform, m, m);
 	m[0][2] = m[1][2] = m[2][2] = m[3][2] = 0.0f;
-	glm_scale(m, (vec3){ tex->w, tex->h, 1.0f });
+	if (sub.x || sub.y)
+		glm_translate(m, (vec3){ -(float)sub.x, -(float)sub.y, 0.0f });
+	glm_scale(m, (vec3){ (float)draw_tex.w, (float)draw_tex.h, 1.0f });
 
 	float blend_rate = d->parent_alpha * p->fade_alpha;
-	Rectangle rect = { 0, 0, tex->w, tex->h };
-	parts_render_texture(tex, m, &rect, blend_rate,
+	parts_render_texture(&draw_tex, m, &sub, blend_rate,
 			d->add_color, d->mul_color, d->draw_filter, d->alpha_clipper);
 }
 
@@ -714,21 +752,25 @@ struct flat_draw_ctx {
 static void render_flat_layer(struct parts *parts, struct parts_flat *f,
 		struct flat_layer_state *state,
 		struct flat_timeline *timelines, size_t nr_timelines,
+		const int *timeline_lib_idx,
 		struct flat_draw_ctx *ctx, mat4 root,
 		struct flat_key_stack *key_stack);
 
-static void render_flat_cg(struct parts *parts, Texture *tex,
+static void render_flat_cg(struct parts *parts, struct parts_flat *f, int cg_idx,
 		const struct flat_key_data_graphic *key, struct flat_draw_ctx *ctx)
 {
-	if (!tex->handle)
+	Texture draw_tex;
+	Rectangle sub;
+	resolve_flat_cg_draw_tex(f, cg_idx, &draw_tex, &sub);
+	if (!draw_tex.handle || sub.w <= 0 || sub.h <= 0)
 		return;
 
 	mat4 render_m;
 	glm_mat4_copy(ctx->matrix, render_m);
 	// uk2 is the texture anchor in the 1..9 grid, independent of explicit origin.
 	if (key->uk2 >= 1 && key->uk2 <= 9) {
-		int width = key->area_width > 0 ? key->area_width : tex->w;
-		int height = key->area_height > 0 ? key->area_height : tex->h;
+		int width = key->area_width > 0 ? key->area_width : sub.w;
+		int height = key->area_height > 0 ? key->area_height : sub.h;
 		int anchor = key->uk2 - 1;
 		glm_translate(render_m, (vec3){-(anchor % 3) * width / 2.0f,
 				-(anchor / 3) * height / 2.0f, 0});
@@ -736,20 +778,28 @@ static void render_flat_cg(struct parts *parts, Texture *tex,
 	// Kill the Z-output row to pin clip_z at the near plane, avoiding
 	// near/far clipping of 3D-rotated sprites.
 	render_m[0][2] = render_m[1][2] = render_m[2][2] = render_m[3][2] = 0.0f;
-	// area_x/area_y select a sub-rectangle of the texture atlas, but
-	// should not shift the on-screen position. This translation cancels
-	// the offset that the sub-rect's top-left would otherwise introduce.
-	glm_translate(render_m, (vec3){ -(float)key->area_x, -(float)key->area_y, 0.0f });
-	glm_scale(render_m, (vec3){ tex->w, tex->h, 1.0f });
 
-	Rectangle rect;
+	Rectangle local_rect;
 	if (key->area_width && key->area_height) {
-		rect = (Rectangle){ key->area_x, key->area_y, key->area_width, key->area_height };
+		local_rect = (Rectangle){ key->area_x, key->area_y, key->area_width, key->area_height };
 	} else {
-		rect = (Rectangle){ 0, 0, tex->w, tex->h };
+		local_rect = (Rectangle){ 0, 0, sub.w, sub.h };
 	}
+	int lx0 = max(0, local_rect.x);
+	int ly0 = max(0, local_rect.y);
+	int lx1 = min(sub.w, local_rect.x + local_rect.w);
+	int ly1 = min(sub.h, local_rect.y + local_rect.h);
+	if (lx1 <= lx0 || ly1 <= ly0)
+		return;
 
-	parts_render_texture(tex, render_m, &rect, ctx->alpha, ctx->add_color, ctx->mul_color,
+	// area_x/area_y select a sub-rectangle of the sprite (and sub.x/sub.y
+	// locate the sprite inside a shared TALT atlas), without shifting the
+	// on-screen position.
+	glm_translate(render_m, (vec3){ -(float)(key->area_x + sub.x), -(float)(key->area_y + sub.y), 0.0f });
+	glm_scale(render_m, (vec3){ (float)draw_tex.w, (float)draw_tex.h, 1.0f });
+
+	Rectangle atlas_rect = { sub.x + lx0, sub.y + ly0, lx1 - lx0, ly1 - ly0 };
+	parts_render_texture(&draw_tex, render_m, &atlas_rect, ctx->alpha, ctx->add_color, ctx->mul_color,
 			ctx->draw_filter, parts_get_effective_alpha_clipper(parts));
 }
 
@@ -783,7 +833,7 @@ static void render_flat_item(struct parts *parts, struct parts_flat *f,
 
 	switch (lib->type) {
 	case FLAT_LIB_CG:
-		render_flat_cg(parts, &f->textures[lib_idx], key, &ctx);
+		render_flat_cg(parts, f, lib_idx, key, &ctx);
 		break;
 	case FLAT_LIB_TIMELINE: {
 		struct flat_layer_state *child = state->children[tl_idx];
@@ -793,9 +843,12 @@ static void render_flat_item(struct parts *parts, struct parts_flat *f,
 			key_stack->timelines[d] = tl;
 			key_stack->locals[d] = local;
 			key_stack->instances[d] = 0;
+			const int *child_lib_idx = (f->asset && f->asset->lib_timeline_lib_idx
+					&& (size_t)lib_idx < f->asset->nr_libraries)
+					? f->asset->lib_timeline_lib_idx[lib_idx] : NULL;
 			render_flat_layer(parts, f, child,
 					lib->timeline.timelines, lib->timeline.nr_timelines,
-					&ctx, root, key_stack);
+					child_lib_idx, &ctx, root, key_stack);
 			key_stack->count--;
 		}
 		break;
@@ -803,7 +856,7 @@ static void render_flat_item(struct parts *parts, struct parts_flat *f,
 	case FLAT_LIB_STOP_MOTION: {
 		int cg_idx = parts_flat_stop_motion_get_cg_lib(f, lib_idx, local);
 		if (cg_idx >= 0 && (size_t)cg_idx < f->nr_libraries)
-			render_flat_cg(parts, &f->textures[cg_idx], key, &ctx);
+			render_flat_cg(parts, f, cg_idx, key, &ctx);
 		break;
 	}
 	case FLAT_LIB_EMITTER:
@@ -818,6 +871,7 @@ static void render_flat_item(struct parts *parts, struct parts_flat *f,
 static void render_flat_layer(struct parts *parts, struct parts_flat *f,
 		struct flat_layer_state *state,
 		struct flat_timeline *timelines, size_t nr_timelines,
+		const int *timeline_lib_idx,
 		struct flat_draw_ctx *ctx, mat4 root,
 		struct flat_key_stack *key_stack)
 {
@@ -835,7 +889,9 @@ static void render_flat_layer(struct parts *parts, struct parts_flat *f,
 		if (local < 0 || local >= tl->frame_count)
 			continue;
 
-		int lib_idx = parts_flat_find_library(f->flat, tl->library_name->text);
+		int lib_idx = timeline_lib_idx
+				? timeline_lib_idx[i]
+				: parts_flat_find_library(f->flat, tl->library_name->text);
 		if (lib_idx < 0)
 			continue;
 		if (f->flat->libraries[lib_idx].type == FLAT_LIB_EMITTER) {
@@ -867,6 +923,7 @@ static void parts_render_flat(struct parts *parts, struct parts_flat *f)
 	struct flat_key_stack key_stack = { .count = 0 };
 	render_flat_layer(parts, f, f->root_state,
 			f->flat->timelines, f->flat->nr_timelines,
+			f->asset ? f->asset->root_timeline_lib_idx : NULL,
 			&ctx, ctx.matrix, &key_stack);
 }
 

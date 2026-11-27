@@ -25,6 +25,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 #include "system4.h"
 #include "system4/file.h"
@@ -59,10 +64,8 @@ static int gbk_lookup(uint8_t lead, uint8_t trail)
 static uint16_t unicode_to_gbk[65536];
 static uint16_t unicode_to_sjis_tbl[65536];
 
-static void ensure_unicode_to_gbk(void)
+static void init_unicode_to_gbk(void)
 {
-	if (unicode_to_gbk[0x4e00])
-		return;
 	for (int lead = 0x81; lead <= 0xfe; lead++) {
 		for (int trail = 0x40; trail <= 0xfe; trail++) {
 			int code = gbk_to_unicode[lead - 0x81][trail - 0x40];
@@ -76,10 +79,8 @@ static void ensure_unicode_to_gbk(void)
 	}
 }
 
-static void ensure_unicode_to_sjis(void)
+static void init_unicode_to_sjis(void)
 {
-	if (unicode_to_sjis_tbl[0x4e00])
-		return;
 	for (int b1 = 0x81; b1 <= 0xfc; b1++) {
 		if (b1 >= 0xa0 && b1 <= 0xdf)
 			continue;
@@ -90,6 +91,48 @@ static void ensure_unicode_to_sjis(void)
 		}
 	}
 }
+
+#ifdef _WIN32
+static INIT_ONCE unicode_to_gbk_once = INIT_ONCE_STATIC_INIT;
+static INIT_ONCE unicode_to_sjis_once = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK init_unicode_to_gbk_win32(PINIT_ONCE once, PVOID param, PVOID *ctx)
+{
+	(void)once; (void)param; (void)ctx;
+	init_unicode_to_gbk();
+	return TRUE;
+}
+
+static BOOL CALLBACK init_unicode_to_sjis_win32(PINIT_ONCE once, PVOID param, PVOID *ctx)
+{
+	(void)once; (void)param; (void)ctx;
+	init_unicode_to_sjis();
+	return TRUE;
+}
+
+static void ensure_unicode_to_gbk(void)
+{
+	InitOnceExecuteOnce(&unicode_to_gbk_once, init_unicode_to_gbk_win32, NULL, NULL);
+}
+
+static void ensure_unicode_to_sjis(void)
+{
+	InitOnceExecuteOnce(&unicode_to_sjis_once, init_unicode_to_sjis_win32, NULL, NULL);
+}
+#else
+static pthread_once_t unicode_to_gbk_once = PTHREAD_ONCE_INIT;
+static pthread_once_t unicode_to_sjis_once = PTHREAD_ONCE_INIT;
+
+static void ensure_unicode_to_gbk(void)
+{
+	pthread_once(&unicode_to_gbk_once, init_unicode_to_gbk);
+}
+
+static void ensure_unicode_to_sjis(void)
+{
+	pthread_once(&unicode_to_sjis_once, init_unicode_to_sjis);
+}
+#endif
 
 #define MAI_WORD_TABLE_SIZE 65536
 #define MAI_NR_ROWS 128
@@ -1940,8 +1983,6 @@ char *cjk_gbk_zenkaku_to_sjis_buf(const char *src, size_t len, char *buf, size_t
 }
 
 #ifdef _WIN32
-#include <windows.h>
-
 wchar_t *utf8_to_wchar(const char *str)
 {
 	int nr_wchars = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0);

@@ -6,9 +6,11 @@ static_libs = false
 platform_deps = []
 if host_machine.system() == 'windows'
     static_libs = true
+else
+    platform_deps += [dependency('threads')]
 endif
 if host_machine.system() == 'darwin'
-    platform_deps = dependency('appleframeworks', modules : 'CoreFoundation')
+    platform_deps += [dependency('appleframeworks', modules : 'CoreFoundation')]
 endif
 
 zlib_backend = dependency('libdeflate', required: false, static : static_libs)
@@ -82,4 +84,5 @@ libsys4 = library('sys4', system4,
                   include_directories : [inc, local_inc])
 
 libsys4_dep = declare_dependency(include_directories : inc,
+                                 dependencies : platform_deps,
                                  link_with : libsys4)

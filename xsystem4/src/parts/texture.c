@@ -56,6 +56,12 @@ static void suspend_state(struct parts_state *state)
 {
 	switch (state->type) {
 	case PARTS_CG:
+		if (state->cg.cg_asset) {
+			parts_cg_suspend(&state->cg);
+			break;
+		}
+		suspend_texture(state, &state->common.texture);
+		break;
 	case PARTS_NUMERAL:
 	case PARTS_CONSTRUCTION_PROCESS:
 		suspend_texture(state, &state->common.texture);
@@ -88,7 +94,7 @@ static void suspend_state(struct parts_state *state)
 	}
 }
 
-void parts_state_resume_textures(struct parts_state *state)
+void parts_state_resume_textures(struct parts *parts, struct parts_state *state)
 {
 	while (state->texture_backups) {
 		struct parts_texture_backup *b = state->texture_backups;
@@ -109,6 +115,10 @@ void parts_state_resume_textures(struct parts_state *state)
 		}
 		free(b->data);
 		free(b);
+	}
+	if (state->type == PARTS_CG && !state->cg.cg_asset && !state->common.texture.handle
+			&& (state->cg.name || state->cg.no > 0)) {
+		parts_cg_resume(parts, &state->cg);
 	}
 	if (state->type == PARTS_ANIMATION && state->anim.nr_frames)
 		state->common.texture = state->anim.frames[state->anim.current_frame];
@@ -202,20 +212,20 @@ void PE_ResumeTexture(int no)
 {
 	struct parts *p = parts_try_get(no);
 	if (!p) return;
-	for (int i = 0; i < PARTS_NR_STATES; i++) parts_state_resume_textures(&p->states[i]);
+	for (int i = 0; i < PARTS_NR_STATES; i++) parts_state_resume_textures(p, &p->states[i]);
 	if (p->scrollbar) {
 		for (int piece = 0; piece < 4; piece++)
-			for (int state = 0; state < 4; state++) parts_state_resume_textures(&p->scrollbar->skins[piece][state]);
+			for (int state = 0; state < 4; state++) parts_state_resume_textures(p, &p->scrollbar->skins[piece][state]);
 	}
 	if (p->widget) {
-		parts_state_resume_textures(&p->widget->disabled);
-		parts_state_resume_textures(&p->widget->checked_disabled);
-		for (int i = 0; i < PARTS_NR_STATES; i++) parts_state_resume_textures(&p->widget->checked_states[i]);
-		parts_state_resume_textures(&p->widget->label);
+		parts_state_resume_textures(p, &p->widget->disabled);
+		parts_state_resume_textures(p, &p->widget->checked_disabled);
+		for (int i = 0; i < PARTS_NR_STATES; i++) parts_state_resume_textures(p, &p->widget->checked_states[i]);
+		parts_state_resume_textures(p, &p->widget->label);
 	}
 	if (p->message_box) {
-		parts_state_resume_textures(&p->message_box->label);
-		parts_state_resume_textures(&p->message_box->key_wait);
+		parts_state_resume_textures(p, &p->message_box->label);
+		parts_state_resume_textures(p, &p->message_box->key_wait);
 	}
 	p->textures_suspended = false;
 	parts_dirty(p);

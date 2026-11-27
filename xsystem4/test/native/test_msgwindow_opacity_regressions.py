@@ -989,6 +989,7 @@ void parts_release(int n) {
     free(p->radio_children); free(p); objects[n] = NULL;
 }
 void PE_UpdateComponent(int t) { (void)t; }
+void parts_cg_async_flush_part(int parts_no) { (void)parts_no; }
 void parts_widget_rebuild(struct parts *p) { (void)p; }
 void parts_state_reset(struct parts_state *s, enum parts_type t) { memset(s, 0, sizeof(*s)); s->type = t; }
 void parts_panel_rebuild(struct parts *p) { (void)p; }

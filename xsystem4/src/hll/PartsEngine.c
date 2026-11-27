@@ -266,21 +266,22 @@ static void PartsEngine_GetActivityIntentDataDestination_v6(struct string **out,
 	}
 }
 
-// These entry points complete their work on the render thread, which owns GL.
-// When they return there is no pending upload for the script to wait for.
+// Async CG decode runs CPU decompression on background worker threads; GL
+// texture upload and part attachment run on the render thread during PE_Update
+// / PE_UpdateComponent / PE_IsThreadLoading / PE_IsExistWorkerThread.
 static bool PartsEngine_SetPartsCGThread(int no, struct string *name, int state)
 {
-	return PE_SetPartsCG(no, name, 0, state);
+	return PE_SetPartsCGThread(no, name, state);
 }
 
 static bool PartsEngine_IsThreadLoading(int no, int state)
 {
-	return false;
+	return PE_IsThreadLoading(no, state);
 }
 
 static bool PartsEngine_IsExistWorkerThread(void)
 {
-	return false;
+	return PE_IsExistWorkerThread();
 }
 
 static void PartsEngine_Update_Pascha3PC(struct string *xxx1, struct string *xxx2, int passed_time, bool is_skip, bool message_window_show)

@@ -46,6 +46,8 @@ struct ex_reader {
 };
 
 static struct ex_block *ex_get_block(struct ex *ex, const char *name, enum ex_value_type type);
+static void ex_invalidate_name_hash(struct ex *ex);
+static void ex_tree_invalidate_name_hash(struct ex_tree *tree);
 
 const char *ex_strtype(enum ex_value_type type)
 {
@@ -456,7 +458,7 @@ static struct ex *_ex_read(uint8_t *data, size_t size, struct string*(*conv)(con
 		return NULL;
 	buffer_init(&r.buf, decoded, size);
 
-	ex = xmalloc(sizeof(struct ex));
+	ex = xcalloc(1, sizeof(struct ex));
 	ex->nr_blocks = nr_blocks;
 	ex->blocks = xcalloc(nr_blocks ? nr_blocks : 1, sizeof(struct ex_block));
 	for (size_t i = 0; i < nr_blocks; i++) {
@@ -569,6 +571,8 @@ static void _ex_copy_tree(struct ex_tree *out, struct ex_tree *tree)
 	}
 
 	out->nr_children = tree->nr_children;
+	out->name_hash_mask = 0;
+	out->name_hash_slots = NULL;
 	out->_children = xcalloc(tree->nr_children, sizeof(struct ex_value));
 	out->children = xcalloc(tree->nr_children, sizeof(struct ex_tree));
 	for (unsigned i = 0; i < tree->nr_children; i++) {
@@ -580,7 +584,7 @@ static void _ex_copy_tree(struct ex_tree *out, struct ex_tree *tree)
 
 static struct ex_tree *ex_copy_tree(struct ex_tree *tree)
 {
-	struct ex_tree *out = xmalloc(sizeof(struct ex_tree));
+	struct ex_tree *out = xcalloc(1, sizeof(struct ex_tree));
 	_ex_copy_tree(out, tree);
 	return out;
 }
@@ -695,8 +699,12 @@ static void ex_tree_append_child(struct ex_tree *out, struct ex_tree *child)
 	}
 
 	// no child with same name, append new child
+	ex_tree_invalidate_name_hash(out);
 	out->_children = xrealloc_array(out->_children, out->nr_children, out->nr_children+1, sizeof(struct ex_value));
 	out->children = xrealloc_array(out->children, out->nr_children, out->nr_children+1, sizeof(struct ex_tree));
+	for (unsigned i = 0; i < out->nr_children; i++) {
+		out->_children[i].tree = &out->children[i];
+	}
 	out->_children[out->nr_children].type = EX_TREE;
 	out->_children[out->nr_children].tree = &out->children[out->nr_children];
 	_ex_copy_tree(&out->children[out->nr_children], child);
@@ -719,7 +727,7 @@ static void ex_append_tree(struct ex_tree *out, struct ex_tree *in)
  */
 struct ex *ex_extract_append(struct ex *base, struct ex *append)
 {
-	struct ex *out = xmalloc(sizeof(struct ex));
+	struct ex *out = xcalloc(1, sizeof(struct ex));
 	out->nr_blocks = 0;
 	out->blocks = NULL;
 
@@ -772,6 +780,7 @@ void ex_append(struct ex *base, struct ex *append)
 			case EX_TREE:   ex_append_tree(src->val.tree, append->blocks[i].val.tree); break;
 			}
 		} else {
+			ex_invalidate_name_hash(base);
 			base->blocks = xrealloc_array(base->blocks, base->nr_blocks, base->nr_blocks+1, sizeof(struct ex_block));
 			ex_copy_block(&base->blocks[base->nr_blocks], &append->blocks[i]);
 			base->nr_blocks++;
@@ -788,6 +797,7 @@ void ex_replace(struct ex *base, struct ex *replace)
 			src->size = replace->blocks[i].size;
 			ex_copy_value(&src->val, &replace->blocks[i].val);
 		} else {
+			ex_invalidate_name_hash(base);
 			base->blocks = xrealloc_array(base->blocks, base->nr_blocks, base->nr_blocks+1, sizeof(struct ex_block));
 			ex_copy_block(&base->blocks[base->nr_blocks], &replace->blocks[i]);
 			base->nr_blocks++;
@@ -872,12 +882,17 @@ static void ex_free_tree(struct ex_tree *tree)
 	for (uint32_t i = 0; i < tree->nr_children; i++) {
 		ex_free_tree(&tree->children[i]);
 	}
+	free(tree->name_hash_slots);
+	tree->name_hash_slots = NULL;
+	tree->name_hash_mask = 0;
 	free(tree->_children);
 	free(tree->children);
 }
 
 void ex_free(struct ex *ex)
 {
+	if (!ex)
+		return;
 	for (uint32_t i = 0; i < ex->nr_blocks; i++) {
 		struct ex_block *block = &ex->blocks[i];
 		free_string(block->name);
@@ -899,8 +914,156 @@ void ex_free(struct ex *ex)
 			break;
 		}
 	}
+	free(ex->name_hash_slots);
 	free(ex->blocks);
 	free(ex);
+}
+
+#define EX_NAME_HASH_THRESHOLD 8u
+#define EX_NAME_HASH_MAX_ITEMS (1u << 29)
+
+static inline uint32_t ex_hash_name(const char *s, size_t len)
+{
+	uint32_t h = 2166136261u;
+	for (size_t i = 0; i < len; i++) {
+		h ^= (uint8_t)s[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
+static void ex_invalidate_name_hash(struct ex *ex)
+{
+	free(ex->name_hash_slots);
+	ex->name_hash_slots = NULL;
+	ex->name_hash_mask = 0;
+}
+
+static void ex_tree_invalidate_name_hash(struct ex_tree *tree)
+{
+	if (!tree->is_leaf) {
+		free(tree->name_hash_slots);
+		tree->name_hash_slots = NULL;
+		tree->name_hash_mask = 0;
+	}
+}
+
+static bool ex_ensure_name_hash(struct ex *ex)
+{
+	if (ex->name_hash_slots)
+		return true;
+	if (ex->nr_blocks < EX_NAME_HASH_THRESHOLD || ex->nr_blocks >= EX_NAME_HASH_MAX_ITEMS)
+		return false;
+	uint32_t cap = 16;
+	while (cap < ex->nr_blocks * 2u)
+		cap <<= 1;
+	uint32_t mask = cap - 1u;
+	uint32_t *slots = xcalloc(cap, sizeof(uint32_t));
+	for (uint32_t i = 0; i < ex->nr_blocks; i++) {
+		struct string *s = ex->blocks[i].name;
+		if (!s)
+			continue;
+		uint32_t pos = ex_hash_name(s->text, (size_t)s->size) & mask;
+		while (slots[pos])
+			pos = (pos + 1u) & mask;
+		slots[pos] = i + 1u;
+	}
+	ex->name_hash_slots = slots;
+	ex->name_hash_mask = mask;
+	return true;
+}
+
+static bool ex_tree_ensure_name_hash(struct ex_tree *tree)
+{
+	if (tree->name_hash_slots)
+		return true;
+	if (tree->nr_children < EX_NAME_HASH_THRESHOLD || tree->nr_children >= EX_NAME_HASH_MAX_ITEMS)
+		return false;
+	uint32_t cap = 16;
+	while (cap < tree->nr_children * 2u)
+		cap <<= 1;
+	uint32_t mask = cap - 1u;
+	uint32_t *slots = xcalloc(cap, sizeof(uint32_t));
+	for (uint32_t i = 0; i < tree->nr_children; i++) {
+		struct string *s = tree->children[i].name;
+		if (!s)
+			continue;
+		uint32_t pos = ex_hash_name(s->text, (size_t)s->size) & mask;
+		while (slots[pos])
+			pos = (pos + 1u) & mask;
+		slots[pos] = i + 1u;
+	}
+	tree->name_hash_slots = slots;
+	tree->name_hash_mask = mask;
+	return true;
+}
+
+static int64_t ex_tree_find_child_exact(struct ex_tree *tree, const char *name, size_t len)
+{
+	if (ex_tree_ensure_name_hash(tree)) {
+		uint32_t mask = tree->name_hash_mask;
+		uint32_t pos = ex_hash_name(name, len) & mask;
+		while (tree->name_hash_slots[pos]) {
+			uint32_t idx = tree->name_hash_slots[pos] - 1u;
+			struct string *s = tree->children[idx].name;
+			if ((size_t)s->size == len && !memcmp(s->text, name, len))
+				return (int64_t)idx;
+			pos = (pos + 1u) & mask;
+		}
+		return -1;
+	}
+	for (uint32_t i = 0; i < tree->nr_children; i++) {
+		struct string *s = tree->children[i].name;
+		if (s && (size_t)s->size == len && !memcmp(s->text, name, len))
+			return (int64_t)i;
+	}
+	return -1;
+}
+
+static int64_t ex_find_block_exact(struct ex *ex, const char *name, size_t len)
+{
+	if (ex_ensure_name_hash(ex)) {
+		uint32_t mask = ex->name_hash_mask;
+		uint32_t pos = ex_hash_name(name, len) & mask;
+		while (ex->name_hash_slots[pos]) {
+			uint32_t idx = ex->name_hash_slots[pos] - 1u;
+			struct string *s = ex->blocks[idx].name;
+			if ((size_t)s->size == len && !memcmp(s->text, name, len))
+				return (int64_t)idx;
+			pos = (pos + 1u) & mask;
+		}
+		return -1;
+	}
+	for (uint32_t i = 0; i < ex->nr_blocks; i++) {
+		struct string *s = ex->blocks[i].name;
+		if (s && (size_t)s->size == len && !memcmp(s->text, name, len))
+			return (int64_t)i;
+	}
+	return -1;
+}
+
+static struct ex_block *ex_find_block_typed_exact(struct ex *ex, const char *name, size_t len, enum ex_value_type type)
+{
+	if (ex_ensure_name_hash(ex)) {
+		uint32_t mask = ex->name_hash_mask;
+		uint32_t pos = ex_hash_name(name, len) & mask;
+		while (ex->name_hash_slots[pos]) {
+			uint32_t idx = ex->name_hash_slots[pos] - 1u;
+			struct ex_block *b = &ex->blocks[idx];
+			if (b->val.type == type && (size_t)b->name->size == len && !memcmp(b->name->text, name, len))
+				return b;
+			pos = (pos + 1u) & mask;
+		}
+		return NULL;
+	}
+	for (uint32_t i = 0; i < ex->nr_blocks; i++) {
+		struct ex_block *b = &ex->blocks[i];
+		if (b->val.type != type)
+			continue;
+		if (b->name && (size_t)b->name->size == len && !memcmp(b->name->text, name, len))
+			return b;
+	}
+	return NULL;
 }
 
 static bool ex_bytes_has_non_ascii(const char *s, size_t len)
@@ -916,7 +1079,7 @@ static bool ex_cjk_equals_n(const char *a, size_t a_len, const char *b, size_t b
 {
 	if (!sys4_text_is_gbk)
 		return false;
-	if (!ex_bytes_has_non_ascii(a, a_len) && !ex_bytes_has_non_ascii(b, b_len))
+	if (!ex_bytes_has_non_ascii(a, a_len) || !ex_bytes_has_non_ascii(b, b_len))
 		return false;
 
 	char a_norm_buf[512], b_norm_buf[512];
@@ -960,18 +1123,16 @@ static struct ex_value *ex_tree_get_path(struct ex_tree *tree, const char *path)
 		return NULL;
 	}
 
-	for (unsigned i = 0; i < tree->nr_children; i++) {
-		if (tree->children[i].name->size == len &&
-		    !strncmp(tree->children[i].name->text, path, len)) {
-			if (next) {
-				return ex_tree_get_path(&tree->children[i], next+1);
-			}
-			if (tree->children[i].is_leaf)
-				return &tree->children[i].leaf.value;
-			return &tree->_children[i];
+	int64_t idx = ex_tree_find_child_exact(tree, path, len);
+	if (idx >= 0) {
+		if (next) {
+			return ex_tree_get_path(&tree->children[idx], next+1);
 		}
+		if (tree->children[idx].is_leaf)
+			return &tree->children[idx].leaf.value;
+		return &tree->_children[idx];
 	}
-	if (sys4_text_is_gbk) {
+	if (sys4_text_is_gbk && ex_bytes_has_non_ascii(path, len)) {
 		for (unsigned i = 0; i < tree->nr_children; i++) {
 			if (ex_cjk_equals_n(tree->children[i].name->text, tree->children[i].name->size, path, len)) {
 				if (next) {
@@ -989,13 +1150,10 @@ static struct ex_value *ex_tree_get_path(struct ex_tree *tree, const char *path)
 
 static struct ex_value *_ex_get(struct ex *ex, const char *name, size_t name_len)
 {
-	// TODO: use hash table
-	for (unsigned i = 0; i < ex->nr_blocks; i++) {
-		if (ex->blocks[i].name->size == name_len &&
-		    !strncmp(ex->blocks[i].name->text, name, name_len))
-			return &ex->blocks[i].val;
-	}
-	if (sys4_text_is_gbk) {
+	int64_t idx = ex_find_block_exact(ex, name, name_len);
+	if (idx >= 0)
+		return &ex->blocks[idx].val;
+	if (sys4_text_is_gbk && ex_bytes_has_non_ascii(name, name_len)) {
 		for (unsigned i = 0; i < ex->nr_blocks; i++) {
 			if (ex_cjk_equals_n(ex->blocks[i].name->text, ex->blocks[i].name->size, name, name_len))
 				return &ex->blocks[i].val;
@@ -1020,14 +1178,11 @@ struct ex_value *ex_get(struct ex *ex, const char *name)
 
 static struct ex_block *ex_get_block(struct ex *ex, const char *name, enum ex_value_type type)
 {
-	for (unsigned i = 0; i < ex->nr_blocks; i++) {
-		if (ex->blocks[i].val.type != type)
-			continue;
-		if (!strcmp(ex->blocks[i].name->text, name))
-			return &ex->blocks[i];
-	}
-	if (sys4_text_is_gbk) {
-		size_t len = strlen(name);
+	size_t len = strlen(name);
+	struct ex_block *b = ex_find_block_typed_exact(ex, name, len, type);
+	if (b)
+		return b;
+	if (sys4_text_is_gbk && ex_bytes_has_non_ascii(name, len)) {
 		for (unsigned i = 0; i < ex->nr_blocks; i++) {
 			if (ex->blocks[i].val.type != type)
 				continue;
@@ -1104,13 +1259,11 @@ struct ex_tree *ex_tree_get_child(struct ex_tree *tree, const char *name)
 {
 	if (tree->is_leaf)
 		return NULL;
-	for (unsigned i = 0; i < tree->nr_children; i++) {
-		if (!strcmp(tree->children[i].name->text, name)) {
-			return &tree->children[i];
-		}
-	}
-	if (sys4_text_is_gbk) {
-		size_t len = strlen(name);
+	size_t len = strlen(name);
+	int64_t idx = ex_tree_find_child_exact(tree, name, len);
+	if (idx >= 0)
+		return &tree->children[idx];
+	if (sys4_text_is_gbk && ex_bytes_has_non_ascii(name, len)) {
 		for (unsigned i = 0; i < tree->nr_children; i++) {
 			if (ex_cjk_equals_n(tree->children[i].name->text, tree->children[i].name->size, name, len))
 				return &tree->children[i];
@@ -1171,10 +1324,12 @@ int ex_row_at_string_key(struct ex_table *t, const char *key)
 	}
 	if (sys4_text_is_gbk) {
 		size_t len = strlen(key);
-		for (unsigned row = 0; row < t->nr_rows; row++) {
-			struct string *cell = t->rows[row][col].s;
-			if (cell && ex_cjk_equals_n(cell->text, cell->size, key, len))
-				return row;
+		if (ex_bytes_has_non_ascii(key, len)) {
+			for (unsigned row = 0; row < t->nr_rows; row++) {
+				struct string *cell = t->rows[row][col].s;
+				if (cell && ex_cjk_equals_n(cell->text, cell->size, key, len))
+					return row;
+			}
 		}
 	}
 	return -1;
@@ -1188,9 +1343,11 @@ int ex_col_from_name(struct ex_table *t, const char *name)
 	}
 	if (sys4_text_is_gbk) {
 		size_t len = strlen(name);
-		for (unsigned i = 0; i < t->nr_fields; i++) {
-			if (ex_cjk_equals_n(t->fields[i].name->text, t->fields[i].name->size, name, len))
-				return i;
+		if (ex_bytes_has_non_ascii(name, len)) {
+			for (unsigned i = 0; i < t->nr_fields; i++) {
+				if (ex_cjk_equals_n(t->fields[i].name->text, t->fields[i].name->size, name, len))
+					return i;
+			}
 		}
 	}
 	return -1;

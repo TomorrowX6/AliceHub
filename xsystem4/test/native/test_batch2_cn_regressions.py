@@ -890,7 +890,7 @@ const char *display_utf0(const char *s) {{ return s ? s : ""; }}
 struct cg *cg_load_data(struct archive_data *dfile) {{ (void)dfile; return NULL; }}
 struct cg *cg_load_file(const char *filename) {{ (void)filename; return NULL; }}
 struct archive;
-void cg_set_base_loader_by_name(struct cg *(*fn)(const char *)) {{ (void)fn; }}
+void cg_set_base_loader_by_name(struct cg *(*fn)(struct archive *, const char *)) {{ (void)fn; }}
 void cg_set_base_loader_by_id(struct cg *(*fn)(struct archive *, int)) {{ (void)fn; }}
 bool cg_get_metrics_data(struct archive_data *dfile, struct cg_metrics *dst) {{ (void)dfile; (void)dst; return false; }}
 bool cg_get_metrics_file(const char *filename, struct cg_metrics *dst) {{ (void)filename; (void)dst; return false; }}

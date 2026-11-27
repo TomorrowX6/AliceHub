@@ -22,7 +22,13 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <assert.h>
+#include <stdatomic.h>
 #include <zlib.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 #include "system4.h"
 #include "system4/ald.h"
@@ -108,19 +114,64 @@ struct asset_manager_afa {
 
 static struct asset_manager *assets[ASSET_TYPE_MAX] = {0};
 static struct asset_manager_afa *afa_create_manager(void);
+static _Atomic uint64_t cg_archive_gen = 1;
+
+uint64_t asset_cg_archive_gen(void)
+{
+	return atomic_load_explicit(&cg_archive_gen, memory_order_acquire);
+}
+
+static inline void asset_cg_bump_archive_gen(void)
+{
+	atomic_fetch_add_explicit(&cg_archive_gen, 1, memory_order_release);
+}
+
+// Serializes ASSET_CG archive index lookup and raw byte reads across the main
+// thread and PartsEngine CG decode worker threads. Never held during CPU decode
+// (cg_load_data) so workers decompress in parallel and recursive base CG loads
+// (DCF / WebP OVER) cannot deadlock.
+#ifdef _WIN32
+static SRWLOCK asset_cg_lock = SRWLOCK_INIT;
+static inline void asset_cg_archive_lock(enum asset_type type)
+{
+	if (type == ASSET_CG)
+		AcquireSRWLockExclusive(&asset_cg_lock);
+}
+static inline void asset_cg_archive_unlock(enum asset_type type)
+{
+	if (type == ASSET_CG)
+		ReleaseSRWLockExclusive(&asset_cg_lock);
+}
+#else
+static pthread_mutex_t asset_cg_lock = PTHREAD_MUTEX_INITIALIZER;
+static inline void asset_cg_archive_lock(enum asset_type type)
+{
+	if (type == ASSET_CG)
+		pthread_mutex_lock(&asset_cg_lock);
+}
+static inline void asset_cg_archive_unlock(enum asset_type type)
+{
+	if (type == ASSET_CG)
+		pthread_mutex_unlock(&asset_cg_lock);
+}
+#endif
 
 bool asset_manager_load_archive(enum asset_type type, const char *archive_name)
 {
 	if (type < 0 || type >= ASSET_TYPE_MAX) return false;
-	if (!assets[type]) assets[type] = &afa_create_manager()->manager;
-	if (!assets[type]->load_archive)
-		ERROR("load_archive not supported on this archive type");
 	char rel_name[PATH_MAX];
 	snprintf(rel_name, sizeof(rel_name), "%s.afa", archive_name);
 	char *path = gamedir_path_icase(rel_name);
 	if (!path || !file_exists(path)) {
 		free(path);
 		path = gamedir_path(archive_name);
+	}
+	asset_cg_archive_lock(type);
+	if (!assets[type]) assets[type] = &afa_create_manager()->manager;
+	if (!assets[type]->load_archive) {
+		asset_cg_archive_unlock(type);
+		free(path);
+		ERROR("load_archive not supported on this archive type");
 	}
 	bool r = assets[type]->load_archive(assets[type], path);
 	free(path);
@@ -135,6 +186,7 @@ bool asset_manager_load_archive(enum asset_type type, const char *archive_name)
 			free(cg6_path);
 		}
 	}
+	asset_cg_archive_unlock(type);
 	return r;
 }
 
@@ -200,14 +252,17 @@ bool asset_exists(enum asset_type type, int id)
 	if (type < 0 || type >= ASSET_TYPE_MAX)
 		return false;
 	if (type == ASSET_CG && is_save_cg_id(id)) {
+		asset_cg_archive_lock(type);
 		char *save_path = save_cg_resolve_id(id);
+		asset_cg_archive_unlock(type);
 		bool exists = save_path && file_exists(save_path);
 		free(save_path);
 		return exists;
 	}
-	if (!assets[type])
-		return false;
-	return assets[type]->exists_by_id(assets[type], id);
+	asset_cg_archive_lock(type);
+	bool exists = assets[type] ? assets[type]->exists_by_id(assets[type], id) : false;
+	asset_cg_archive_unlock(type);
+	return exists;
 }
 
 static bool asset_cg_format_special_org_fallback(const char *name, char *buf, size_t buf_size)
@@ -246,43 +301,64 @@ bool asset_exists_by_name(enum asset_type type, const char *name, int *id_out)
 		if (save_path) {
 			bool exists = file_exists(save_path);
 			free(save_path);
-			if (exists && id_out)
+			if (exists && id_out) {
+				asset_cg_archive_lock(type);
 				*id_out = save_cg_intern_name(name);
+				asset_cg_archive_unlock(type);
+			}
 			return exists;
 		}
 	}
-	if (!assets[type])
+	asset_cg_archive_lock(type);
+	if (!assets[type]) {
+		asset_cg_archive_unlock(type);
 		return false;
-	if (!assets[type]->exists_by_name)
+	}
+	if (!assets[type]->exists_by_name) {
+		asset_cg_archive_unlock(type);
 		ERROR("exists_by_name not supported on this archive type");
-	if (assets[type]->exists_by_name(assets[type], name, id_out))
-		return true;
-	char fallback[512];
-	if (type == ASSET_CG && asset_cg_format_special_org_fallback(name, fallback, sizeof(fallback)))
-		return assets[type]->exists_by_name(assets[type], fallback, id_out);
-	return false;
+	}
+	bool r = assets[type]->exists_by_name(assets[type], name, id_out);
+	if (!r && type == ASSET_CG) {
+		char fallback[512];
+		if (asset_cg_format_special_org_fallback(name, fallback, sizeof(fallback)))
+			r = assets[type]->exists_by_name(assets[type], fallback, id_out);
+	}
+	asset_cg_archive_unlock(type);
+	return r;
 }
 
 struct archive_data *asset_get(enum asset_type type, int id)
 {
-	if (type < 0 || type >= ASSET_TYPE_MAX || !assets[type])
+	if (type < 0 || type >= ASSET_TYPE_MAX)
 		return NULL;
-	return assets[type]->get_by_id(assets[type], id);
+	asset_cg_archive_lock(type);
+	struct archive_data *data = assets[type] ? assets[type]->get_by_id(assets[type], id) : NULL;
+	asset_cg_archive_unlock(type);
+	return data;
 }
 
 struct archive_data *asset_get_by_name(enum asset_type type, const char *name, int *id_out)
 {
-	if (type < 0 || type >= ASSET_TYPE_MAX || !assets[type] || !name || !name[0])
+	if (type < 0 || type >= ASSET_TYPE_MAX || !name || !name[0])
 		return NULL;
-	if (!assets[type]->get_by_name)
+	asset_cg_archive_lock(type);
+	if (!assets[type]) {
+		asset_cg_archive_unlock(type);
+		return NULL;
+	}
+	if (!assets[type]->get_by_name) {
+		asset_cg_archive_unlock(type);
 		ERROR("get_by_name not supported on this archive type");
+	}
 	struct archive_data *data = assets[type]->get_by_name(assets[type], name, id_out);
-	if (data)
-		return data;
-	char fallback[512];
-	if (type == ASSET_CG && asset_cg_format_special_org_fallback(name, fallback, sizeof(fallback)))
-		return assets[type]->get_by_name(assets[type], fallback, id_out);
-	return NULL;
+	if (!data && type == ASSET_CG) {
+		char fallback[512];
+		if (asset_cg_format_special_org_fallback(name, fallback, sizeof(fallback)))
+			data = assets[type]->get_by_name(assets[type], fallback, id_out);
+	}
+	asset_cg_archive_unlock(type);
+	return data;
 }
 
 static void localize_sengoku_skip_cg(int id, const struct archive_data *data, struct cg *cg)
@@ -323,7 +399,9 @@ static void localize_sengoku_skip_cg(int id, const struct archive_data *data, st
 struct cg *asset_cg_load(int id)
 {
 	if (is_save_cg_id(id)) {
+		asset_cg_archive_lock(ASSET_CG);
 		char *save_path = save_cg_resolve_id(id);
+		asset_cg_archive_unlock(ASSET_CG);
 		struct cg *cg = (save_path && file_exists(save_path)) ? cg_load_file(save_path) : NULL;
 		free(save_path);
 		return cg;
@@ -337,14 +415,25 @@ struct cg *asset_cg_load(int id)
 	return cg;
 }
 
+bool asset_cg_supports_name(void)
+{
+	asset_cg_archive_lock(ASSET_CG);
+	bool supported = assets[ASSET_CG] && assets[ASSET_CG]->get_by_name != NULL;
+	asset_cg_archive_unlock(ASSET_CG);
+	return supported;
+}
+
 struct cg *asset_cg_load_by_name(const char *name, int *id_out)
 {
 	char *save_path = asset_cg_save_path(name);
 	if (save_path) {
 		struct cg *cg = file_exists(save_path) ? cg_load_file(save_path) : NULL;
 		free(save_path);
-		if (cg && id_out)
+		if (cg && id_out) {
+			asset_cg_archive_lock(ASSET_CG);
 			*id_out = save_cg_intern_name(name);
+			asset_cg_archive_unlock(ASSET_CG);
+		}
 		return cg;
 	}
 	struct archive_data *data = asset_get_by_name(ASSET_CG, name, id_out);
@@ -358,7 +447,9 @@ struct cg *asset_cg_load_by_name(const char *name, int *id_out)
 bool asset_cg_get_metrics(int id, struct cg_metrics *metrics)
 {
 	if (is_save_cg_id(id)) {
+		asset_cg_archive_lock(ASSET_CG);
 		char *save_path = save_cg_resolve_id(id);
+		asset_cg_archive_unlock(ASSET_CG);
 		bool r = (save_path && file_exists(save_path)) ? cg_get_metrics_file(save_path, metrics) : false;
 		free(save_path);
 		return r;
@@ -756,6 +847,8 @@ static bool afa_load_archive_prio(struct asset_manager_afa *manager, const char 
 	manager->nr_archives++;
 	afa_register_id_archive(manager, ar);
 	afa_invalidate_canon_index(manager);
+	if (&manager->manager == assets[ASSET_CG])
+		asset_cg_bump_archive_gen();
 	return true;
 }
 
@@ -1111,18 +1204,63 @@ static bool afa_exists_by_name(struct asset_manager *_manager, const char *name,
 	return true;
 }
 
+struct asset_foreach_snapshot {
+	struct archive_data **items;
+	size_t count;
+	size_t cap;
+};
+
+static void asset_foreach_collect_cb(struct archive_data *data, void *user)
+{
+	struct asset_foreach_snapshot *snap = user;
+	if (snap->count == snap->cap) {
+		size_t new_cap = snap->cap ? snap->cap * 2 : 256;
+		snap->items = xrealloc(snap->items, new_cap * sizeof(*snap->items));
+		snap->cap = new_cap;
+	}
+	snap->items[snap->count++] = archive_copy_descriptor(data);
+}
+
 void asset_foreach_file(enum asset_type type,
 		void (*callback)(struct archive_data *data, void *user), void *user)
 {
-	if (type < 0 || type >= ASSET_TYPE_MAX || !assets[type]) return;
-	if (assets[type]->get_by_name == afa_get_by_name) {
-		struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[type];
-		for (size_t i = 0; i < manager->nr_archives; i++)
-			archive_for_each(&manager->archives[i]->ar, callback, user);
-	} else {
-		struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[type];
-		archive_for_each(manager->archive, callback, user);
+	if (type < 0 || type >= ASSET_TYPE_MAX)
+		return;
+	if (type != ASSET_CG) {
+		if (!assets[type])
+			return;
+		if (assets[type]->get_by_name == afa_get_by_name) {
+			struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[type];
+			for (size_t i = 0; i < manager->nr_archives; i++)
+				archive_for_each(&manager->archives[i]->ar, callback, user);
+		} else {
+			struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[type];
+			archive_for_each(manager->archive, callback, user);
+		}
+		return;
 	}
+
+	// Snapshot descriptors under ASSET_CG lock so concurrent CG workers cannot race
+	// with archive traversal and callbacks may safely re-enter asset_manager.
+	struct asset_foreach_snapshot snap = {0};
+	asset_cg_archive_lock(ASSET_CG);
+	if (assets[ASSET_CG]) {
+		if (assets[ASSET_CG]->get_by_name == afa_get_by_name) {
+			struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[ASSET_CG];
+			for (size_t i = 0; i < manager->nr_archives; i++)
+				archive_for_each(&manager->archives[i]->ar, asset_foreach_collect_cb, &snap);
+		} else {
+			struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[ASSET_CG];
+			archive_for_each(manager->archive, asset_foreach_collect_cb, &snap);
+		}
+	}
+	asset_cg_archive_unlock(ASSET_CG);
+
+	for (size_t i = 0; i < snap.count; i++) {
+		callback(snap.items[i], user);
+		archive_free_data(snap.items[i]);
+	}
+	free(snap.items);
 }
 
 static struct asset_manager_afa *afa_create_manager(void)
@@ -1151,6 +1289,7 @@ static void _ald_init(enum asset_type type, struct archive *ar)
 #ifdef ALICEHUB_IOS
 void asset_manager_fini(void)
 {
+	asset_cg_archive_lock(ASSET_CG);
 	for (int type = 0; type < ASSET_TYPE_MAX; type++) {
 		if (!assets[type])
 			continue;
@@ -1179,6 +1318,8 @@ void asset_manager_fini(void)
 	free(save_cg_names);
 	save_cg_names = NULL;
 	nr_save_cg_names = cap_save_cg_names = 0;
+	asset_cg_bump_archive_gen();
+	asset_cg_archive_unlock(ASSET_CG);
 }
 #endif
 
@@ -1362,75 +1503,132 @@ static bool is_valid_fnl_file(const char *path)
 	return ok;
 }
 
-static struct cg *asset_cg_load_base_by_name(const char *name)
+static struct cg *asset_cg_load_base_by_name(struct archive *src_ar, const char *name)
 {
-	if (!assets[ASSET_CG] || !assets[ASSET_CG]->get_by_name)
+	if (!name || !name[0])
 		return NULL;
-	return asset_cg_load_by_name(name, NULL);
+	struct archive_data *data = NULL;
+	bool try_afa_by_name = false;
+	bool src_in_afa = false;
+
+	asset_cg_archive_lock(ASSET_CG);
+	if (assets[ASSET_CG]) {
+		if (assets[ASSET_CG]->get_by_name != NULL) {
+			try_afa_by_name = true;
+			if (src_ar && assets[ASSET_CG]->get_by_name == afa_get_by_name) {
+				struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[ASSET_CG];
+				for (size_t i = 0; i < manager->nr_archives; i++) {
+					if (&manager->archives[i]->ar == src_ar) {
+						src_in_afa = true;
+						break;
+					}
+				}
+			}
+		} else if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
+			struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[ASSET_CG];
+			char base_buf[512];
+			char *basename = archive_basename_buf(name, base_buf, sizeof(base_buf));
+			for (size_t i = 0; i < manager->nr_cg_overlays && !data; i++)
+				data = archive_get_by_basename(&manager->cg_overlays[i]->ar, basename);
+			if (!data && src_ar)
+				data = archive_get_by_basename(src_ar, basename);
+			if (!data && manager->archive && manager->archive != src_ar)
+				data = archive_get_by_basename(manager->archive, basename);
+			if (basename != base_buf)
+				free(basename);
+		}
+	} else if (src_ar) {
+		char base_buf[512];
+		char *basename = archive_basename_buf(name, base_buf, sizeof(base_buf));
+		data = archive_get_by_basename(src_ar, basename);
+		if (basename != base_buf)
+			free(basename);
+	}
+	asset_cg_archive_unlock(ASSET_CG);
+
+	if (try_afa_by_name) {
+		struct cg *cg = asset_cg_load_by_name(name, NULL);
+		if (cg || !src_ar || src_in_afa)
+			return cg;
+		asset_cg_archive_lock(ASSET_CG);
+		char base_buf[512];
+		char *basename = archive_basename_buf(name, base_buf, sizeof(base_buf));
+		data = archive_get_by_basename(src_ar, basename);
+		if (basename != base_buf)
+			free(basename);
+		asset_cg_archive_unlock(ASSET_CG);
+	}
+	if (data) {
+		struct cg *cg = cg_load_data(data);
+		archive_free_data(data);
+		return cg;
+	}
+	return NULL;
 }
 
 static struct cg *asset_cg_load_base_by_id(struct archive *src_ar, int id)
 {
-	if (!assets[ASSET_CG] || !src_ar || id <= 0)
+	if (!src_ar || id <= 0)
 		return NULL;
-	if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
-		struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[ASSET_CG];
-		for (size_t i = 0; i < manager->nr_cg_overlays; i++) {
-			if (!manager->cg_overlays[i]->has_number)
-				continue;
-			struct archive_data *data = archive_get(&manager->cg_overlays[i]->ar, id - 1);
-			if (data) {
-				struct cg *cg = cg_load_data(data);
-				archive_free_data(data);
-				return cg;
+	struct archive_data *data = NULL;
+	char *base_name = NULL;
+	bool handled = false;
+	asset_cg_archive_lock(ASSET_CG);
+	if (assets[ASSET_CG]) {
+		if (assets[ASSET_CG]->get_by_id == ald_get_by_id) {
+			struct asset_manager_ald *manager = (struct asset_manager_ald *)assets[ASSET_CG];
+			for (size_t i = 0; i < manager->nr_cg_overlays && !data; i++) {
+				if (!manager->cg_overlays[i]->has_number)
+					continue;
+				data = archive_get(&manager->cg_overlays[i]->ar, id - 1);
 			}
-		}
-		if (manager->loose_cg_override) {
-			if (src_ar != manager->loose_cg_override) {
-				struct archive_data *data = archive_get(manager->loose_cg_override, id - 1);
-				if (data) {
-					struct cg *cg = cg_load_data(data);
-					archive_free_data(data);
-					return cg;
-				}
-			} else if (!archive_exists(manager->loose_cg_override, id - 1) && manager->archive) {
-				struct archive_data *data = archive_get(manager->archive, id - 1);
-				if (data) {
-					struct cg *cg = cg_load_data(data);
-					archive_free_data(data);
-					return cg;
+			if (!data && manager->loose_cg_override) {
+				if (src_ar != manager->loose_cg_override) {
+					data = archive_get(manager->loose_cg_override, id - 1);
+				} else if (!archive_exists(manager->loose_cg_override, id - 1) && manager->archive) {
+					data = archive_get(manager->archive, id - 1);
 				}
 			}
+		} else if (assets[ASSET_CG]->get_by_id == afa_get_by_id) {
+			struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[ASSET_CG];
+			struct afa_archive *src_afa = NULL;
+			for (size_t i = 0; i < manager->nr_archives; i++) {
+				if (&manager->archives[i]->ar == src_ar) {
+					src_afa = manager->archives[i];
+					break;
+				}
+			}
+			if (src_afa) {
+				if (!src_afa->has_number) {
+					uint32_t idx = (uint32_t)(id - 1);
+					if (idx < src_afa->nr_files && src_afa->files[idx].name) {
+						base_name = xstrdup(src_afa->files[idx].name->text);
+						handled = true;
+					}
+				} else {
+					for (size_t i = 0; i < manager->nr_archives && !data; i++) {
+						if (!manager->archives[i]->has_number)
+							continue;
+						data = archive_get(&manager->archives[i]->ar, id - 1);
+					}
+					handled = true;
+				}
+			}
 		}
-		return NULL;
 	}
-	if (assets[ASSET_CG]->get_by_id == afa_get_by_id) {
-		struct asset_manager_afa *manager = (struct asset_manager_afa *)assets[ASSET_CG];
-		struct afa_archive *src_afa = NULL;
-		for (size_t i = 0; i < manager->nr_archives; i++) {
-			if (&manager->archives[i]->ar == src_ar) {
-				src_afa = manager->archives[i];
-				break;
-			}
-		}
-		if (!src_afa)
-			return NULL;
-		if (!src_afa->has_number) {
-			uint32_t idx = (uint32_t)(id - 1);
-			if (idx >= src_afa->nr_files || !src_afa->files[idx].name)
-				return NULL;
-			return asset_cg_load_base_by_name(src_afa->files[idx].name->text);
-		}
-		for (size_t i = 0; i < manager->nr_archives; i++) {
-			if (!manager->archives[i]->has_number)
-				continue;
-			struct archive_data *data = archive_get(&manager->archives[i]->ar, id - 1);
-			if (data) {
-				struct cg *cg = cg_load_data(data);
-				archive_free_data(data);
-				return cg;
-			}
-		}
+	if (!data && !handled)
+		data = archive_get(src_ar, id - 1);
+	asset_cg_archive_unlock(ASSET_CG);
+
+	if (base_name) {
+		struct cg *cg = asset_cg_load_base_by_name(src_ar, base_name);
+		free(base_name);
+		return cg;
+	}
+	if (data) {
+		struct cg *cg = cg_load_data(data);
+		archive_free_data(data);
+		return cg;
 	}
 	return NULL;
 }
@@ -1674,6 +1872,7 @@ void asset_manager_init(void)
 		free(nspic_dir);
 	}
 
+	asset_cg_bump_archive_gen();
 	cg_set_base_loader_by_name(asset_cg_load_base_by_name);
 	cg_set_base_loader_by_id(asset_cg_load_base_by_id);
 }
