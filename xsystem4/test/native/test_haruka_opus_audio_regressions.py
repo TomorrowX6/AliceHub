@@ -152,7 +152,7 @@ class HarukaOpusAudioRegressionsTest(unittest.TestCase):
 struct config config;
 bool game_rance10, game_dohnadohna, game_evenicle2, game_rance03, game_ixseal,
      game_okusama, game_haharanman, game_night_remaster, game_tsumamigui3_jun,
-     game_tsumamigui3_ntr, game_escalayer_reboot, game_tsumamigui3;
+     game_tsumamigui3_ntr, game_escalayer_reboot, game_tsumamigui3, game_maman;
 
 static uint8_t *g_sfx_buf;
 static size_t g_sfx_len;

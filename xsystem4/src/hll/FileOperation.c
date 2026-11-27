@@ -460,7 +460,9 @@ static bool get_file_list(struct string *folder_name, struct page **out, bool fo
 	union vm_value dim = { .i = nr_names };
 	struct page *page = alloc_array(1, &dim, AIN_ARRAY_STRING, 0, false);
 	for (int i = 0; i < nr_names; i++) {
-		page->values[i].i = heap_alloc_string(names[i]);
+		int slot = page->values[i].i;
+		free_string(heap[slot].s);
+		heap[slot].s = names[i];
 	}
 	free(names);
 
@@ -569,10 +571,30 @@ static struct string *Clipboard_GetText(void)
 	return cstr_to_string(clipboard_buf ? clipboard_buf : "");
 }
 
+static bool Clipboard_GetText_ref(struct string **text)
+{
+	if (!text)
+		return false;
+	if (*text)
+		free_string(*text);
+	*text = cstr_to_string(clipboard_buf ? clipboard_buf : "");
+	return true;
+}
+
+static void *Clipboard_ResolveGetText(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 1 && f->arguments[0].type.data == AIN_REF_STRING
+			&& (f->return_type.data == AIN_VOID || f->return_type.data == AIN_BOOL))
+		return Clipboard_GetText_ref;
+	if (f->nr_arguments == 0 && f->return_type.data == AIN_STRING)
+		return Clipboard_GetText;
+	return NULL;
+}
+
 HLL_LIBRARY(Clipboard,
 	    HLL_EXPORT(_ModuleFini, Clipboard_ModuleFini),
 	    HLL_EXPORT(SetText, Clipboard_SetText),
-	    HLL_EXPORT(GetText, Clipboard_GetText));
+	    HLL_OVERLOAD(GetText, Clipboard_ResolveGetText));
 
 static FILE *text_file_fp = NULL;
 

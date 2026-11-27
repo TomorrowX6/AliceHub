@@ -2004,7 +2004,14 @@ static bool PastelChime2_File_CreateDummy(struct string *file_name)
 	return r;
 }
 
+static void PastelChime2_ModuleFini(void)
+{
+	PastelChime2_Field_ClearPlayerMoveQueue();
+	draw_field_sprite_number = 0;
+}
+
 HLL_LIBRARY(PastelChime2,
+	    HLL_EXPORT(_ModuleFini, PastelChime2_ModuleFini),
 	    HLL_EXPORT(InitPastelChime2, PastelChime2_InitPastelChime2),
 	    HLL_EXPORT(DungeonDataSave, PastelChime2_DungeonDataSave),
 	    HLL_EXPORT(DungeonDataLoad, PastelChime2_DungeonDataLoad),

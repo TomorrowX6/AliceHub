@@ -741,6 +741,8 @@ void parts_common_free_alpha_mask(struct parts_common *common);
 void parts_common_set_alpha_from_cg(struct parts_common *common, const struct cg *cg);
 bool parts_common_check_alpha(struct parts_state *state, int px, int py);
 extern bool parts_message_window_show;
+extern float parts_message_window_mul_color_rate;
+extern float parts_message_window_alpha_rate;
 
 // for save.c
 void parts_list_resort(struct parts *parts);
@@ -809,6 +811,7 @@ void parts_vgauge_set_rate(struct parts *parts, struct parts_gauge *g, float rat
 
 // text.c
 void parts_text_free(struct parts_text *t);
+void parts_text_end_session(void);
 const char *parts_text_append_char(struct parts_text *t, const char *str);
 void parts_text_update_dims(struct parts *parts, struct parts_text *t);
 struct string *parts_text_line_get(struct parts_text_line *line);

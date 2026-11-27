@@ -37,6 +37,9 @@
 #include "xsystem4.h"
 #include "hll.h"
 #include "system4/file.h"
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #ifdef ALICEHUB_IOS
 #include "EnginePlatform.h"
 #endif
@@ -188,12 +191,15 @@ static bool SystemService_UpdateView(void)
 	return true;
 }
 
+#ifndef __ANDROID__
+static char *previous_title = NULL;
+#endif
+
 static void SystemService_ShowWaitMessage(bool show)
 {
 #ifdef __ANDROID__
 	SDL_AndroidSendMessage(0x8001, show);
 #else
-	static char *previous_title;
 	if (!sdl.window) return;
 	if (show && !previous_title) {
 		previous_title = strdup(SDL_GetWindowTitle(sdl.window));
@@ -262,16 +268,41 @@ struct window_settings {
 	bool close_game_confirm;
 };
 
+#if defined(__ANDROID__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
+#define SYSTEMSERVICE_MOBILE_PLATFORM 1
+#endif
+
+static struct window_settings window_settings_defaults(void)
+{
+	return (struct window_settings) {
+		.aspect_ratio = ASPECT_RATIO_NORMAL,
+		.scaling_type = SCALING_NORMAL,
+#ifdef SYSTEMSERVICE_MOBILE_PLATFORM
+		.wait_vsync = true,
+#else
+		.wait_vsync = false,
+#endif
+		.record_pos_size = false,
+#ifdef SYSTEMSERVICE_MOBILE_PLATFORM
+		.minimize_by_full_screen_inactive = false,
+#else
+		.minimize_by_full_screen_inactive = true,
+#endif
+		.back_to_title_confirm = true,
+		.close_game_confirm = true,
+	};
+}
+
 static struct window_settings window_settings = {
 	.aspect_ratio = ASPECT_RATIO_NORMAL,
 	.scaling_type = SCALING_NORMAL,
-#ifdef __ANDROID__
+#ifdef SYSTEMSERVICE_MOBILE_PLATFORM
 	.wait_vsync = true,
 #else
 	.wait_vsync = false,
 #endif
 	.record_pos_size = false,
-#ifdef __ANDROID__
+#ifdef SYSTEMSERVICE_MOBILE_PLATFORM
 	.minimize_by_full_screen_inactive = false,
 #else
 	.minimize_by_full_screen_inactive = true,
@@ -307,14 +338,13 @@ static void save_window_settings(void)
 static void load_window_settings(void)
 {
 	cJSON *root = load_json("WindowSetting.json");
-	if (!root)
-		return;
-	cJSON *v;
-	if ((v = cJSON_GetObjectItem(root, WAIT_VSYNC_JSON_KEY))) {
-		window_settings.wait_vsync = cJSON_IsTrue(v);
-		gfx_set_wait_vsync(window_settings.wait_vsync);
+	if (root) {
+		cJSON *v;
+		if ((v = cJSON_GetObjectItem(root, WAIT_VSYNC_JSON_KEY)))
+			window_settings.wait_vsync = cJSON_IsTrue(v);
+		cJSON_Delete(root);
 	}
-	cJSON_Delete(root);
+	gfx_set_wait_vsync(window_settings.wait_vsync);
 }
 
 static bool SystemService_SetWindowSetting(int type, int value)
@@ -334,7 +364,7 @@ static bool SystemService_SetWindowSetting(int type, int value)
 		window_settings.record_pos_size = value;
 		break;
 	case WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE:
-#ifdef __ANDROID__
+#ifdef SYSTEMSERVICE_MOBILE_PLATFORM
 		(void)value;
 		window_settings.minimize_by_full_screen_inactive = false;
 #else
@@ -371,7 +401,7 @@ static bool SystemService_GetWindowSetting(int type, int *value)
 		*value = window_settings.record_pos_size;
 		break;
 	case WINDOW_SETTINGS_MINIMIZE_BY_FULL_SCREEN_INACTIVE:
-#ifdef __ANDROID__
+#ifdef SYSTEMSERVICE_MOBILE_PLATFORM
 		*value = false;
 #else
 		*value = window_settings.minimize_by_full_screen_inactive;
@@ -648,6 +678,17 @@ static struct string *service_variable_get(struct service_variable **store, stru
 	return string_ref(v && !strcmp(v->key->text, key->text) ? v->value : &EMPTY_STRING);
 }
 
+static void service_variable_clear(struct service_variable **store)
+{
+	while (*store) {
+		struct service_variable *next = (*store)->next;
+		free_string((*store)->key);
+		free_string((*store)->value);
+		free(*store);
+		*store = next;
+	}
+}
+
 static void service_variable_erase(struct service_variable **store, struct string *key)
 {
 	store = service_variable_find(store, key->text);
@@ -835,8 +876,14 @@ static struct string *SystemService_GetOSInfo(void)
 {
 #if defined(__ANDROID__)
 	return cstr_to_string("Android");
+#elif defined(ALICEHUB_IOS) || (defined(__APPLE__) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+	return cstr_to_string("iOS");
+#elif defined(__SWITCH__)
+	return cstr_to_string("Nintendo Switch");
 #elif defined(_WIN32)
 	return cstr_to_string("Windows");
+#elif defined(__APPLE__)
+	return cstr_to_string("macOS");
 #elif defined(__linux__)
 	return cstr_to_string("Linux");
 #else
@@ -844,11 +891,51 @@ static struct string *SystemService_GetOSInfo(void)
 #endif
 }
 
+static bool SystemService_GetOSInfo_ref(struct string **out)
+{
+	if (!out)
+		return false;
+	if (*out)
+		free_string(*out);
+	*out = SystemService_GetOSInfo();
+	return true;
+}
+
+static void *SystemService_ResolveGetOSInfo(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 1 && f->arguments[0].type.data == AIN_REF_STRING
+			&& (f->return_type.data == AIN_VOID || f->return_type.data == AIN_BOOL))
+		return SystemService_GetOSInfo_ref;
+	if (f->nr_arguments == 0 && f->return_type.data == AIN_STRING)
+		return SystemService_GetOSInfo;
+	return NULL;
+}
+
 static struct string *SystemService_GetScreenInfo(void)
 {
 	char buf[64];
 	snprintf(buf, sizeof(buf), "%dx%d", config.view_width, config.view_height);
 	return cstr_to_string(buf);
+}
+
+static bool SystemService_GetScreenInfo_ref(struct string **out)
+{
+	if (!out)
+		return false;
+	if (*out)
+		free_string(*out);
+	*out = SystemService_GetScreenInfo();
+	return true;
+}
+
+static void *SystemService_ResolveGetScreenInfo(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 1 && f->arguments[0].type.data == AIN_REF_STRING
+			&& (f->return_type.data == AIN_VOID || f->return_type.data == AIN_BOOL))
+		return SystemService_GetScreenInfo_ref;
+	if (f->nr_arguments == 0 && f->return_type.data == AIN_STRING)
+		return SystemService_GetScreenInfo;
+	return NULL;
 }
 
 static void SystemService_GetCPUInfo(struct string **vendor, int *sig, int *flag, struct string **brand)
@@ -1054,13 +1141,7 @@ static bool SystemService_Load(struct page **in)
 		LittleEndian_putDW(buf, i * 4, (*in)->values[i].i);
 	int count = LittleEndian_getDW(buf, 0);
 	size_t pos = 4;
-	while (game_variables) {
-		struct service_variable *next = game_variables->next;
-		free_string(game_variables->key);
-		free_string(game_variables->value);
-		free(game_variables);
-		game_variables = next;
-	}
+	service_variable_clear(&game_variables);
 	for (int i = 0; i < count && pos < cap; i++) {
 		const void *knul = memchr(buf + pos, 0, cap - pos);
 		if (!knul) break;
@@ -1081,11 +1162,44 @@ static bool SystemService_Load(struct page **in)
 	return true;
 }
 
+static void SystemService_ModuleFini(void)
+{
+	for (int i = 0; i < nr_backup_save_files; i++)
+		free(backup_save_files[i]);
+	free(backup_save_files);
+	backup_save_files = NULL;
+	nr_backup_save_files = 0;
+#ifndef __ANDROID__
+	if (previous_title) {
+		if (sdl.window)
+			SDL_SetWindowTitle(sdl.window, previous_title);
+		free(previous_title);
+		previous_title = NULL;
+	}
+#endif
+	window_settings = window_settings_defaults();
+	hide_mouse_cursor_by_game = false;
+	mouse_cursor_config[0] = 0;
+	mouse_cursor_config[1] = 0;
+	mouse_cursor_config[2] = 3000;
+	view_resizable_mode = false;
+	show_mipmap_level = false;
+	resizable_user_control = false;
+}
+
+void system_service_end_session(void)
+{
+	service_variable_clear(&system_variables);
+	service_variable_clear(&game_variables);
+	SystemService_ModuleFini();
+}
+
 HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(_PreLink, SystemService_PreLink),
 	    SERVICE_VARIABLE_EXPORTS(SystemVariable),
 	    SERVICE_VARIABLE_EXPORTS(GameVariable),
 	    HLL_EXPORT(_ModuleInit, SystemService_ModuleInit),
+	    HLL_EXPORT(_ModuleFini, SystemService_ModuleFini),
 	    HLL_EXPORT(GetMixerNumof, mixer_get_numof),
 	    HLL_EXPORT(GetMixerName, SystemService_GetMixerName),
 	    HLL_EXPORT(GetMixerVolume, mixer_get_volume),
@@ -1142,8 +1256,8 @@ HLL_LIBRARY(SystemService,
 	    HLL_EXPORT(RenderToSurfaceImageByScale, SystemService_RenderToSurfaceImageByScale),
 	    HLL_EXPORT(GetCPUInfo, SystemService_GetCPUInfo),
 	    HLL_EXPORT(GetMemoryInfo, SystemService_GetMemoryInfo),
-	    HLL_EXPORT(GetOSInfo, SystemService_GetOSInfo),
-	    HLL_EXPORT(GetScreenInfo, SystemService_GetScreenInfo),
+	    HLL_OVERLOAD(GetOSInfo, SystemService_ResolveGetOSInfo),
+	    HLL_OVERLOAD(GetScreenInfo, SystemService_ResolveGetScreenInfo),
 	    HLL_EXPORT(Debug_GetUseMemorySize, SystemService_Debug_GetUseMemorySize),
 	    HLL_EXPORT(Debug_GetUseVideoMemorySize, SystemService_Debug_GetUseVideoMemorySize),
 	    HLL_EXPORT(Debug_SetShowMipmapLevel, SystemService_Debug_SetShowMipmapLevel),

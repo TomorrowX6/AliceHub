@@ -185,7 +185,12 @@ static void mainex_init(void)
 		ex_free(readers[1]);
 		readers[1] = NULL;
 	}
-	if (!config.ex_path || !(readers[1] = ex_read_file(config.ex_path)))
+	if (!config.ex_path) {
+		WARNING("No .ex file found; initializing empty MainEXFile");
+		readers[1] = xcalloc(1, sizeof(struct ex));
+		return;
+	}
+	if (!(readers[1] = ex_read_file(config.ex_path)))
 		ERROR("Failed to load main EX file: %s", config.ex_path);
 }
 

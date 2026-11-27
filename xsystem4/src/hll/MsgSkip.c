@@ -250,6 +250,8 @@ static void MsgSkip_ModuleFini(void)
 	free(save_path);
 	save_path = NULL;
 	free_adv_flags();
+	enabled = false;
+	state = 0;
 }
 
 HLL_LIBRARY(MsgSkip,

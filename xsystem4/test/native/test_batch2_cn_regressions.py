@@ -156,6 +156,8 @@ int main(void) {{
     // 4. Haharanman: v14 + "83h2mjr" -> 1280x720 + version token
     struct ain *haha = ain_new(14, 0);
     ain_add_string(haha, "83h2mjr");
+    ain_add_global(haha, "g_cGameParam");
+    ain_add_global(haha, "g_cHeroParam");
     config.game_name = strdup("Haharanman");
     config.view_width = 800;
     config.view_height = 600;
@@ -246,6 +248,7 @@ int main(void) {{
 struct config config;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
+bool game_maman = false;
 bool game_evenicle2 = false;
 bool game_rance03 = false;
 bool game_ixseal = false;

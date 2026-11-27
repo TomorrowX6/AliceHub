@@ -370,23 +370,24 @@ static unsigned scene_first = 0;
 static unsigned scene_last = 0;
 
 
+static int cached_scene_struct_no = -1;
+
 static int scene_struct_no(void)
 {
-	static int no = -1;
-	if (no < 0) {
+	if (cached_scene_struct_no < 0) {
 		// Game scripts compiled in Shift-JIS keep struct names in Shift-JIS even on GBK ports.
 		char *s = utf2cjk("画面保管_t", 0, false);
-		no = ain_get_struct(ain, s);
+		cached_scene_struct_no = ain_get_struct(ain, s);
 		free(s);
-		if (no < 0) {
+		if (cached_scene_struct_no < 0) {
 			s = utf2sjis("画面保管_t", 0);
-			no = ain_get_struct(ain, s);
+			cached_scene_struct_no = ain_get_struct(ain, s);
 			free(s);
 		}
-		if (no < 0)
+		if (cached_scene_struct_no < 0)
 			VM_ERROR("Missing definition for struct 画面保管_t");
 	}
-	return no;
+	return cached_scene_struct_no;
 }
 
 bool ADVSceneKeeper_AddADVScene(struct page **page)
@@ -544,6 +545,9 @@ static void AnteaterADVEngine_ModuleFini(void)
 {
 	ADVLogList_Clear();
 	ADVSceneKeeper_Clear();
+	cached_scene_struct_no = -1;
+	enabled = true;
+	adv_string_voices = false;
 }
 
 static void AnteaterADVEngine_ADVLogList_AddText_val(struct string *text)

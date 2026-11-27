@@ -750,7 +750,25 @@ static int Gpx2Plus_EffectCopy(int effect, int wx, int wy,
 	return 1;
 }
 
+static void Gpx2Plus_ModuleFini(void)
+{
+	if (surfaces) {
+		for (int i = 0; i < nr_surfaces; i++) {
+			if (surfaces[i])
+				free_surface(surfaces[i]);
+		}
+		free(surfaces);
+		surfaces = NULL;
+	}
+	nr_surfaces = 0;
+	free(msgbuf.text);
+	msgbuf.text = NULL;
+	msgbuf.len = 0;
+	msgbuf.cap = 0;
+}
+
 HLL_LIBRARY(Gpx2Plus,
+			HLL_EXPORT(_ModuleFini, Gpx2Plus_ModuleFini),
 			HLL_EXPORT(Init, Gpx2Plus_Init),
 			HLL_EXPORT(Create, Gpx2Plus_Create),
 			HLL_EXPORT(CreatePixelOnly, Gpx2Plus_CreatePixelOnly),

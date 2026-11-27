@@ -51,6 +51,35 @@ static struct {
 } parts_shader;
 
 uint64_t parts_render_gen = 1;
+float parts_message_window_mul_color_rate = 1.0f;
+float parts_message_window_alpha_rate = 1.0f;
+
+static bool parts_has_message_window_effect_link(struct parts *parts)
+{
+	for (struct parts *a = parts; a; a = a->parent) {
+		if (a->message_window_effect_link)
+			return true;
+	}
+	return false;
+}
+
+static uint8_t scale_u8_rate(uint8_t value, float rate)
+{
+	long scaled = lroundf((float)value * rate);
+	if (scaled < 0)
+		return 0;
+	if (scaled > 255)
+		return 255;
+	return (uint8_t)scaled;
+}
+
+static void apply_message_window_effect(struct parts_params *params)
+{
+	params->alpha = scale_u8_rate(params->alpha, parts_message_window_alpha_rate);
+	params->multiply_color.r = scale_u8_rate(params->multiply_color.r, parts_message_window_mul_color_rate);
+	params->multiply_color.g = scale_u8_rate(params->multiply_color.g, parts_message_window_mul_color_rate);
+	params->multiply_color.b = scale_u8_rate(params->multiply_color.b, parts_message_window_mul_color_rate);
+}
 
 static bool parts_pass_active = false;
 static GLuint pass_tex0 = 0;
@@ -1050,6 +1079,9 @@ bool parts_sprite_is_fullscreen_opaque(struct sprite *sp)
 		return false;
 	if (parts->global.alpha < 255 || parts->draw_filter != PARTS_DRAW_FILTER_NORMAL)
 		return false;
+	if ((parts->message_box || parts_has_message_window_effect_link(parts)) &&
+			parts_message_window_alpha_rate < 1.0f)
+		return false;
 	if (parts_get_effective_alpha_clipper(parts) > 0)
 		return false;
 
@@ -1279,31 +1311,48 @@ void parts_render(struct parts *parts)
 {
 	if (parts->textures_suspended || !parts_is_visible(parts))
 		return;
-	if (parts->scrollbar) {
-		parts_render_scrollbar(parts);
-		return;
-	}
-	struct parts_state *state = parts_display_state(parts);
 	if (parts->message_box) {
+		struct parts_state *state = parts_display_state(parts);
 		struct parts_message_window *w = parts->message_box;
-		struct parts p = *parts;
+		struct parts_params saved_global = parts->global;
 		if (!w->active) {
-			p.global.multiply_color.r = p.global.multiply_color.r * min(255, max(0, w->inactive_color[0])) / 255;
-			p.global.multiply_color.g = p.global.multiply_color.g * min(255, max(0, w->inactive_color[1])) / 255;
-			p.global.multiply_color.b = p.global.multiply_color.b * min(255, max(0, w->inactive_color[2])) / 255;
+			parts->global.multiply_color.r = parts->global.multiply_color.r * min(255, max(0, w->inactive_color[0])) / 255;
+			parts->global.multiply_color.g = parts->global.multiply_color.g * min(255, max(0, w->inactive_color[1])) / 255;
+			parts->global.multiply_color.b = parts->global.multiply_color.b * min(255, max(0, w->inactive_color[2])) / 255;
 		}
-		if (w->key_z < 0) parts_render_message_key(&p);
-		parts_render_state(&p, state);
+		if (w->key_z < 0) parts_render_message_key(parts);
+		struct parts_params fg_global = parts->global;
+		apply_message_window_effect(&parts->global);
+		if (parts->global.alpha > 0)
+			parts_render_state(parts, state);
+		parts->global = fg_global;
 		struct parts_text label = w->label.text;
 		int mode = w->text_origin >= 1 && w->text_origin <= 9 ? w->text_origin - 1 : 0;
 		label.common.origin_offset.x = state->common.origin_offset.x + w->text_area.x
 			+ (w->text_area.w - label.common.w) * (mode % 3) / 2;
 		label.common.origin_offset.y = state->common.origin_offset.y + w->text_area.y
 			+ (w->text_area.h - label.common.h) * (mode / 3) / 2;
-		parts_render_text(&p, &label, w);
-		if (w->key_z >= 0) parts_render_message_key(&p);
+		parts_render_text(parts, &label, w);
+		if (w->key_z >= 0) parts_render_message_key(parts);
+		parts->global = saved_global;
 		return;
 	}
+	bool effect_link = parts_has_message_window_effect_link(parts);
+	struct parts_params saved_global = parts->global;
+	if (effect_link) {
+		apply_message_window_effect(&parts->global);
+		if (parts->global.alpha == 0) {
+			parts->global = saved_global;
+			return;
+		}
+	}
+	if (parts->scrollbar) {
+		parts_render_scrollbar(parts);
+		if (effect_link)
+			parts->global = saved_global;
+		return;
+	}
+	struct parts_state *state = parts_display_state(parts);
 	struct parts_state checkbox_state;
 	struct parts_common *label_box = &state->common;
 	int label_width = state->common.w, label_height = state->common.h;
@@ -1344,6 +1393,8 @@ void parts_render(struct parts *parts)
 			parts_render_text(parts, &label, NULL);
 		}
 	}
+	if (effect_link)
+		parts->global = saved_global;
 }
 
 void parts_render_family(struct parts *parts)

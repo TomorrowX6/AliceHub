@@ -350,8 +350,8 @@ static void apply_daibanchou_hacks(struct ain *ain)
 
 static bool ain_has_gbk_string(struct ain *ain, const char *needle)
 {
-	for (int i = 0; i < ain->nr_strings && i < 10000; i++) {
-		if (strstr(ain->strings[i]->text, needle))
+	for (int i = 0; i < ain->nr_strings; i++) {
+		if (ain->strings[i] && strstr(ain->strings[i]->text, needle))
 			return true;
 	}
 	return false;
@@ -359,8 +359,8 @@ static bool ain_has_gbk_string(struct ain *ain, const char *needle)
 
 static bool ain_has_gbk_r03_strings(struct ain *ain)
 {
-	for (int i = 0; i < ain->nr_strings && i < 10000; i++) {
-		if (!strncmp(ain->strings[i]->text, "\xc3\xd4\xb9\xac/", 5))
+	for (int i = 0; i < ain->nr_strings; i++) {
+		if (ain->strings[i] && !strncmp(ain->strings[i]->text, "\xc3\xd4\xb9\xac/", 5))
 			return true;
 	}
 	return false;
@@ -830,7 +830,8 @@ static bool config_game_name_has_gbk_marker(const char *name)
 		|| strstr(name, "\xcc\xab\xcc\xab")
 		|| strstr(name, "\xd2\xec\xbf\xd5\xbf\xdf")
 		|| strstr(name, "\xd0\xb0\xd2\xb9")
-		|| strstr(name, "\xb6\xb7\xc9\xf1");
+		|| strstr(name, "\xb6\xb7\xc9\xf1")
+		|| strstr(name, "\xb7\xdb\xb2\xca\xc1\xe5\xd2\xf4");
 }
 
 static bool has_ntr_marker(const char *name)
@@ -1278,6 +1279,8 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_daibanchou_en = false;
 	game_daiteikoku = false;
 	game_haruurare = false;
+	game_rance01 = false;
+	game_rance02 = false;
 	game_rance02_mg = false;
 	game_rance6 = false;
 	game_rance6_mg = false;
@@ -1290,12 +1293,14 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_dohnadohna = false;
 	game_evenicle = false;
 	game_evenicle_rance = false;
+	game_evenicle_rance_cn = false;
 	game_evenicle_gaiden = false;
 	game_bladebriders = false;
 	game_evenicle2 = false;
 	game_evenicle2_rance = false;
 	game_haharanman = false;
 	game_okusama = false;
+	game_okusama_ntr = false;
 	game_night_remaster = false;
 	game_oyakorankan = false;
 	game_toushin3 = false;
@@ -1325,6 +1330,8 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_struct(ain, "CBigMap") >= 0
 		&& ain_has_gbk_string(ain, "aa6sdd5432");
 	game_bladebriders = ain->version == 6
+		&& ain_get_struct(ain, "CPolygonUnitObject") >= 0
+		&& ain_get_global(ain, "g_GrobalData") >= 0
 		&& ain_has_gbk_string(ain, "wf:-3");
 	game_evenicle = ain->version == 6
 		&& !game_evenicle_rance
@@ -1336,6 +1343,9 @@ void apply_game_specific_hacks(struct ain *ain)
 	game_evenicle2_rance = game_evenicle2
 		&& ain_has_gbk_string(ain, "th74s65a");
 	game_haharanman = ain->version == 14
+		&& (ain_get_function(ain, "AdvLayer::MessageWindow::nameplate::CText@Text::get") >= 0
+			|| (ain_get_global(ain, "g_cGameParam") >= 0
+				&& ain_get_global(ain, "g_cHeroParam") >= 0))
 		&& ain_has_gbk_string(ain, "83h2mjr");
 	game_okusama = ain->version == 14
 		&& ain_get_function(ain, "AdvGauge@UpdatePregnancy") >= 0
@@ -1344,6 +1354,8 @@ void apply_game_specific_hacks(struct ain *ain)
 				&& ain_get_global(ain, "g_resources") >= 0));
 	game_okusama_ntr = game_okusama && (
 		ain_get_function(ain, "\xa3\xc5\xa3\xd6\xa3\xaf\xa3\xce\xa3\xd4\xa3\xd2\xa3\xaf\xcd\xd1\xb4\xa6\xa3\xaf\xa3\xb1") >= 0
+		|| ain_get_function(ain, "\x82\x64\x82\x75\x81\x5e\x82\x6d\x82\x73\x82\x71\x81\x5e\x92\x45\x8f\x88\x81\x5e\x82\x50") >= 0
+		|| ain_get_function(ain, "\xa3\xc5\xa3\xd6\xa3\xaf\xa3\xce\xa3\xd4\xa3\xd2\xa3\xaf\xcd\xd1\x84\x49\xa3\xaf\xa3\xb1") >= 0
 		|| has_ntr_marker(config.ain_filename)
 		|| has_ntr_marker(config.game_name));
 	game_night_remaster = ain->version == 14
@@ -1359,9 +1371,12 @@ void apply_game_specific_hacks(struct ain *ain)
 		&& ain_get_struct(ain, "DungeonLine") >= 0
 		&& ain_get_global(ain, "g_chipDepository") >= 0;
 	game_rance02 = ain->version == 6
-		&& ain_get_struct(ain, "\x83\x4c\x83\x83\x83\x89\x83\x66\x81\x5b\x83\x5e") >= 0
-		&& ain_get_global(ain, "\x90\xa2\x90\x46\x8a\xe0") >= 0
-		&& ain_get_global(ain, "\xb6\xd9\xcf") >= 0;
+		&& (ain_get_struct(ain, "\x83\x4c\x83\x83\x83\x89\x83\x66\x81\x5b\x83\x5e") >= 0
+			|| ain_get_struct(ain, "\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9\x60\xa5\xbf") >= 0)
+		&& (ain_get_global(ain, "\x90\xa2\x90\x46\x8a\xe0") >= 0
+			|| ain_get_global(ain, "\xca\xc0\xc9\xab\xb0\xa9") >= 0)
+		&& (ain_get_global(ain, "\xb6\xd9\xcf") >= 0
+			|| ain_get_global(ain, "\xa5\xab\xa5\xeb\xa5\xde") >= 0);
 	game_rance03 = ain->version == 6
 		&& ain_get_struct(ain, "CMessageTextView") >= 0
 		&& ain_get_global(ain, "g_playerCommonParam") >= 0
@@ -1523,7 +1538,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		game_daibanchou = true;
 		apply_daibanchou_hacks(ain);
 	} else if (!strcmp(game_name, "Rance 02")) {
-		apply_rance02_hacks(ain);
+		game_rance02 = true;
 	} else if (game_rance6 || (ain_get_struct(ain, "CDungeon") >= 0 && ain_get_global(ain, "gc") >= 0
 			&& (!strncmp(game_name, "Rance6", 6)
 				|| !strcmp(game_name, "ランス６") || !strcmp(game_name, "ランス6")
@@ -1533,7 +1548,7 @@ void apply_game_specific_hacks(struct ain *ain)
 		apply_rance6_hacks(ain);
 	} else if (!strcmp(game_name, "ランス・クエスト") || !strcmp(game_name, "兰斯8")) {
 		game_rance8 = true;
-	} else if (!strcmp(game_name, "Rance Quest")) {
+	} else if (!strncmp(game_name, "Rance Quest", 11)) {
 		game_rance8 = true;
 		game_rance8_mg = true;
 	} else if (!strcmp(game_name, "ＤＵＮＧＥＯＮＳ＆ＤＯＬＬＳ")) {
@@ -1546,11 +1561,22 @@ void apply_game_specific_hacks(struct ain *ain)
 	}
 	free(game_name);
 
+	if (game_rance02 && !game_rance02_mg && ain_get_function(ain, "_CalculateWidth") > 0) {
+		apply_rance02_hacks(ain);
+	}
+
+	if (!game_dungeons_and_dolls && ain_get_library(ain, "DrawDungeon2") >= 0) {
+		game_dungeons_and_dolls = true;
+	}
 	if (!game_rance8 && !game_dungeons_and_dolls && ain->version == 6
 			&& ain_get_library(ain, "TapirEngine") >= 0
 			&& ain_get_library(ain, "MonsterInfo") >= 0
 			&& ain_get_library(ain, "GoatGUIEngine") >= 0) {
 		game_rance8 = true;
+	}
+	if (game_rance8 && !game_rance8_mg && !sys4_text_is_gbk
+			&& text_enc == AIN_ENC_UNKNOWN && ain->nr_messages >= 64) {
+		game_rance8_mg = true;
 	}
 	if (!game_rance9 && ain->version == 6
 			&& ain_get_library(ain, "SealEngine") >= 0
@@ -1583,9 +1609,13 @@ void apply_game_specific_hacks(struct ain *ain)
 		game_rance7_mg = true;
 	game_sengokurance = game_rance7_mg || (
 		ain->version == 5 &&
-		ain_get_struct(ain, "s\x83L\x83\x83\x83\x89") >= 0 &&
+		(ain_get_struct(ain, "s\x83L\x83\x83\x83\x89") >= 0
+			|| ain_get_struct(ain, "s\xa5\xad\xa5\xe3\xa5\xe9") >= 0) &&
 		ain_get_global(ain, "g_sBattle") >= 0 &&
-		ain_get_global(ain, "\x81\x9f\x8b\xe0") >= 0
+		(ain_get_global(ain, "\x81\x9f\x8b\xe0") >= 0
+			|| ain_get_global(ain, "\xa1\xf4\xbd\xf0") >= 0
+			|| ain_get_global(ain, "\x81\x9e\x8b\xe0") >= 0
+			|| ain_get_global(ain, "\xa1\xf3\xbd\xf0") >= 0)
 	);
 
 	// Confirm3 DVD authentication in Shaman's Sanctuary computes expected protect-file

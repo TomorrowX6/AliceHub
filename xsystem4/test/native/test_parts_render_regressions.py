@@ -875,7 +875,7 @@ typedef unsigned short GLushort;
 typedef uint8_t GLboolean;
 enum {
     GL_ARRAY_BUFFER = 1, GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW, GL_FLOAT, GL_FALSE,
-    GL_UNSIGNED_SHORT, GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP,
+    GL_UNSIGNED_SHORT, GL_TEXTURE0, GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP,
     GL_TEXTURE_CUBE_MAP_POSITIVE_Z, GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
     GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, GL_TEXTURE_CUBE_MAP_POSITIVE_X,
     GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
@@ -885,17 +885,24 @@ enum {
     GL_RENDERBUFFER, GL_DEPTH_COMPONENT16,
     DTX_SKYBOX = 5, DTX_NR_CELL_TEXTURE_TYPES = 7, DRAW_FIELD = 3, DRAW_DUNGEON_14 = 2
 };
+typedef struct { uint8_t r, g, b, a; } SDL_Color;
 typedef struct texture { GLuint handle; int w, h; bool opaque; uint32_t ctx_gen; } Texture;
 struct shader { GLuint program, world_transform, view_transform, texture; GLint vertex_pos, vertex_uv; void (*prepare)(void*, void*); };
 struct dtx { int nr_columns; };
 struct polyobj { int nr_textures; };
-struct dgn { int size_y; };
-struct cg { struct { int w, h; bool has_alpha; } metrics; uint8_t pixels[4]; };
+struct dgn_cell { int walked; };
+struct dgn { uint32_t size_x, size_y, size_z; struct dgn_cell *cells; };
+static struct dgn_cell *dgn_cell_at(struct dgn *d, uint32_t x, uint32_t y, uint32_t z) {
+    return d->cells ? &d->cells[(y * d->size_z + z) * d->size_x + x] : NULL;
+}
+struct cg { struct { int w, h; bool has_alpha; } metrics; uint8_t *pixels; };
+static uint8_t dummy_cg_pixels[4] = { 255, 255, 255, 255 };
 struct dungeon_map { Texture *textures; int nr_textures; };
 struct vertex { float x, y, z, u, v; };
 static GLuint next_id = 1000;
 static int gl_delete_calls = 0;
 static int map_init_calls = 0;
+static int map_reveal_calls = 0;
 static bool remap_succeeds = true;
 static void glGenVertexArrays(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
 static void glGenBuffers(int n, GLuint *p) { for (int i = 0; i < n; i++) p[i] = ++next_id; }
@@ -906,6 +913,7 @@ static void glBindBuffer(GLenum t, GLuint b) { (void)t; (void)b; }
 static void glBufferData(GLenum t, GLsizeiptr s, const void *d, GLenum u) { (void)t; (void)s; (void)d; (void)u; }
 static void glEnableVertexAttribArray(GLuint i) { (void)i; }
 static void glVertexAttribPointer(GLuint i, GLint s, GLenum t, GLboolean n, GLsizei st, const void *p) { (void)i; (void)s; (void)t; (void)n; (void)st; (void)p; }
+static void glActiveTexture(GLenum u) { (void)u; }
 static int last_skybox_indices[6] = { -1, -1, -1, -1, -1, -1 };
 static int skybox_load_pos = 0;
 static bool in_cubemap_bind = false;
@@ -933,9 +941,16 @@ static struct cg *dtx_create_cg(struct dtx *d, int type, int idx) {
     if (type == DTX_SKYBOX && in_cubemap_bind) {
         last_skybox_indices[skybox_load_pos % 6] = idx;
         skybox_load_pos++;
-        return calloc(1, sizeof(struct cg));
+        struct cg *cg = calloc(1, sizeof(struct cg));
+        cg->metrics.w = 1; cg->metrics.h = 1; cg->pixels = dummy_cg_pixels;
+        return cg;
     }
-    return idx == 0 ? calloc(1, sizeof(struct cg)) : NULL;
+    if (idx == 0) {
+        struct cg *cg = calloc(1, sizeof(struct cg));
+        cg->metrics.w = 1; cg->metrics.h = 1; cg->pixels = dummy_cg_pixels;
+        return cg;
+    }
+    return NULL;
 }
 static void cg_free(struct cg *cg) { free(cg); }
 static struct polyobj *polyobj_load(const char *p) { (void)p; struct polyobj *po = calloc(1, sizeof(*po)); po->nr_textures = 1; return po; }
@@ -945,7 +960,7 @@ static bool gfx_remap_texture(Texture *t) {
     if (!remap_succeeds) { t->handle = 0; return false; }
     t->handle = ++next_id; return true;
 }
-static void gfx_init_texture_blank(Texture *t, int w, int h) { t->handle = ++next_id; t->w = w; t->h = h; }
+static void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color c) { (void)c; t->handle = ++next_id; t->w = w; t->h = h; }
 static GLuint *load_event_textures(int *n) { *n = 2; GLuint *tx = xcalloc(2, sizeof(GLuint)); glGenTextures(2, tx); return tx; }
 
 struct skybox { struct shader shader; GLint proj_transform; GLuint vao, attr_buffer, index_buffer, texture; int nr_indices; int texture_set; };
@@ -976,6 +991,7 @@ struct dungeon_context {
     struct dungeon_renderer *renderer; Texture texture; GLuint depth_buffer;
 };
 static void dungeon_map_init(struct dungeon_context *ctx) { map_init_calls++; ctx->map->textures[0].handle = ++next_id; }
+static void dungeon_map_reveal(struct dungeon_context *ctx, int x, int y, int z, bool redraw) { (void)ctx; (void)x; (void)y; (void)z; (void)redraw; map_reveal_calls++; }
 static void prepare_raster_shader(void *j, void *d) { (void)j; (void)d; }
 static void load_raster_shader(struct raster_shader *s) { gfx_load_shader(&s->s, "", ""); (void)prepare_raster_shader; }
 static void init_material(struct material *m, struct cg *cg) { (void)cg; glGenTextures(1, &m->texture); }
@@ -1353,7 +1369,7 @@ int main(void) {
 
     def test_save_flags_have_version_gate(self):
         save = (ROOT / 'src/parts/save.c').read_text()
-        self.assertIn('#define CURRENT_SAVE_VERSION 35', save)
+        self.assertIn('#define CURRENT_SAVE_VERSION 36', save)
         for axis in ('lr', 'tb'):
             self.assertIn(f'iarray_write(w, parts->reverse_{axis});', save)
             self.assertIn(f'parts->reverse_{axis} = version >= 32 ? !!iarray_read(r) : false;', save)

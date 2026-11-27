@@ -31,7 +31,7 @@
 #include "sprite.h"
 #include "../hll/iarray.h"
 
-#define CURRENT_SAVE_VERSION 35
+#define CURRENT_SAVE_VERSION 36
 #define MIN_SINGLE_PART_SAVE_VERSION 32
 
 static struct parts_context *back_scene;
@@ -1448,6 +1448,9 @@ static void save_parts(struct iarray_writer *w, struct parts *parts)
 	iarray_write(w, parts->reverse_tb);
 	iarray_write(w, parts->text_box_read_only);
 	iarray_write(w, parts->text_box_max_length);
+#if CURRENT_SAVE_VERSION >= 36
+	iarray_write(w, parts->message_window_effect_link);
+#endif
 	motion_count_pos = iarray_writer_pos(w);
 	iarray_write(w, 0); // size of motion list
 
@@ -1609,6 +1612,7 @@ static void load_parts(struct iarray_reader *r, int version, int target_no,
 	parts->reverse_tb = version >= 32 ? !!iarray_read(r) : false;
 	parts->text_box_read_only = version >= 33 ? !!iarray_read(r) : false;
 	parts->text_box_max_length = version >= 33 ? iarray_read(r) : 0;
+	parts->message_window_effect_link = version >= 36 ? !!iarray_read(r) : false;
 	int motion_count = iarray_read(r);
 	for (int i = 0; i < motion_count; i++) {
 		struct parts_motion *motion = load_parts_motion(r);

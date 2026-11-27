@@ -1836,6 +1836,9 @@ bool PE_Init(void)
 	sact_init(16, CHIPMUNK_SPRITE_ENGINE);
 	parts_table = ht_create(16384);
 	parts_current->next_free_no = 1000010000;
+	parts_message_window_show = true;
+	parts_message_window_mul_color_rate = 1.0f;
+	parts_message_window_alpha_rate = 1.0f;
 	parts_render_init();
 	parts_debug_init();
 	ctrl_stack_init();
@@ -1859,6 +1862,9 @@ static void parts_clear(void)
 void PE_Reset(void)
 {
 	parts_clear();
+	parts_message_window_show = true;
+	parts_message_window_mul_color_rate = 1.0f;
+	parts_message_window_alpha_rate = 1.0f;
 	ctrl_stack_init();
 	sact_ModuleFini();
 }
@@ -1866,15 +1872,19 @@ void PE_Reset(void)
 #ifdef ALICEHUB_IOS
 void parts_end_session(void)
 {
-	if (!parts_engine_initialized)
-		return;
-	parts_clear();
-	ht_free_int(parts_table);
-	parts_table = NULL;
-	root_pos = (Point){0};
-	parts_multi_controller = parts_v2 = false;
-	parts_hierarchical_matrix = true;
-	parts_engine_initialized = false;
+	if (parts_engine_initialized) {
+		parts_clear();
+		ht_free_int(parts_table);
+		parts_table = NULL;
+		root_pos = (Point){0};
+		parts_multi_controller = parts_v2 = false;
+		parts_hierarchical_matrix = true;
+		parts_engine_initialized = false;
+	}
+	parts_message_window_show = true;
+	parts_message_window_mul_color_rate = 1.0f;
+	parts_message_window_alpha_rate = 1.0f;
+	parts_text_end_session();
 }
 #endif
 
@@ -2049,6 +2059,37 @@ static void parts_prewarm_offscreen_cproc(void)
 bool parts_message_window_show = true;
 bool parts_frame_did_heavy_load = false;
 
+static float clamp_message_window_rate(float rate)
+{
+	if (!isfinite(rate))
+		return 1.0f;
+	if (rate < 0.0f)
+		return 0.0f;
+	if (rate > 1.0f)
+		return 1.0f;
+	return rate;
+}
+
+void PE_SetMessageWindowShow(bool show)
+{
+	if (parts_message_window_show != show) {
+		parts_message_window_show = show;
+		parts_engine_dirty();
+	}
+}
+
+void PE_SetMessageWindowEffectRates(float multiply_rate, float alpha_rate)
+{
+	float mul = clamp_message_window_rate(multiply_rate);
+	float alpha = clamp_message_window_rate(alpha_rate);
+	if (parts_message_window_mul_color_rate != mul ||
+			parts_message_window_alpha_rate != alpha) {
+		parts_message_window_mul_color_rate = mul;
+		parts_message_window_alpha_rate = alpha;
+		parts_engine_dirty();
+	}
+}
+
 void PE_Update(int passed_time, bool message_window_show)
 {
 	PE_UpdateWithTimeScale(passed_time, passed_time, message_window_show);
@@ -2056,7 +2097,7 @@ void PE_Update(int passed_time, bool message_window_show)
 
 void PE_UpdateWithTimeScale(int passed_time, int scaled_time, bool message_window_show)
 {
-	parts_message_window_show = message_window_show;
+	PE_SetMessageWindowShow(message_window_show);
 	PE_UpdateComponent(passed_time);
 	audio_update();
 	parts_update_animation(passed_time, scaled_time);
@@ -2074,7 +2115,7 @@ void PE_UpdateWithTimeScale(int passed_time, int scaled_time, bool message_windo
 
 void PE_UpdateParts(int passed_time, possibly_unused bool is_skip, bool message_window_show)
 {
-	parts_message_window_show = message_window_show;
+	PE_SetMessageWindowShow(message_window_show);
 	audio_update();
 	parts_update_animation(passed_time, passed_time);
 	parts_render_update();
@@ -2944,6 +2985,18 @@ struct string *PE_GetComment(int parts_no)
 
 void PE_ReleaseAllParts(void)
 {
+	parts_release_all();
+}
+
+void PE_ReleaseAll_list(struct page **erase_number_list)
+{
+	if (erase_number_list) {
+		struct parts *parts;
+		PARTS_LIST_FOREACH(parts) {
+			*erase_number_list = array_pushback(*erase_number_list,
+					(union vm_value){.i = parts->no}, AIN_ARRAY_INT, -1);
+		}
+	}
 	parts_release_all();
 }
 

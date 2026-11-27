@@ -15,6 +15,7 @@
  */
 
 #include <math.h>
+#include <string.h>
 
 #include "gfx/font.h"
 #include "sact.h"
@@ -144,7 +145,16 @@ static int NewFont_MeasureChar(int c1, int c2)
 // XXX: not used
 //static void NewFont_MultiplyAlphaByOriginalImageAlpha(int dst_sp, int dst_x, int dst_y, int src_sp, int src_x, int src_y, int w, int h)
 
+static void NewFont_ModuleFini(void)
+{
+	NewFont_cursor = (Point){ 0, 0 };
+	NewFont_y_pad = 0;
+	memset(&NewFont_metrics, 0, sizeof(NewFont_metrics));
+	memset(&NewFont_shadow_metrics, 0, sizeof(NewFont_shadow_metrics));
+}
+
 HLL_LIBRARY(NewFont,
+	HLL_EXPORT(_ModuleFini, NewFont_ModuleFini),
 	HLL_TODO_EXPORT(AlphaComposite, NewFont_AlphaComposite),
 	HLL_EXPORT(SetTextMetrics, NewFont_SetTextMetrics),
 	HLL_EXPORT(SetTextX, NewFont_SetTextX),

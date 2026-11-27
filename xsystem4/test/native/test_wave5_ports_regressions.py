@@ -106,6 +106,8 @@ _Noreturn void _vm_error(const char *fmt, ...) {{ abort(); }}
 int main(void) {{
     struct ain *bb = ain_new(6, 0);
     ain_add_string(bb, "wf:-3");
+    ain_add_struct(bb, "CPolygonUnitObject");
+    ain_add_global(bb, "g_GrobalData");
     config.game_name = strdup("BladeBriders");
     apply_game_specific_hacks(bb);
     assert(game_bladebriders == true);

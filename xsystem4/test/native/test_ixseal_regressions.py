@@ -571,6 +571,7 @@ int main(void) {
 struct config config;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
+bool game_maman = false;
 bool game_evenicle2 = false;
 bool game_rance03 = false;
 bool game_ixseal = true;
@@ -1045,6 +1046,7 @@ void PE_SetZ(int a, int b) {}
 void PE_SetAddColor(int a, int b, int c, int d) {}
 void PE_SetAlpha(int a, int b) {}
 void PE_UpdateComponent(int a) {}
+void parts_render_update(void) {}
 void PE_ChangeFlatCG(int a, struct string *b, struct string *c, int d) {}
 void PE_ChangeFlatSound(int a, struct string *b, struct string *c, int d) {}
 bool PE_GoFramePartsFlat(int a, int b, int c) { return true; }

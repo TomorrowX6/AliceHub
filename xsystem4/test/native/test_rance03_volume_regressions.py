@@ -174,6 +174,7 @@ class TestRance03VolumeRegressions(unittest.TestCase):
 struct config config;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
+bool game_maman = false;
 bool game_evenicle2 = false;
 bool game_rance03 = true;
 bool game_ixseal = false;
@@ -537,6 +538,7 @@ int main(void) {
 struct config config;
 bool game_rance10 = false;
 bool game_dohnadohna = false;
+bool game_maman = false;
 bool game_evenicle2 = false;
 bool game_rance03 = true;
 bool game_ixseal = false;

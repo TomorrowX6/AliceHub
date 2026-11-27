@@ -12,8 +12,14 @@
 
 static const ModsGame games[] = {
     {"rance10", MODS_ARCHIVE, {"Rance10.ain"}},
-    {"evenicle", MODS_TRANSLATION, {"Evenicle.ain"}},
+    {"evenicle", MODS_TRANSLATION, {"Evenicle.ain", "EvenicleCG.afa"}},
     {"evenicle2", MODS_TRANSLATION, {"Evenicle2.ain"}},
+    {"dohnadohna", MODS_UNCENSORED, {"dohnadohna.ain", "DohnaDohnaCG.afa"}},
+    {"haruka", MODS_UNCENSORED, {"超昂閃忍ハルカ.ain", "超昂閃忍ハルカGA.ald",
+                                 "超昂闪忍遥.ain", "超昂闪忍遥GA.ald",
+                                 "超昂閃忍遥.ain", "ハルカ.ain", "haruka.ain",
+                                 "BeatBladesHaruka.ain", "ChoukouSenninHaruka.ain",
+                                 "挻峍慚擡僴儖僇.ain", "挻峍慚擡僴儖僇GA.ald"}},
     {"rance01", MODS_UNCENSORED, {"Rance01.ain"}},
     {"rance02", MODS_UNCENSORED, {"Rance02.ain", "ランス０２.ain", "ランス０２GA.ald",
                                  "儔儞僗俷俲.ain", "儔儞僗俷俲GA.ald"}},
@@ -49,7 +55,15 @@ const ModsGame *mods_game(const char *directory, HubEngine engine)
         if (!mods_path(path, directory, entry->d_name) || lstat(path, &st) || !S_ISREG(st.st_mode) ||
             st.st_size <= 0)
             continue;
-        if (!strcasecmp(entry->d_name, "Rance6After.ain") || !strcasecmp(entry->d_name, "Rance1.ain")) {
+        if (!strcasecmp(entry->d_name, "Rance6After.ain") ||
+            !strcasecmp(entry->d_name, "Rance1.ain") ||
+            !strcasecmp(entry->d_name, "Evenicle2Rance.ain") ||
+            !strcasecmp(entry->d_name, "EvenicleRance.ain") ||
+            !strcasecmp(entry->d_name, "EvenicleAPC.ain") ||
+            !strcasecmp(entry->d_name, "EvenicleGaiden.ain") ||
+            !strcasecmp(entry->d_name, "EvenicleGaiten.ain") ||
+            !strcasecmp(entry->d_name, "ハルカvs.ain") ||
+            !strcasecmp(entry->d_name, "疾風!?忍者大作戦.ain")) {
             match = NULL;
             break;
         }
@@ -68,7 +82,8 @@ bool mods_game_has_uncensored(const ModsGame *game)
 {
     return game && (game->kind == MODS_UNCENSORED ||
                     !strcmp(game->id, "rance10") ||
-                    !strcmp(game->id, "sengokurance"));
+                    !strcmp(game->id, "sengokurance") ||
+                    !strcmp(game->id, "evenicle"));
 }
 
 const char *mods_catalog_path(ModsKind kind)

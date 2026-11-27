@@ -681,6 +681,8 @@ static void android_perf_pacing_fini(void)
 	android_adpf_close_session();
 	android_reset_pacer_timestamps();
 }
+#elif defined(ALICEHUB_IOS) || defined(__SWITCH__)
+static bool wait_vsync = true;
 #else
 static bool wait_vsync = false;
 #endif
@@ -1065,6 +1067,8 @@ void scene_end_session(void);
 void parts_end_session(void);
 void effect_end_session(void);
 void sengoku_rance_font_end_session(void);
+void movie_end_session(void);
+void system_service_end_session(void);
 #endif
 
 void gfx_fini(void)
@@ -1072,7 +1076,9 @@ void gfx_fini(void)
 #ifdef ALICEHUB_IOS
 	bool quit_sdl = mixer_fini();
 	if (!sdl.gl.context) {
+		movie_end_session();
 		sengoku_rance_font_end_session();
+		system_service_end_session();
 		gfx_font_fini();
 		goto close_sdl;
 	}
@@ -1081,7 +1087,9 @@ void gfx_fini(void)
 	sact_end_session();
 	scene_end_session();
 	sprite_end_session();
+	movie_end_session();
 	sengoku_rance_font_end_session();
+	system_service_end_session();
 	gfx_font_fini();
 #endif
 #ifdef __ANDROID__

@@ -188,7 +188,9 @@ static float Math_RandF(void)
 static void shuffle_array(int *a, int len)
 {
 	for (int i = len - 1; i > 0; i--) {
-		int j = Math_RandF() * i;
+		int j = (int)(Math_RandF() * (i + 1));
+		if (j > i)
+			j = i;
 		int tmp = a[j];
 		a[j] = a[i];
 		a[i] = tmp;
@@ -197,6 +199,10 @@ static void shuffle_array(int *a, int len)
 
 static void Math_RandTableInit(int num, int size)
 {
+	if (size <= 0) {
+		WARNING("Invalid rand table size %d for table %d", size, num);
+		return;
+	}
 	struct shuffle_table *tbl = find_shuffle_table(num);
 	if (tbl) {
 		free(tbl->elems);
@@ -206,7 +212,7 @@ static void Math_RandTableInit(int num, int size)
 		tbl->next = shuffle_tables;
 		shuffle_tables = tbl;
 	}
-	tbl->elems = xmalloc(size * sizeof(int));
+	tbl->elems = xmalloc((size_t)size * sizeof(int));
 	tbl->size = size;
 	tbl->i = 0;
 	for (int i = 0; i < size; i++)
@@ -217,7 +223,7 @@ static void Math_RandTableInit(int num, int size)
 static int Math_RandTable(int num)
 {
 	struct shuffle_table *tbl = find_shuffle_table(num);
-	if (!tbl) {
+	if (!tbl || tbl->size <= 0) {
 		WARNING("Invalid rand table id %d", num);
 		return 0;
 	}
@@ -229,16 +235,33 @@ static int Math_RandTable(int num)
 	return tbl->elems[tbl->i++];
 }
 
+static void Math_ModuleFini(void)
+{
+	struct shuffle_table *tbl = shuffle_tables;
+	while (tbl) {
+		struct shuffle_table *next = tbl->next;
+		free(tbl->elems);
+		free(tbl);
+		tbl = next;
+	}
+	shuffle_tables = NULL;
+	mt_initialized = false;
+}
+
 //void Math_RandTable2Init(int num, struct page *array);
 //int Math_RandTable2(int num);
 
 static float Math_Asin(float x)
 {
+	if (isnan(x))
+		return 0.0f;
 	return asinf(Math_ClampF(x, -1.0f, 1.0f)) * (float)(180.0 / M_PI);
 }
 
 static float Math_Acos(float x)
 {
+	if (isnan(x))
+		return 0.0f;
 	return acosf(Math_ClampF(x, -1.0f, 1.0f)) * (float)(180.0 / M_PI);
 }
 
@@ -283,6 +306,7 @@ static bool Math_BezierCurve(struct page **x_array, struct page **y_array, int n
 }
 
 HLL_LIBRARY(Math,
+	    HLL_EXPORT(_ModuleFini, Math_ModuleFini),
 	    HLL_EXPORT(Cos, Math_Cos),
 	    HLL_EXPORT(Sin, Math_Sin),
 	    HLL_EXPORT(Tan, Math_Tan),

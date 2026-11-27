@@ -78,8 +78,24 @@ HLL_QUIET_UNIMPLEMENTED(, void, GUIEngine, ReleaseMessage);
 //static int GUIEngine_GetMessagePartsNumber(void);
 //static int GUIEngine_GetMessageDelegateIndex(void);
 //static int GUIEngine_GetDelegateIndex(int PartsNumber);
-//static int GUIEngine_GetMessageType(void);
-HLL_QUIET_UNIMPLEMENTED(0, int, GUIEngine, GetMessageType);
+static int GUIEngine_GetMessageType(void)
+{
+	return 0;
+}
+
+static int GUIEngine_GetMessageType_idx(possibly_unused int index)
+{
+	return 0;
+}
+
+static void *GUIEngine_ResolveGetMessageType(const struct ain_hll_function *f)
+{
+	if (f->nr_arguments == 1 && f->arguments[0].type.data == AIN_INT)
+		return GUIEngine_GetMessageType_idx;
+	if (f->nr_arguments == 0)
+		return GUIEngine_GetMessageType;
+	return NULL;
+}
 //static int GUIEngine_GetMessageVariableCount(void);
 //static int GUIEngine_GetMessageVariableType(int MessageVariableIndex);
 //static int GUIEngine_GetMessageVariableInt(int MessageVariableIndex);
@@ -554,7 +570,7 @@ HLL_LIBRARY(GUIEngine,
 	    HLL_TODO_EXPORT(GetMessagePartsNumber, GUIEngine_GetMessagePartsNumber),
 	    HLL_TODO_EXPORT(GetMessageDelegateIndex, GUIEngine_GetMessageDelegateIndex),
 	    HLL_EXPORT(GetDelegateIndex, PE_GetDelegateIndex),
-	    HLL_EXPORT(GetMessageType, GUIEngine_GetMessageType),
+	    HLL_OVERLOAD(GetMessageType, GUIEngine_ResolveGetMessageType),
 	    HLL_TODO_EXPORT(GetMessageVariableCount, GUIEngine_GetMessageVariableCount),
 	    HLL_TODO_EXPORT(GetMessageVariableType, GUIEngine_GetMessageVariableType),
 	    HLL_TODO_EXPORT(GetMessageVariableInt, GUIEngine_GetMessageVariableInt),

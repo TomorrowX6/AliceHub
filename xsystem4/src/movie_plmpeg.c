@@ -1244,3 +1244,15 @@ bool movie_skip_active(void)
 	}
 	return skipped_any;
 }
+
+void movie_end_session(void)
+{
+	gfx_unregister_reset_callback(movie_shader_on_gl_reset, NULL);
+	memset(&movie_shader, 0, sizeof(movie_shader));
+	movie_skip_active();
+	if (nr_active_movies == 0) {
+		free(active_movies);
+		active_movies = NULL;
+		cap_active_movies = 0;
+	}
+}

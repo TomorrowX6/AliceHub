@@ -62,6 +62,10 @@ struct dungeon_context *dungeon_get_context(int surface)
 
 static void init_depth_buffer(struct dungeon_context *ctx, int width, int height)
 {
+	if (width <= 0 || height <= 0) {
+		ctx->depth_buffer = 0;
+		return;
+	}
 	glGenRenderbuffers(1, &ctx->depth_buffer);
 	glBindRenderbuffer(GL_RENDERBUFFER, ctx->depth_buffer);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
@@ -78,7 +82,7 @@ static void dungeon_context_on_gl_reset(void *user)
 	int w = ctx->texture.w;
 	int h = ctx->texture.h;
 	if (!gfx_remap_texture(&ctx->texture) && w > 0 && h > 0)
-		gfx_init_texture_blank(&ctx->texture, w, h);
+		gfx_init_texture_rgba(&ctx->texture, w, h, (SDL_Color){0, 0, 0, 255});
 	ctx->depth_buffer = 0;
 	if (w > 0 && h > 0)
 		init_depth_buffer(ctx, w, h);
@@ -110,9 +114,14 @@ struct dungeon_context *dungeon_context_create(enum draw_dungeon_version version
 	ctx->plugin.to_json = dungeon_to_json;
 	ctx->version = version;
 
-	gfx_init_texture_blank(&ctx->texture, width, height);
-	init_depth_buffer(ctx, width, height);
-	glm_perspective(GLM_PIf / 3.f, height > 0 ? (float)width / height : 1.0f, 0.5f, 100.f, ctx->proj_transform);
+	if (width > 0 && height > 0) {
+		gfx_init_texture_rgba(&ctx->texture, width, height, (SDL_Color){0, 0, 0, 255});
+		init_depth_buffer(ctx, width, height);
+	} else {
+		ctx->texture.w = width;
+		ctx->texture.h = height;
+	}
+	glm_perspective(GLM_PIf / 3.f, (width > 0 && height > 0) ? (float)width / height : 1.0f, 0.5f, 100.f, ctx->proj_transform);
 
 	ctx->map = dungeon_map_create(version);
 
@@ -161,27 +170,37 @@ static GLuint *load_event_textures(int *nr_textures_out)
 	if (!alk)
 		return NULL;
 
+	static const uint8_t fallback_pixel[4] = { 0, 0, 0, 0 };
 	GLuint *textures = xcalloc(alk->nr_files, sizeof(GLuint));
 	glGenTextures(alk->nr_files, textures);
+	glActiveTexture(GL_TEXTURE0);
 	for (int i = 0; i < alk->nr_files; i++) {
+		struct cg *cg = NULL;
 		struct archive_data *dfile = archive_get(&alk->ar, i);
-		if (!dfile)
-			continue;
-		struct cg *cg = cg_load_data(dfile);
-		archive_free_data(dfile);
-		if (!cg) {
-			WARNING("Event.alk: cannot load cg %d", i);
-			continue;
+		if (dfile) {
+			cg = cg_load_data(dfile);
+			archive_free_data(dfile);
+			if (!cg)
+				WARNING("Event.alk: cannot load cg %d", i);
 		}
 		glBindTexture(GL_TEXTURE_2D, textures[i]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glGenerateMipmap(GL_TEXTURE_2D);
+		if (cg && cg->metrics.w > 0 && cg->metrics.h > 0 && cg->pixels) {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cg->metrics.w, cg->metrics.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, cg->pixels);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glGenerateMipmap(GL_TEXTURE_2D);
+		} else {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, fallback_pixel);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		}
 		glBindTexture(GL_TEXTURE_2D, 0);
-		cg_free(cg);
+		if (cg)
+			cg_free(cg);
 	}
 	*nr_textures_out = alk->nr_files;
 	archive_free(&alk->ar);
@@ -475,11 +494,18 @@ static void dungeon_render(struct sact_sprite *sp)
 	struct dungeon_context *ctx = (struct dungeon_context *)sp->plugin;
 	if (!ctx || !ctx->loaded || !ctx->draw_enabled || !ctx->dgn || !ctx->renderer)
 		return;
+	if (ctx->texture.w <= 0 || ctx->texture.h <= 0 || !ctx->texture.handle || !ctx->depth_buffer)
+		return;
 
 	GLuint fbo = gfx_set_framebuffer(GL_DRAW_FRAMEBUFFER, &ctx->texture, 0, 0, ctx->texture.w, ctx->texture.h);
 	glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, ctx->depth_buffer);
-	if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-		ERROR("Incomplete framebuffer");
+	GLenum fb_status = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+	if (fb_status != GL_FRAMEBUFFER_COMPLETE) {
+		WARNING("DrawDungeon: incomplete framebuffer (0x%x); skipping frame", fb_status);
+		glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
+		gfx_reset_framebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+		return;
+	}
 
 	glClearColor(ctx->dgn->back_color_r / 255.f, ctx->dgn->back_color_g / 255.f, ctx->dgn->back_color_b / 255.f, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
