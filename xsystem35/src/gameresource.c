@@ -178,10 +178,23 @@ bool initGameResourceFromDir(GameResource *gr, DIR *dir, const char *savedir, st
 		}
 #if defined(__ANDROID__) || defined(__EMSCRIPTEN__) || defined(ALICEHUB_IOS) || defined(__SWITCH__)
 		basename[strlen(basename) - 1] = '\0';
-		if (basename[0] == '\0')
+		if (basename[0] == '\0') {
 			sprintf(buf, "%s%smsgskip.dat", dir, sep);
-		else
+			char *legacy = malloc(strlen(dir) + strlen(sep) + sizeof(".msgskip"));
+			if (legacy) {
+				sprintf(legacy, "%s%s.msgskip", dir, sep);
+				if (access(buf, F_OK) != 0 && access(legacy, F_OK) == 0) {
+					if (rename(legacy, buf) != 0) {
+						free(buf);
+						buf = legacy;
+						legacy = NULL;
+					}
+				}
+				free(legacy);
+			}
+		} else {
 			sprintf(buf, "%s%s%s.msgskip", dir, sep, basename);
+		}
 		gr->msgskip = buf;
 #else
 		free(buf);

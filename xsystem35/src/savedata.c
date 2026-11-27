@@ -141,10 +141,11 @@ static int saveStack(enum save_format format, FILE *fp) {
 	return sizeof(head) + size;
 }
 
-static void loadStack(enum save_format format, char *buf) {
-	asd_stackHdr *head = (asd_stackHdr *)buf;
-	uint8_t *data = buf + sizeof(asd_stackHdr);
-	sl_loadStack(format, data, head->size);
+static void loadStack(enum save_format format, const char *buf) {
+	asd_stackHdr head;
+	memcpy(&head, buf, sizeof(head));
+	const uint8_t *data = (const uint8_t *)(buf + sizeof(asd_stackHdr));
+	sl_loadStack(format, (uint8_t *)data, head.size);
 }
 
 static int saveStrVars(enum save_format format, FILE *fp) {
@@ -171,11 +172,12 @@ static int saveStrVars(enum save_format format, FILE *fp) {
 	return sizeof(head) + head.size;
 }
 
-static void loadStrVars(enum save_format format, char *buf) {
-	asd_strVarHdr *head = (asd_strVarHdr *)buf;
+static void loadStrVars(enum save_format format, const char *buf) {
+	asd_strVarHdr head;
+	memcpy(&head, buf, sizeof(head));
 	const int base = format == SAVEFMT_XSYS35 ? 1 : 0;
 
-	int cnt = head->count;
+	int cnt = head.count;
 	if ((1 - base) + svar_maxindex() != cnt) {
 		WARNING("Unexpected number of strings in savedata (%d, expected %d)", cnt, (1 - base) + svar_maxindex());
 		svar_init(format == SAVEFMT_XSYS35 ? cnt : cnt - 1);
@@ -205,23 +207,40 @@ static int saveVarPage(int page, FILE *fp) {
 	return sizeof(head) + head.size;
 }
 
-static int loadVarPage(char *buf, size_t max_size) {
+static int validateVarPage(const char *buf, size_t max_size) {
 	if (max_size < sizeof(asd_varPageHdr)) {
 		WARNING("Truncated variable page header");
 		return SAVE_LOADERR;
 	}
-	asd_varPageHdr *head = (asd_varPageHdr *)buf;
-	int page = head->pageNo;
+	asd_varPageHdr head;
+	memcpy(&head, buf, sizeof(head));
+	int page = head.pageNo;
 	if (page < 0 || page >= 256) {
 		WARNING("Invalid variable page number in savedata: %d", page);
 		return SAVE_LOADERR;
 	}
-	if (head->size < 0 || (size_t)head->size > max_size - sizeof(asd_varPageHdr)) {
-		WARNING("Invalid variable page size in savedata: page=%d size=%d", page, head->size);
+	if (head.size < 0 || (size_t)head.size > max_size - sizeof(asd_varPageHdr)) {
+		WARNING("Invalid variable page size in savedata: page=%d size=%d", page, head.size);
 		return SAVE_LOADERR;
 	}
 
-	int cnt = head->size / (int)sizeof(uint16_t);
+	int cnt = head.size / (int)sizeof(uint16_t);
+	if (varPage[page].size < cnt || varPage[page].value == NULL) {
+		if (cnt <= 0 || cnt > 65536) {
+			WARNING("Invalid variable page allocation size in savedata: page=%d size=%d", page, cnt);
+			return SAVE_LOADERR;
+		}
+	}
+	return SAVE_LOADOK;
+}
+
+static int loadVarPage(const char *buf, size_t max_size) {
+	if (validateVarPage(buf, max_size) != SAVE_LOADOK)
+		return SAVE_LOADERR;
+	asd_varPageHdr head;
+	memcpy(&head, buf, sizeof(head));
+	int page = head.pageNo;
+	int cnt = head.size / (int)sizeof(uint16_t);
 	if (varPage[page].size < cnt || varPage[page].value == NULL) {
 		if (!v_allocatePage(page, cnt, true)) {
 			WARNING("Array allocation failed: page=%d size=%d", page, cnt);
@@ -229,9 +248,12 @@ static int loadVarPage(char *buf, size_t max_size) {
 		}
 	}
 	vmvar_t *var = varPage[page].value;
-	uint16_t *data = (uint16_t *)(buf + sizeof(asd_varPageHdr));
-	for (int i = 0; i < cnt; i++)
-		*var++ = *data++;
+	const uint8_t *data = (const uint8_t *)(buf + sizeof(asd_varPageHdr));
+	for (int i = 0; i < cnt; i++) {
+		uint16_t v;
+		memcpy(&v, data + (size_t)i * sizeof(uint16_t), sizeof(v));
+		*var++ = v;
+	}
 
 	return SAVE_LOADOK;
 }
@@ -280,6 +302,44 @@ static void writeAsdFooter(enum save_format format, FILE *fp) {
 	}
 }
 
+static char *save_resolve_slot_path(int no) {
+	if (no < 0 || no >= SAVE_MAXNUMBER || !nact->files.save_fname[no])
+		return NULL;
+	return fc_resolve_existing_path(nact->files.save_fname[no]);
+}
+
+static bool save_prepare_write(int no) {
+	if (no < 0 || no >= SAVE_MAXNUMBER || !nact->files.save_fname[no])
+		return false;
+	const char *canonical = nact->files.save_fname[no];
+	if (access(canonical, F_OK) == 0) {
+		fc_backup_oldfile(canonical);
+		return true;
+	}
+	return false;
+}
+
+static void save_finalize_write(int no, bool backed_up) {
+	if (no < 0 || no >= SAVE_MAXNUMBER || !nact->files.save_fname[no])
+		return;
+	const char *canonical = nact->files.save_fname[no];
+#ifndef __EMSCRIPTEN__
+	char *backup_path = NULL;
+	if (!backed_up) {
+		backup_path = malloc(strlen(canonical) + 2);
+		if (backup_path) {
+			strcpy(backup_path, canonical);
+			strcat(backup_path, ".");
+		}
+	}
+	fc_remove_case_variants(canonical, true, backup_path);
+	free(backup_path);
+#else
+	(void)backed_up;
+	fc_remove_case_variants(canonical, true, NULL);
+#endif
+}
+
 /* ゲームデータのロード
 
  no:    セーブファイル番号 0~
@@ -291,16 +351,11 @@ static void writeAsdFooter(enum save_format format, FILE *fp) {
 static void* loadGameData(int no, int *status, int *size) {
 	void *buf = NULL;
 	FILE *fp = NULL;
-	if (no < 0 || no >= SAVE_MAXNUMBER || !nact->files.save_fname[no])
+	char *resolved = save_resolve_slot_path(no);
+	if (!resolved)
 		goto errexit;
-	fp = fopen(nact->files.save_fname[no], "rb");
-	if (!fp) {
-		char *resolved = fc_resolve_existing_path(nact->files.save_fname[no]);
-		if (resolved) {
-			fp = fopen(resolved, "rb");
-			free(resolved);
-		}
-	}
+	fp = fopen(resolved, "rb");
+	free(resolved);
 	if (!fp)
 		goto errexit;
 	fseek(fp, 0L, SEEK_END);
@@ -337,7 +392,7 @@ static int saveGameData(int no, char *buf, int size) {
 	if (no < 0 || no >= SAVE_MAXNUMBER || !nact->files.save_fname[no])
 		return SAVE_SAVEERR;
 
-	fc_backup_oldfile(nact->files.save_fname[no]);
+	bool backed_up = save_prepare_write(no);
 	fp = fopen(nact->files.save_fname[no], "wb");
 	if (fp == NULL) {
 		return SAVE_SAVEERR;
@@ -345,8 +400,13 @@ static int saveGameData(int no, char *buf, int size) {
 	if (1 != fwrite(buf, size, 1, fp)) {
 		status = SAVE_SAVEERR;
 	}
-	fclose(fp);
-	scheduleSync();
+	if (fclose(fp) != 0) {
+		status = SAVE_SAVEERR;
+	}
+	if (status == SAVE_SAVEOK1) {
+		save_finalize_write(no, backed_up);
+		scheduleSync();
+	}
 	return status;
 }
 
@@ -377,10 +437,12 @@ const char *save_get_file(int index) {
 	const char *fname = nact->files.save_fname[index];
 	if (!fname)
 		return NULL;
-	if (access(fname, F_OK) == 0)
-		return fname;
-	char *resolved = fc_resolve_existing_path(fname);
+	char *resolved = save_resolve_slot_path(index);
 	if (resolved) {
+		if (strcmp(resolved, fname) == 0) {
+			free(resolved);
+			return fname;
+		}
 		static char resolved_buf[PATH_MAX];
 		snprintf(resolved_buf, sizeof(resolved_buf), "%s", resolved);
 		free(resolved);
@@ -393,18 +455,7 @@ const char *save_get_file(int index) {
 int save_delete_file(int index) {
 	if (index < 0 || index >= SAVE_MAXNUMBER || !nact->files.save_fname[index])
 		return 0;
-	int ret = unlink(nact->files.save_fname[index]);
-	if (ret != 0) {
-		char *resolved = fc_resolve_existing_path(nact->files.save_fname[index]);
-		if (resolved) {
-			ret = unlink(resolved);
-			free(resolved);
-		}
-	}
-
-	if (ret == 0) {
-		return 1;
-	}
+	fc_remove_case_variants(nact->files.save_fname[index], false, NULL);
 	return 1; /* とりあえず */
 }
 
@@ -569,10 +620,11 @@ int save_loadPartial(int no, struct VarRef *vref, int cnt) {
 	if (elem_off > (size_t)filesize - data_off || copy_bytes > (size_t)filesize - data_off - elem_off)
 		goto errexit;
 
-	char *vtop = saveTop + data_off;
-	uint16_t *tmp = (uint16_t *)vtop + vref->index;
+	const uint8_t *vtop = (const uint8_t *)(saveTop + data_off + elem_off);
 	for (int i = 0; i < cnt; i++) {
-		*var = *tmp; tmp++; var++;
+		uint16_t v;
+		memcpy(&v, vtop + (size_t)i * sizeof(uint16_t), sizeof(v));
+		*var++ = v;
 	}
 	free(saveTop);
 	return SAVE_LOADOK;
@@ -615,10 +667,10 @@ int save_savePartial(int no, struct VarRef *vref, int cnt) {
 	if (elem_off > (size_t)filesize - data_off || copy_bytes > (size_t)filesize - data_off - elem_off)
 		goto errexit;
 
-	char *vtop = saveTop + data_off;
-	uint16_t *tmp = (uint16_t *)vtop + vref->index;
+	uint8_t *vtop = (uint8_t *)(saveTop + data_off + elem_off);
 	for (int i = 0; i < cnt; i++) {
-		*tmp = (uint16_t)*var; tmp++; var++;
+		uint16_t v = (uint16_t)*var++;
+		memcpy(vtop + (size_t)i * sizeof(uint16_t), &v, sizeof(v));
 	}
 	status = saveGameData(no, saveTop, filesize);
 	free(saveTop);
@@ -644,16 +696,20 @@ int save_loadAll(int no) {
 		return status;
 	if ((size_t)filesize <= sizeof(asd_baseHdr))
 		goto errexit;
-	/* 各種データの反映 */
+	/* 各種データの事前検証 (ライブ状態を変更する前にすべて検証) */
 	asd_baseHdr *save_base = (asd_baseHdr *)saveTop;
 	if (save_base->version != SAVE_DATAVERSION) {
 		WARNING("endian mismatch");
 		goto errexit;
 	}
+	if (!memchr(save_base->ID, '\0', sizeof(save_base->ID))) {
+		WARNING("unterminated save signature");
+		goto errexit;
+	}
 	enum save_format format = (enum save_format)-1;
-	for (int i = 0; i < sizeof(save_signature) / sizeof(save_signature[0]); i++) {
+	for (size_t i = 0; i < sizeof(save_signature) / sizeof(save_signature[0]); i++) {
 		if (!strcmp(save_signature[i], save_base->ID)) {
-			format = i;
+			format = (enum save_format)i;
 			break;
 		}
 	}
@@ -668,6 +724,48 @@ int save_loadAll(int no) {
 	    (size_t)save_base->varStr + sizeof(asd_strVarHdr) > (size_t)filesize)
 		goto errexit;
 
+	asd_stackHdr stack_hdr;
+	memcpy(&stack_hdr, saveTop + save_base->stackinfo, sizeof(stack_hdr));
+	if (stack_hdr.size < 0 ||
+	    (size_t)stack_hdr.size > (size_t)filesize - (size_t)save_base->stackinfo - sizeof(asd_stackHdr)) {
+		WARNING("Invalid stack section size in savedata: %d", stack_hdr.size);
+		goto errexit;
+	}
+
+	asd_strVarHdr str_hdr;
+	memcpy(&str_hdr, saveTop + save_base->varStr, sizeof(str_hdr));
+	const int str_base = format == SAVEFMT_XSYS35 ? 1 : 0;
+	if (str_hdr.size < 0 ||
+	    (size_t)str_hdr.size > (size_t)filesize - (size_t)save_base->varStr - sizeof(asd_strVarHdr) ||
+	    str_hdr.count < (1 - str_base)) {
+		WARNING("Invalid string variable header in savedata: size=%d count=%d", str_hdr.size, str_hdr.count);
+		goto errexit;
+	}
+	{
+		const char *sp = saveTop + save_base->varStr + sizeof(asd_strVarHdr);
+		const char *send = sp + (size_t)str_hdr.size;
+		for (int i = 0; i < str_hdr.count; i++) {
+			const char *nul = memchr(sp, '\0', (size_t)(send - sp));
+			if (!nul) {
+				WARNING("Truncated string variable data in savedata at index %d", i);
+				goto errexit;
+			}
+			sp = nul + 1;
+		}
+	}
+
+	for (int i = 0; i < 256; i++) {
+		if (save_base->varSys[i] != 0) {
+			if (save_base->varSys[i] < (int)sizeof(asd_baseHdr) ||
+			    (size_t)save_base->varSys[i] >= (size_t)filesize)
+				goto errexit;
+			if (SAVE_LOADOK != validateVarPage(saveTop + save_base->varSys[i],
+			                                   (size_t)filesize - (size_t)save_base->varSys[i]))
+				goto errexit;
+		}
+	}
+
+	/* 各種データの反映 */
 	nact->sel.MsgFontSize        = save_base->selMsgSize;
 	nact->sel.MsgFontColor       = save_base->selMsgColor;
 	nact->sel.WinBackgroundColor = save_base->selBackColor;
@@ -706,12 +804,9 @@ int save_loadAll(int no) {
 	/* 数値・配列変数のロード */
 	for (int i = 0; i < 256; i++) {
 		if (save_base->varSys[i] != 0) {
-			if (save_base->varSys[i] < (int)sizeof(asd_baseHdr) ||
-			    (size_t)save_base->varSys[i] >= (size_t)filesize)
+			if (SAVE_LOADOK != loadVarPage(saveTop + save_base->varSys[i],
+			                               (size_t)filesize - (size_t)save_base->varSys[i]))
 				goto errexit;
-			if (SAVE_LOADOK != loadVarPage(saveTop + save_base->varSys[i], (size_t)filesize - (size_t)save_base->varSys[i]))
-				goto errexit;
-			
 		}
 	}
 	free(saveTop);
@@ -730,7 +825,7 @@ int save_saveAll(int no) {
 	if (no < 0 || no >= SAVE_MAXNUMBER || !nact->files.save_fname[no])
 		return SAVE_SAVEERR;
 	
-	fc_backup_oldfile(nact->files.save_fname[no]);
+	bool backed_up = save_prepare_write(no);
 	FILE *fp = fopen(nact->files.save_fname[no], "wb");
 	if (!fp)
 		return SAVE_SAVEERR;
@@ -803,8 +898,12 @@ int save_saveAll(int no) {
 	
 	fseek(fp, 0L, SEEK_END);
 	writeAsdFooter(format, fp);
+	if (ferror(fp))
+		goto errexit;
 
-	fclose(fp);
+	if (fclose(fp) != 0)
+		return SAVE_SAVEERR;
+	save_finalize_write(no, backed_up);
 	scheduleSync();
 
 	return SAVE_SAVEOK1;

@@ -15,10 +15,92 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 XSYS35_ROOT = REPO_ROOT / "xsystem35"
 XSYS35_SRC = XSYS35_ROOT / "src"
 XSYS35_MOD = XSYS35_ROOT / "modules"
-XSYS35_BUILD = Path("/root/Rance10_CN/host-build/xsystem35")
 SYS3_CMAKE_DIR = REPO_ROOT / "cmake" / "system3"
-SYS3_BUILD = Path("/root/Rance10_CN/host-build/system3")
-SYS3_UPSTREAM_SRC = SYS3_BUILD / "_deps" / "system3_source-src" / "src"
+
+_PORTABLE_XSYS35_CONFIG_H = """\
+#define PACKAGE "xsystem35"
+#define VERSION "2.20.0"
+#define XSYSTEM35_SDL_VERSION 2
+
+/* #undef ENABLE_DEBUGGER */
+#define ENABLE_MIDI_SDLMIXER 1
+/* #undef ENABLE_MIDI_PORTMIDI */
+
+#define DEFAULT_PLAYLIST_PATH "playlist.txt"
+/* #undef JOY_DEVICE */
+
+/* #undef HAVE_LIBINTL */
+#define HAVE_GETLOGIN 1
+#define HAVE_MMAP 1
+#define HAVE_SIGACTION 1
+/* #undef HAVE_WEBP */
+
+#define DEFAULT_GOTHIC_TTF "MTLc3m.ttf"
+#define DEFAULT_MINCHO_TTF "mincho.ttf"
+"""
+
+
+def _resolve_xsystem35_build_dir() -> Path | None:
+    if "XSYSTEM35_BUILD_DIR" in os.environ:
+        raw = os.environ["XSYSTEM35_BUILD_DIR"].strip()
+        if not raw:
+            return None
+        cand = Path(raw)
+        return cand if (cand / "config.h").is_file() else None
+    sibling = REPO_ROOT.parent / "host-build" / "xsystem35"
+    return sibling if (sibling / "config.h").is_file() else None
+
+
+def _resolve_system3_build_dir() -> Path | None:
+    if "SYSTEM3_BUILD_DIR" in os.environ:
+        raw = os.environ["SYSTEM3_BUILD_DIR"].strip()
+        if not raw:
+            return None
+        cand = Path(raw)
+        return cand if cand.is_dir() else None
+    sibling = REPO_ROOT.parent / "host-build" / "system3"
+    return sibling if sibling.is_dir() else None
+
+
+def _resolve_system3_upstream_src(sys3_build: Path | None) -> Path | None:
+    if sys3_build is None:
+        return None
+    deps_src = sys3_build / "_deps" / "system3_source-src" / "src"
+    if deps_src.is_dir():
+        return deps_src
+    cache_file = sys3_build / "CMakeCache.txt"
+    if cache_file.is_file():
+        for line in cache_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            for prefix in (
+                "FETCHCONTENT_SOURCE_DIR_SYSTEM3_SOURCE:",
+                "system3_source_SOURCE_DIR:",
+            ):
+                if line.startswith(prefix) and "=" in line:
+                    cand = Path(line.split("=", 1)[1].strip()) / "src"
+                    if cand.is_dir():
+                        return cand
+    return None
+
+
+def _get_xsystem35_config_h_text() -> str:
+    build_dir = _resolve_xsystem35_build_dir()
+    if build_dir is not None and (build_dir / "config.h").is_file():
+        return (build_dir / "config.h").read_text(encoding="utf-8")
+    return _PORTABLE_XSYS35_CONFIG_H
+
+
+def _find_sample_ttf() -> Path | None:
+    candidates = [
+        XSYS35_ROOT / "fonts" / "MTLc3m.ttf",
+        XSYS35_ROOT / "fonts" / "mincho.ttf",
+    ]
+    sys3_src = _resolve_system3_upstream_src(_resolve_system3_build_dir())
+    if sys3_src is not None:
+        candidates.append(sys3_src.parent / "resources" / "fonts" / "MTLc3m.ttf")
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
 
 
 def _pkg_flags(pkg: str, flag: str) -> list[str]:
@@ -38,6 +120,11 @@ def compile_and_run_c(
         harness = tmp_path / "harness.c"
         harness.write_text(harness_code, encoding="utf-8")
         exe = tmp_path / "test_bin"
+        cfg_dir = _resolve_xsystem35_build_dir()
+        if cfg_dir is None:
+            cfg_dir = tmp_path / "portable_cfg"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            (cfg_dir / "config.h").write_text(_PORTABLE_XSYS35_CONFIG_H, encoding="utf-8")
         cmd = [
             "cc",
             "-std=gnu99",
@@ -48,7 +135,7 @@ def compile_and_run_c(
         if extra_cflags:
             cmd += extra_cflags
         cmd += [
-            f"-I{XSYS35_BUILD}",
+            f"-I{cfg_dir}",
             f"-I{XSYS35_SRC}",
             f"-I{XSYS35_MOD}",
             f"-I{XSYS35_MOD / 'lib'}",
@@ -291,9 +378,9 @@ int main(void) {
         self.assertIn("romfs:/fonts/HanaMinA.ttf.gz", font_src)
         self.assertIn("inflateInit2(&zs, 16 + MAX_WBITS)", font_src)
 
-        sample_ttf = SYS3_BUILD / "_deps" / "system3_source-src" / "resources" / "fonts" / "MTLc3m.ttf"
-        if not sample_ttf.exists():
-            self.skipTest(f"Sample TTF not found at {sample_ttf}")
+        sample_ttf = _find_sample_ttf()
+        if sample_ttf is None:
+            self.skipTest("No sample TTF found in repo or SYSTEM3_BUILD_DIR")
 
         ft_cflags = _pkg_flags("freetype2", "--cflags")
         ft_libs = _pkg_flags("freetype2", "--libs")
@@ -348,7 +435,7 @@ int main(void) {{
             )
 
     def test_gameresource_ios_switch_msgskip_and_case_insensitive_saves(self):
-        """P1: iOS/Switch lowercase save names, msgskip.dat for empty basename (hiyoko2), and case-insensitive save read."""
+        """P1: iOS/Switch lowercase save names, msgskip.dat for empty basename (hiyoko2) with .msgskip upgrade migration."""
         for define in ("-DALICEHUB_IOS", "-D__SWITCH__"):
             harness = r"""
 #include <assert.h>
@@ -357,6 +444,7 @@ int main(void) {{
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "gameresource.h"
 
@@ -377,29 +465,80 @@ static struct dirent *mock_readdir(DIR *d) {
     return &ent;
 }
 
+static void write_file_str(const char *path, const char *content) {
+    FILE *fp = fopen(path, "wb");
+    assert(fp != NULL);
+    assert(fwrite(content, 1, strlen(content), fp) == strlen(content));
+    assert(fclose(fp) == 0);
+}
+
+static void assert_file_str(const char *path, const char *expected) {
+    FILE *fp = fopen(path, "rb");
+    assert(fp != NULL);
+    char buf[64] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+    fclose(fp);
+    assert(n == strlen(expected));
+    assert(strcmp(buf, expected) == 0);
+}
+
 int main(void) {
     GameResource gr;
+
+    char dir[] = "/tmp/audit_gr_XXXXXX";
+    assert(mkdtemp(dir) != NULL);
 
     // 1. Standard title: Rance4SA.ALD -> lowercase Rance4sa.asd & Rance4.msgskip
     static const char *const rance4_files[] = { "Rance4SA.ALD", "Rance4GA.ALD", NULL };
     mock_files = rance4_files;
     mock_idx = 0;
-    assert(initGameResourceFromDir(&gr, (DIR *)1, "/tmp/saves", mock_readdir));
-    assert(strcmp(gr.save_fname[0], "/tmp/saves/Rance4sa.asd") == 0);
-    assert(strcmp(gr.save_fname[25], "/tmp/saves/Rance4sz.asd") == 0);
-    assert(gr.msgskip != NULL);
-    assert(strcmp(gr.msgskip, "/tmp/saves/Rance4.msgskip") == 0);
+    assert(initGameResourceFromDir(&gr, (DIR *)1, dir, mock_readdir));
+    char exp_save0[256], exp_save25[256], exp_msgskip[256];
+    snprintf(exp_save0, sizeof(exp_save0), "%s/Rance4sa.asd", dir);
+    snprintf(exp_save25, sizeof(exp_save25), "%s/Rance4sz.asd", dir);
+    snprintf(exp_msgskip, sizeof(exp_msgskip), "%s/Rance4.msgskip", dir);
+    assert(strcmp(gr.save_fname[0], exp_save0) == 0);
+    assert(strcmp(gr.save_fname[25], exp_save25) == 0);
+    assert(gr.msgskip != NULL && strcmp(gr.msgskip, exp_msgskip) == 0);
     freeGameResource(&gr);
 
-    // 2. Empty basename (hiyoko2: sa.ald) -> sa.asd & msgskip.dat (NOT hidden .msgskip!)
+    // 2. Empty basename (hiyoko2: sa.ald), fresh install -> sa.asd & msgskip.dat
     static const char *const hiyoko2_files[] = { "sa.ald", "ga.ald", NULL };
     mock_files = hiyoko2_files;
     mock_idx = 0;
-    assert(initGameResourceFromDir(&gr, (DIR *)1, "/tmp/saves", mock_readdir));
-    assert(strcmp(gr.save_fname[0], "/tmp/saves/sa.asd") == 0);
-    assert(gr.msgskip != NULL);
-    assert(strcmp(gr.msgskip, "/tmp/saves/msgskip.dat") == 0);
+    assert(initGameResourceFromDir(&gr, (DIR *)1, dir, mock_readdir));
+    snprintf(exp_save0, sizeof(exp_save0), "%s/sa.asd", dir);
+    char canon_ms[256], legacy_ms[256];
+    snprintf(canon_ms, sizeof(canon_ms), "%s/msgskip.dat", dir);
+    snprintf(legacy_ms, sizeof(legacy_ms), "%s/.msgskip", dir);
+    assert(strcmp(gr.save_fname[0], exp_save0) == 0);
+    assert(gr.msgskip != NULL && strcmp(gr.msgskip, canon_ms) == 0);
     freeGameResource(&gr);
+
+    // 3. Upgrade migration: existing legacy .msgskip -> renamed to msgskip.dat preserving contents
+    write_file_str(legacy_ms, "HIST_V1");
+    mock_files = hiyoko2_files;
+    mock_idx = 0;
+    assert(initGameResourceFromDir(&gr, (DIR *)1, dir, mock_readdir));
+    assert(gr.msgskip != NULL && strcmp(gr.msgskip, canon_ms) == 0);
+    assert(access(legacy_ms, F_OK) != 0);
+    assert(access(canon_ms, F_OK) == 0);
+    assert_file_str(canon_ms, "HIST_V1");
+    freeGameResource(&gr);
+
+    // 4. Both exist: existing msgskip.dat must NOT be overwritten by legacy .msgskip
+    write_file_str(legacy_ms, "OLD_HIST");
+    write_file_str(canon_ms, "NEW_HIST");
+    mock_files = hiyoko2_files;
+    mock_idx = 0;
+    assert(initGameResourceFromDir(&gr, (DIR *)1, dir, mock_readdir));
+    assert(gr.msgskip != NULL && strcmp(gr.msgskip, canon_ms) == 0);
+    assert_file_str(canon_ms, "NEW_HIST");
+    freeGameResource(&gr);
+
+    unlink(legacy_ms);
+    unlink(canon_ms);
+    rmdir(dir);
     return 0;
 }
 """
@@ -409,6 +548,73 @@ int main(void) {
                 extra_cflags=[define],
                 asan=True,
             )
+
+        # 5. If rename() fails during migration, gameresource.c must fall back to legacy .msgskip
+        fallback_harness = r"""
+#include <assert.h>
+#include <dirent.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "gameresource.h"
+
+void freeGameResource(GameResource *gr);
+void sys_message(int lv, char *fmt, ...) { (void)lv; (void)fmt; }
+void sys_error(char *fmt, ...) { (void)fmt; abort(); }
+
+int failing_rename(const char *oldpath, const char *newpath) {
+    (void)oldpath; (void)newpath;
+    errno = EACCES;
+    return -1;
+}
+
+static const char *const hiyoko2_files[] = { "sa.ald", "ga.ald", NULL };
+static int mock_idx = 0;
+
+static struct dirent *mock_readdir(DIR *d) {
+    (void)d;
+    static struct dirent ent;
+    if (!hiyoko2_files[mock_idx])
+        return NULL;
+    memset(&ent, 0, sizeof(ent));
+    strncpy(ent.d_name, hiyoko2_files[mock_idx++], sizeof(ent.d_name) - 1);
+    return &ent;
+}
+
+int main(void) {
+    char dir[] = "/tmp/audit_gr_fail_XXXXXX";
+    assert(mkdtemp(dir) != NULL);
+    char legacy_ms[256], canon_ms[256];
+    snprintf(legacy_ms, sizeof(legacy_ms), "%s/.msgskip", dir);
+    snprintf(canon_ms, sizeof(canon_ms), "%s/msgskip.dat", dir);
+
+    FILE *fp = fopen(legacy_ms, "wb");
+    assert(fp != NULL);
+    fputs("KEEP_LEGACY", fp);
+    fclose(fp);
+
+    GameResource gr;
+    assert(initGameResourceFromDir(&gr, (DIR *)1, dir, mock_readdir));
+    assert(gr.msgskip != NULL && strcmp(gr.msgskip, legacy_ms) == 0);
+    assert(access(legacy_ms, F_OK) == 0);
+    assert(access(canon_ms, F_OK) != 0);
+    freeGameResource(&gr);
+
+    unlink(legacy_ms);
+    rmdir(dir);
+    return 0;
+}
+"""
+        compile_and_run_c(
+            fallback_harness,
+            [XSYS35_SRC / "gameresource.c"],
+            extra_cflags=["-DALICEHUB_IOS", "-Drename=failing_rename"],
+            asan=True,
+        )
 
     def test_mmap_non_mmap_readwrite_fallback_and_sync(self):
         """P1: !HAVE_MMAP fallback (Switch) supports map_file_readwrite, sync_mapped_file, and unmap_file persistence."""
@@ -465,7 +671,7 @@ int main(void) {
 """
         # Force !HAVE_MMAP by shadowing config.h with HAVE_MMAP stripped (simulating Switch)
         with tempfile.TemporaryDirectory(prefix="audit_nommap_") as tmp:
-            cfg = (XSYS35_BUILD / "config.h").read_text(encoding="utf-8")
+            cfg = _get_xsystem35_config_h_text()
             cfg = re.sub(r"^#define\s+HAVE_MMAP\b.*$", "/* #undef HAVE_MMAP */", cfg, flags=re.M)
             (Path(tmp) / "config.h").write_text(cfg, encoding="utf-8")
             compile_and_run_c(
@@ -476,7 +682,7 @@ int main(void) {
             )
 
     def test_savedata_bounds_corruption_and_case_insensitive_read(self):
-        """P1: savedata.c rejects negative slots, truncated headers, varSys==0, OOB pageNo/partial writes, and reads legacy uppercase saves."""
+        """P0/P1: savedata.c rejects negative slots, truncated headers/late var pages atomically without clobbering live state, and cleanly migrates/deletes legacy case-variant saves."""
         sdl_cflags = _pkg_flags("sdl2", "--cflags")
         harness = r"""
 #include <assert.h>
@@ -498,12 +704,28 @@ static NACTINFO nact_state;
 NACTINFO *nact = &nact_state;
 int sl_page = 0;
 int sl_index = 0;
+static int jmp_calls = 0;
+static int stack_load_calls = 0;
 
 void sys_message(int lv, char *fmt, ...) { (void)lv; (void)fmt; }
 void sys_error(char *fmt, ...) { (void)fmt; abort(); }
-bool sl_jmpFar2(int p, int idx) { (void)p; (void)idx; return true; }
-uint8_t *sl_saveStack(enum save_format fmt, int *size) { (void)fmt; *size = 0; return calloc(1, 4); }
-void sl_loadStack(enum save_format fmt, uint8_t *data, int size) { (void)fmt; (void)data; (void)size; }
+bool sl_jmpFar2(int p, int idx) {
+    jmp_calls++;
+    sl_page = p;
+    sl_index = idx;
+    return true;
+}
+uint8_t *sl_saveStack(enum save_format fmt, int *size) {
+    (void)fmt;
+    *size = 8;
+    uint8_t *p = calloc(1, 8);
+    p[0] = 0x11; p[7] = 0x22;
+    return p;
+}
+void sl_loadStack(enum save_format fmt, uint8_t *data, int size) {
+    (void)fmt; (void)data; (void)size;
+    stack_load_calls++;
+}
 void sl_getStackInfo(struct stack_info *info) { memset(info, 0, sizeof(*info)); }
 struct stack_frame_info *sl_next_stack_frame(struct stack_frame_info *sfi) { (void)sfi; return NULL; }
 
@@ -513,9 +735,10 @@ int main(void) {
     fc_init(dir);
     v_init();
 
-    char lower_path[256], upper_path[256], trunc_path[256], bad_path[256];
+    char lower_path[256], upper_path[256], mixed_path[256], trunc_path[256], bad_path[256];
     snprintf(lower_path, sizeof(lower_path), "%s/Rance4sa.asd", dir);
     snprintf(upper_path, sizeof(upper_path), "%s/Rance4SA.asd", dir);
+    snprintf(mixed_path, sizeof(mixed_path), "%s/rance4sa.asd", dir);
     snprintf(trunc_path, sizeof(trunc_path), "%s/trunc.asd", dir);
     snprintf(bad_path, sizeof(bad_path), "%s/bad.asd", dir);
 
@@ -532,18 +755,60 @@ int main(void) {
     assert(save_loadPartial(-1, &ref0, 1) == SAVE_LOADERR);
     assert(save_savePartial(-1, &ref0, 1) == SAVE_SAVEERR);
 
-    // 2. Valid full save -> rename to UPPERCASE legacy filename -> readable via lowercase save_fname[0]!
+    // 2. Legacy uppercase save: load -> overwrite -> delete NEVER leaves or resurrects Rance4SA.asd!
     sysVar[0] = 1234;
     sysVar[1] = 5678;
+    svar_set(1, "odd"); // odd-length string also tests alignment safety!
     assert(save_saveAll(0) == SAVE_SAVEOK1);
     assert(rename(lower_path, upper_path) == 0);
-    // save_get_file resolves to existing uppercase path
+    // save_get_file resolves to existing uppercase path & load succeeds
     const char *resolved = save_get_file(0);
     assert(resolved != NULL && strcmp(resolved, upper_path) == 0);
     sysVar[0] = 0;
     sysVar[1] = 0;
     assert(save_loadAll(0) == SAVE_LOADOK);
     assert(sysVar[0] == 1234 && sysVar[1] == 5678);
+
+    // Overwrite slot 0: must write canonical Rance4sa.asd and remove/migrate legacy Rance4SA.asd
+    sysVar[0] = 9999;
+    assert(save_saveAll(0) == SAVE_SAVEOK1);
+    assert(access(lower_path, F_OK) == 0);
+    assert(access(upper_path, F_OK) != 0);
+    resolved = save_get_file(0);
+    assert(resolved != NULL && strcmp(resolved, lower_path) == 0);
+    sysVar[0] = 0;
+    assert(save_loadAll(0) == SAVE_LOADOK);
+    assert(sysVar[0] == 9999);
+
+    // Delete slot 0: must delete canonical AND cannot resurrect legacy variant
+    assert(save_delete_file(0) == 1);
+    assert(access(lower_path, F_OK) != 0);
+    assert(access(upper_path, F_OK) != 0);
+    assert(save_loadAll(0) == SAVE_LOADERR);
+
+    // If both canonical + multiple legacy case variants coexist (e.g. from older build),
+    // save_delete_file deletes ALL of them so deleted slot never resurrects an older save!
+    sysVar[0] = 4321;
+    assert(save_saveAll(0) == SAVE_SAVEOK1);
+    FILE *dup1 = fopen(upper_path, "wb"); assert(dup1 != NULL); fwrite("OLD1", 1, 4, dup1); fclose(dup1);
+    FILE *dup2 = fopen(mixed_path, "wb"); assert(dup2 != NULL); fwrite("OLD2", 1, 4, dup2); fclose(dup2);
+    assert(save_delete_file(0) == 1);
+    assert(access(lower_path, F_OK) != 0);
+    assert(access(upper_path, F_OK) != 0);
+    assert(access(mixed_path, F_OK) != 0);
+    assert(save_loadAll(0) == SAVE_LOADERR);
+
+    // Partial save via saveGameData also removes legacy case variant after writing canonical
+    sysVar[0] = 1111;
+    assert(save_saveAll(0) == SAVE_SAVEOK1);
+    assert(rename(lower_path, upper_path) == 0);
+    sysVar[0] = 2222;
+    assert(save_savePartial(0, &ref0, 1) == SAVE_SAVEOK1);
+    assert(access(lower_path, F_OK) == 0);
+    assert(access(upper_path, F_OK) != 0);
+    sysVar[0] = 0;
+    assert(save_loadAll(0) == SAVE_LOADOK);
+    assert(sysVar[0] == 2222);
 
     // 3. save_savePartial on page with varSys[page]==0 must fail safely without corrupting file
     assert(v_allocatePage(5, 16, true));
@@ -566,13 +831,10 @@ int main(void) {
     assert(save_copyAll(2, 1) == SAVE_SAVEERR);
     assert(save_loadAll(1) == SAVE_LOADERR);
 
-    // 6. Corrupted variable page header with pageNo=999 rejected cleanly by loadVarPage
-    // Save a valid file to slot 2, then corrupt the varPageHdr.pageNo of varSys[0] to 999
+    // 6. Corrupted variable page header with pageNo=999 rejected cleanly BEFORE mutating live state
     assert(save_saveAll(2) == SAVE_SAVEOK1);
     fp = fopen(bad_path, "r+b");
     assert(fp != NULL);
-    // Read varSys[0] offset from asd_baseHdr. Rather than hardcoding offset, locate pageNo=0 after header:
-    // Actually we can compute exact offset via the struct layout or scan for size=65537*2, pageNo=0:
     fseek(fp, 0, SEEK_END);
     long sz = ftell(fp);
     uint8_t *buf = malloc((size_t)sz);
@@ -580,7 +842,7 @@ int main(void) {
     assert(fread(buf, 1, (size_t)sz, fp) == (size_t)sz);
     int expected_size = 65537 * 2;
     int patched = 0;
-    for (long off = 2000; off + 16 <= sz; off += 4) {
+    for (long off = 2000; off + 16 <= sz; off++) {
         int s, pno, r1, r2;
         memcpy(&s, buf + off, 4);
         memcpy(&pno, buf + off + 4, 4);
@@ -599,7 +861,71 @@ int main(void) {
     assert(patched == 1);
     assert(save_loadAll(2) == SAVE_LOADERR);
 
-    // 7. save_resetFormat restores default
+    // 7. Atomicity test (Devin P0): truncated LATE variable page must reject cleanly AND
+    //    leave script position, stack, string vars, window info, and numeric vars COMPLETELY UNCHANGED!
+    assert(v_allocatePage(7, 32, true));
+    sl_page = 3;
+    sl_index = 99;
+    nact->msg.MsgFontSize = 16;
+    svar_set(1, "SAVED_STR");
+    sysVar[0] = 1111;
+    sysVar[1] = 2222;
+    varPage[7].value[0] = 4444;
+    varPage[7].value[31] = 5555;
+    assert(save_saveAll(2) == SAVE_SAVEOK1);
+
+    // Locate the header of page 7 (size=32*2=64, pageNo=7) and truncate halfway through page 7's payload!
+    fp = fopen(bad_path, "rb");
+    assert(fp != NULL);
+    fseek(fp, 0, SEEK_END);
+    sz = ftell(fp);
+    buf = malloc((size_t)sz);
+    fseek(fp, 0, SEEK_SET);
+    assert(fread(buf, 1, (size_t)sz, fp) == (size_t)sz);
+    fclose(fp);
+    long page7_off = -1;
+    for (long off = 2000; off + 16 <= sz; off++) {
+        int s, pno, r1, r2;
+        memcpy(&s, buf + off, 4);
+        memcpy(&pno, buf + off + 4, 4);
+        memcpy(&r1, buf + off + 8, 4);
+        memcpy(&r2, buf + off + 12, 4);
+        if (s == 32 * 2 && pno == 7 && r1 == 0 && r2 == 0) {
+            page7_off = off;
+            break;
+        }
+    }
+    assert(page7_off > 0);
+    // Write truncated copy ending 20 bytes into page 7 (header + 4 bytes of data, missing rest of page 7)
+    fp = fopen(bad_path, "wb");
+    assert(fp != NULL);
+    assert(fwrite(buf, 1, (size_t)(page7_off + 20), fp) == (size_t)(page7_off + 20));
+    fclose(fp);
+    free(buf);
+
+    // Set distinct live state sentinels
+    sl_page = 7;
+    sl_index = 42;
+    nact->msg.MsgFontSize = 24;
+    svar_set(1, "LIVE_STR");
+    sysVar[0] = 7777;
+    sysVar[1] = 8888;
+    varPage[7].value[0] = 3333;
+    varPage[7].value[31] = 6666;
+    jmp_calls = 0;
+    stack_load_calls = 0;
+
+    // Must fail and leave EVERY single live state field completely untouched!
+    assert(save_loadAll(2) == SAVE_LOADERR);
+    assert(jmp_calls == 0);
+    assert(stack_load_calls == 0);
+    assert(sl_page == 7 && sl_index == 42);
+    assert(nact->msg.MsgFontSize == 24);
+    assert(strcmp(svar_get(1), "LIVE_STR") == 0);
+    assert(sysVar[0] == 7777 && sysVar[1] == 8888);
+    assert(varPage[7].value[0] == 3333 && varPage[7].value[31] == 6666);
+
+    // 8. save_resetFormat restores default
     assert(save_setFormat("xsystem35"));
     save_resetFormat();
 
@@ -828,6 +1154,11 @@ int main(void) {
             "cmdf_reset();",
         ):
             self.assertIn(fn, xsys)
+
+        dap = (XSYS35_SRC / "debugger_dap.c").read_text(encoding="utf-8")
+        self.assertNotIn("SDL_WaitEvent(&e);", dap)
+        self.assertGreaterEqual(dap.count("SDL_WaitEventTimeout(&e, 50)"), 2)
+        self.assertGreaterEqual(dap.count("if (sys_is_quit_requested())"), 4)
 
     def test_cursor_oob_and_reset_under_asan(self):
         """Wave-2 [S2-7]: cursor_load rejects no < 100 and no >= 256 (including 256), cursor_set_type bounds-checks, and cursor_reset frees cursors without destroying default cursor."""
@@ -1903,13 +2234,25 @@ int main(void) {
 
 
 class System3AuditRegressionTests(unittest.TestCase):
+    def _require_sys3_build(self) -> tuple[Path, Path]:
+        sys3_build = _resolve_system3_build_dir()
+        sys3_upstream = _resolve_system3_upstream_src(sys3_build)
+        if sys3_build is None or sys3_upstream is None:
+            self.skipTest(
+                "SYSTEM3_BUILD_DIR not configured (set SYSTEM3_BUILD_DIR to a configured system3 build dir to run generated C++ tests)"
+            )
+        return sys3_build, sys3_upstream
+
     def test_makofm_bounds_and_yakata1_amus_under_asan(self):
         """P0: Patched MakoFM rejects non-MAKO yakata1 AMUS.DAT and adversarial/truncated streams with ZERO ASan/UBSan violations."""
-        patched_makofm_cpp = SYS3_BUILD / "fm" / "makofm.cpp"
-        self.assertTrue(patched_makofm_cpp.exists(), f"Expected patched {patched_makofm_cpp}")
+        sys3_build, sys3_upstream = self._require_sys3_build()
+        patched_makofm_cpp = sys3_build / "fm" / "makofm.cpp"
+        if not patched_makofm_cpp.exists():
+            self.skipTest(f"Generated {patched_makofm_cpp} not found in SYSTEM3_BUILD_DIR")
 
-        yakata_amus = Path("/root/Rance10_CN/wave5_staged/yakata1/AMUS.DAT")
-        yakata_path_c = str(yakata_amus) if yakata_amus.exists() else ""
+        yakata_env = os.environ.get("YAKATA1_AMUS_DAT", "").strip()
+        yakata_amus = Path(yakata_env) if yakata_env else None
+        yakata_path_c = str(yakata_amus) if (yakata_amus and yakata_amus.is_file()) else ""
 
         harness = f"""
 #include <assert.h>
@@ -1979,7 +2322,7 @@ int main() {{
     // Infinite 0xff jump loop must terminate via step cap
     run_safely(make_hdr(4, 0x200, {{0xff}}), true);
 
-    // 4. Actual yakata1 AMUS.DAT chunks if present
+    // 4. Actual yakata1 AMUS.DAT chunks if provided via YAKATA1_AMUS_DAT
     const char *yakata_path = "{yakata_path_c}";
     if (yakata_path[0]) {{
         FILE *fp = fopen(yakata_path, "rb");
@@ -2004,15 +2347,17 @@ int main() {{
         compile_and_run_cpp(
             harness,
             [patched_makofm_cpp],
-            include_dirs=[SYS3_BUILD, SYS3_UPSTREAM_SRC, SYS3_UPSTREAM_SRC / "sys"],
+            include_dirs=[sys3_build, sys3_upstream, sys3_upstream / "sys"],
             extra_cxxflags=_pkg_flags("sdl2", "--cflags"),
             asan=True,
         )
 
     def test_system3_encoding_truncated_utf8_and_invalid_sjis_under_asan(self):
         """P0: Patched encoding.cpp handles truncated UTF-8 & invalid SJIS trail bytes with zero OOB/UB."""
-        patched_enc = SYS3_BUILD / "encoding.cpp"
-        self.assertTrue(patched_enc.exists())
+        sys3_build, sys3_upstream = self._require_sys3_build()
+        patched_enc = sys3_build / "encoding.cpp"
+        if not patched_enc.exists():
+            self.skipTest(f"Generated {patched_enc} not found in SYSTEM3_BUILD_DIR")
 
         harness = r"""
 #include <assert.h>
@@ -2062,62 +2407,248 @@ int main() {
         compile_and_run_cpp(
             harness,
             [patched_enc],
-            include_dirs=[SYS3_BUILD, SYS3_UPSTREAM_SRC, SYS3_UPSTREAM_SRC / "sys"],
+            include_dirs=[sys3_build, sys3_upstream, sys3_upstream / "sys"],
             extra_cxxflags=_pkg_flags("sdl2", "--cflags"),
             asan=True,
         )
 
-    def test_system3_patched_sources_and_ios_switch_cmake_guards(self):
-        """P0: Verify all system3 configure-time patches (stack overflows, NULL glyphs, 480p resize, iOS crash isolation & foreground redraw)."""
-        # Verify generated host build files contain every common patch
-        nact_cpp = (SYS3_BUILD / "nact.cpp").read_text(encoding="utf-8")
-        self.assertNotIn("char buf[200];", nact_cpp)
-        self.assertIn("std::string buf;", nact_cpp)
-        self.assertIn("system3_reset_input_state();", nact_cpp)
-        self.assertIn("SDL_GameControllerClose(sdl_gamecontroller);", nact_cpp)
+    def test_system3_scenario_bounded_string_reads_under_asan(self):
+        """P0 (Devin): Scenario::get_syseng_string_dynamic / getd_checked / skip_syseng_string reject truncated pages with ZERO OOB reads."""
+        sys3_build, sys3_upstream = self._require_sys3_build()
+        patched_sco_cpp = sys3_build / "scenario.cpp"
+        patched_sco_h = sys3_build / "scenario.h"
+        patched_enc = sys3_build / "encoding.cpp"
+        if not (patched_sco_cpp.exists() and patched_sco_h.exists() and patched_enc.exists()):
+            self.skipTest(f"Generated scenario.{{h,cpp}} / encoding.cpp not found in {sys3_build}")
 
-        sys2_cpp = (SYS3_BUILD / "nact_sys2.cpp").read_text(encoding="utf-8")
-        self.assertNotIn("char string[33];", sys2_cpp)
-        self.assertIn("std::string string;", sys2_cpp)
+        harness = r"""
+#include <assert.h>
+#include <cstdarg>
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "common.h"
+#include "dri.h"
+#include "encoding.h"
+#include "scenario.h"
 
-        sys3_cpp = (SYS3_BUILD / "nact_sys3.cpp").read_text(encoding="utf-8")
-        self.assertNotIn("char string[22];", sys3_cpp)
-        self.assertIn("std::string string;", sys3_cpp)
-        self.assertIn("ags->window_height = ags->screen_height;", sys3_cpp)
-        self.assertIn("ags->invalidate_screen(0, 0, ags->screen_width, ags->screen_height);", sys3_cpp)
+struct TestSysError {};
 
-        ags_text = (SYS3_BUILD / "ags_text.cpp").read_text(encoding="utf-8")
-        self.assertIn("TTF_Font* font = hFont16;", ags_text)
-        self.assertIn("SDL_Surface* fs = TTF_RenderGlyph_Solid(font, code, white);\n\tif (!fs)\n\t\treturn;", ags_text)
-        self.assertIn("SDL_Surface* fs = TTF_RenderGlyph_Shaded(font, code, white, black);\n\tif (!fs)\n\t\treturn;", ags_text)
+[[noreturn]] void sys_error(const char* format, ...) {
+    (void)format;
+    throw TestSysError{};
+}
+void sys_warning(const char* fmt, ...) { (void)fmt; }
 
-        ags_cpp = (SYS3_BUILD / "ags.cpp").read_text(encoding="utf-8")
-        self.assertIn("ags_setAntialiasedStringMode(!config.no_antialias);", ags_cpp)
-        self.assertIn("SDL_DestroyTexture(scanline_texture);", ags_cpp)
-        self.assertIn("SDL_QueryTexture(sdlTexture, NULL, NULL, &tex_w, &tex_h)", ags_cpp)
-        self.assertIn("if (SDL_LockTextureToSurface(sdlTexture, &dirty_rect, &sf) != 0 || !sf)", ags_cpp)
+static std::vector<uint8_t> g_mock_page;
+void Dri::open(const char* file_name) { (void)file_name; }
+std::vector<uint8_t> Dri::load(int page) {
+    (void)page;
+    return g_mock_page;
+}
 
-        mako_cpp = (SYS3_BUILD / "mako.cpp").read_text(encoding="utf-8")
-        self.assertIn("if (g_device && !midi->is_available())", mako_cpp)
-        self.assertIn("data.size() < 4 + 9 * 4", mako_cpp)
+static void load_bytes(Scenario& sco, std::vector<uint8_t> payload) {
+    g_mock_page.clear();
+    g_mock_page.push_back(0x02);
+    g_mock_page.push_back(0x00);
+    g_mock_page.insert(g_mock_page.end(), payload.begin(), payload.end());
+    sco = Scenario();
+    sco.page_jump(0, 2);
+}
 
-        nact_input = (SYS3_BUILD / "nact_input.cpp").read_text(encoding="utf-8")
-        self.assertIn("void system3_reset_input_state()", nact_input)
+template <typename Fn>
+static bool expect_sys_error(Fn&& fn) {
+    try {
+        fn();
+        return false;
+    } catch (const TestSysError&) {
+        return true;
+    }
+}
 
-        # Verify iOS foreground redraw in nact.ios.mm
+int main() {
+    auto utf8 = Encoding::create("UTF-8");
+    auto sjis = Encoding::create("Shift_JIS");
+
+    // 1. Long (>256 byte) SysEng string with escaped quote & UTF-8 CJK succeeds dynamically
+    {
+        Scenario sco;
+        std::string body(300, 'A');
+        body += "\\\"";
+        body += "\xe4\xb8\xad";
+        std::vector<uint8_t> raw(body.begin(), body.end());
+        raw.push_back('"');
+        load_bytes(sco, raw);
+        std::string got = sco.get_syseng_string_dynamic(utf8.get(), '"');
+        std::string expected = std::string(300, 'A') + "\"" + "\xe4\xb8\xad";
+        assert(got == expected);
+        assert(sco.eof());
+    }
+
+    // 2. Truncated SysEng string (missing closing quote) -> sys_error, ZERO OOB read
+    {
+        Scenario sco;
+        load_bytes(sco, {'H', 'e', 'l', 'l', 'o'});
+        assert(expect_sys_error([&]() { (void)sco.get_syseng_string_dynamic(utf8.get(), '"'); }));
+    }
+
+    // 3. Truncated SysEng string ending right on backslash escape -> sys_error, ZERO OOB read
+    {
+        Scenario sco;
+        load_bytes(sco, {'A', '\\'});
+        assert(expect_sys_error([&]() { (void)sco.get_syseng_string_dynamic(utf8.get(), '"'); }));
+    }
+
+    // 4. Truncated SysEng string mid-multibyte char (Shift_JIS lead byte & UTF-8 3-byte lead) -> sys_error
+    {
+        Scenario sco;
+        load_bytes(sco, {0x82});
+        assert(expect_sys_error([&]() { (void)sco.get_syseng_string_dynamic(sjis.get(), '"'); }));
+    }
+    {
+        Scenario sco;
+        load_bytes(sco, {0xe4, 0xb8});
+        assert(expect_sys_error([&]() { (void)sco.get_syseng_string_dynamic(utf8.get(), '"'); }));
+    }
+
+    // 5. skip_syseng_string on truncated page -> sys_error, ZERO OOB read
+    {
+        Scenario sco;
+        load_bytes(sco, {0xe4, 0xb8});
+        assert(expect_sys_error([&]() { sco.skip_syseng_string(utf8.get(), '"'); }));
+    }
+
+    // 6. getd_checked on colon-delimited cmd_m string without ':' -> sys_error, ZERO OOB read
+    {
+        Scenario sco;
+        load_bytes(sco, {'A', 'B', 'C'});
+        assert(expect_sys_error([&]() {
+            int d = sco.getd_checked();
+            std::string s;
+            while (d != ':') {
+                s.push_back(static_cast<char>(d));
+                d = sco.getd_checked();
+            }
+        }));
+    }
+
+    // 7. Non-SysEng message loop with truncated Shift_JIS trail byte -> sys_error, ZERO OOB read
+    {
+        Scenario sco;
+        load_bytes(sco, {0x82});
+        assert(expect_sys_error([&]() {
+            uint8_t c = sco.getd_checked();
+            int len = sjis->mblen(c);
+            for (int j = 1; j < len; ++j)
+                (void)sco.getd_checked();
+        }));
+    }
+
+    return 0;
+}
+"""
+        compile_and_run_cpp(
+            harness,
+            [patched_sco_cpp, patched_enc],
+            include_dirs=[sys3_build, sys3_upstream, sys3_upstream / "sys"],
+            extra_cxxflags=_pkg_flags("sdl2", "--cflags"),
+            asan=True,
+        )
+
+    def test_system3_cmake_patches_and_ios_switch_guards(self):
+        """P0: Always-runnable verification of cmake/system3/CMakeLists.txt & nact.ios.mm patches (no build dir required)."""
         ios_mm = (SYS3_CMAKE_DIR / "nact.ios.mm").read_text(encoding="utf-8")
         self.assertIn("SDL_APP_DIDENTERFOREGROUND", ios_mm)
         self.assertIn("SDL_RENDER_DEVICE_RESET", ios_mm)
         self.assertIn("ags->invalidate_screen(0, 0, ags->screen_width, ags->screen_height);", ios_mm)
 
-        # Verify iOS sdlmain.cpp patches in CMakeLists.txt match upstream verbatim!
         cm = (SYS3_CMAKE_DIR / "CMakeLists.txt").read_text(encoding="utf-8")
+        # Bounded Scenario helpers used by NACT::message, Sys2 cmd_m, and Sys3 cmd_m
+        self.assertIn("uint8_t Scenario::getd_checked()", cm)
+        self.assertIn("std::string Scenario::get_syseng_string_dynamic(", cm)
+        self.assertIn("buf = sco.get_syseng_string_dynamic(encoding.get(), first_byte);", cm)
+        self.assertIn("string = sco.get_syseng_string_dynamic(encoding.get(), static_cast<uint8_t>(d));", cm)
+        self.assertIn("sco.getd_checked()", cm)
+        self.assertIn("if (sco.eof())", cm)
+        # iOS crash isolation & entry wrapper
         self.assertIn("throw System3IosError{};", cm)
         self.assertIn("catch (const System3IosError&)", cm)
         self.assertIn('set_source_files_properties("${sdlmain_source}" PROPERTIES\n    COMPILE_DEFINITIONS "main=system3_entry', cm)
+        # Verify the 3 iOS sdlmain.cpp patch blocks exist
+        ios_section = cm[cm.index("elseif(ALICEHUB_IOS)"):cm.index("elseif(NINTENDO_SWITCH)")]
+        ios_origs = re.findall(r'alicehub_patch_replace\(ios_main\s+\[=\[(.*?)\]=\]\s+\[=\[', ios_section, re.S)
+        self.assertEqual(len(ios_origs), 3)
 
-        upstream_sdlmain = (SYS3_UPSTREAM_SRC / "sdlmain.cpp").read_text(encoding="utf-8")
-        # Extract the 3 iOS alicehub_patch_replace(ios_main ...) orig blocks and assert verbatim match
+    def test_system3_generated_sources_match_cmake_patches(self):
+        """P0: Verify generated system3 build files contain every configure-time patch and match upstream targets verbatim."""
+        sys3_build, sys3_upstream = self._require_sys3_build()
+        required = (
+            "scenario.h",
+            "scenario.cpp",
+            "nact.cpp",
+            "nact_sys2.cpp",
+            "nact_sys3.cpp",
+            "ags_text.cpp",
+            "ags.cpp",
+            "mako.cpp",
+            "nact_input.cpp",
+        )
+        missing = [f for f in required if not (sys3_build / f).is_file()]
+        if missing:
+            self.skipTest(f"Generated system3 files missing in {sys3_build}: {', '.join(missing)}")
+
+        scenario_h = (sys3_build / "scenario.h").read_text(encoding="utf-8")
+        self.assertIn("uint8_t getd_checked();", scenario_h)
+        self.assertIn("std::string get_syseng_string_dynamic(", scenario_h)
+        self.assertIn("bool eof() const", scenario_h)
+
+        scenario_cpp = (sys3_build / "scenario.cpp").read_text(encoding="utf-8")
+        self.assertIn("uint8_t Scenario::getd_checked()", scenario_cpp)
+        self.assertIn("std::string Scenario::get_syseng_string_dynamic(", scenario_cpp)
+
+        nact_cpp = (sys3_build / "nact.cpp").read_text(encoding="utf-8")
+        self.assertNotIn("char buf[200];", nact_cpp)
+        self.assertIn("std::string buf;", nact_cpp)
+        self.assertIn("sco.get_syseng_string_dynamic(", nact_cpp)
+        self.assertIn("sco.getd_checked()", nact_cpp)
+        self.assertIn("system3_reset_input_state();", nact_cpp)
+        self.assertIn("SDL_GameControllerClose(sdl_gamecontroller);", nact_cpp)
+
+        sys2_cpp = (sys3_build / "nact_sys2.cpp").read_text(encoding="utf-8")
+        self.assertNotIn("char string[33];", sys2_cpp)
+        self.assertIn("std::string string;", sys2_cpp)
+        self.assertIn("sco.get_syseng_string_dynamic(", sys2_cpp)
+        self.assertIn("sco.getd_checked()", sys2_cpp)
+
+        sys3_cpp = (sys3_build / "nact_sys3.cpp").read_text(encoding="utf-8")
+        self.assertNotIn("char string[22];", sys3_cpp)
+        self.assertIn("std::string string;", sys3_cpp)
+        self.assertIn("sco.get_syseng_string_dynamic(", sys3_cpp)
+        self.assertIn("sco.getd_checked()", sys3_cpp)
+        self.assertIn("ags->window_height = ags->screen_height;", sys3_cpp)
+        self.assertIn("ags->invalidate_screen(0, 0, ags->screen_width, ags->screen_height);", sys3_cpp)
+
+        ags_text = (sys3_build / "ags_text.cpp").read_text(encoding="utf-8")
+        self.assertIn("TTF_Font* font = hFont16;", ags_text)
+        self.assertIn("SDL_Surface* fs = TTF_RenderGlyph_Solid(font, code, white);\n\tif (!fs)\n\t\treturn;", ags_text)
+        self.assertIn("SDL_Surface* fs = TTF_RenderGlyph_Shaded(font, code, white, black);\n\tif (!fs)\n\t\treturn;", ags_text)
+
+        ags_cpp = (sys3_build / "ags.cpp").read_text(encoding="utf-8")
+        self.assertIn("ags_setAntialiasedStringMode(!config.no_antialias);", ags_cpp)
+        self.assertIn("SDL_DestroyTexture(scanline_texture);", ags_cpp)
+        self.assertIn("SDL_QueryTexture(sdlTexture, NULL, NULL, &tex_w, &tex_h)", ags_cpp)
+        self.assertIn("if (SDL_LockTextureToSurface(sdlTexture, &dirty_rect, &sf) != 0 || !sf)", ags_cpp)
+
+        mako_cpp = (sys3_build / "mako.cpp").read_text(encoding="utf-8")
+        self.assertIn("if (g_device && !midi->is_available())", mako_cpp)
+        self.assertIn("data.size() < 4 + 9 * 4", mako_cpp)
+
+        nact_input = (sys3_build / "nact_input.cpp").read_text(encoding="utf-8")
+        self.assertIn("void system3_reset_input_state()", nact_input)
+
+        # Verify iOS sdlmain.cpp patches in CMakeLists.txt match upstream verbatim!
+        cm = (SYS3_CMAKE_DIR / "CMakeLists.txt").read_text(encoding="utf-8")
+        upstream_sdlmain = (sys3_upstream / "sdlmain.cpp").read_text(encoding="utf-8")
         ios_section = cm[cm.index("elseif(ALICEHUB_IOS)"):cm.index("elseif(NINTENDO_SWITCH)")]
         ios_origs = re.findall(r'alicehub_patch_replace\(ios_main\s+\[=\[(.*?)\]=\]\s+\[=\[', ios_section, re.S)
         self.assertEqual(len(ios_origs), 3)

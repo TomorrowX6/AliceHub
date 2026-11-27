@@ -27,6 +27,10 @@ set(src "${system3_source_SOURCE_DIR}/src")
 file(GLOB vm_sources "${src}/sys/*.cpp")
 list(REMOVE_ITEM vm_sources
   "${src}/sys/mako_midi.cpp"
+  "${src}/sys/scenario.cpp"
+  "${src}/sys/msgskip.cpp"
+  "${src}/sys/nact_sys1.cpp"
+  "${src}/sys/nact_gakuenking.cpp"
   "${src}/sys/nact.cpp"
   "${src}/sys/nact_sys2.cpp"
   "${src}/sys/nact_sys3.cpp"
@@ -995,6 +999,157 @@ alicehub_patch_replace(patched_encoding_cpp
   "Encoding::mbslen bounds check")
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/encoding.cpp" CONTENT "${patched_encoding_cpp}" @ONLY)
 
+# --- Patch sys/scenario.h and sys/scenario.cpp (bounds-checked dynamic string reads) ---
+set(orig_scenario_h "${src}/sys/scenario.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_scenario_h}")
+file(READ "${orig_scenario_h}" patched_scenario_h)
+alicehub_patch_replace(patched_scenario_h
+  [=[#include <utility>
+#include <vector>
+#include <stdint.h>
+#include "dri.h"]=]
+  [=[#include <string>
+#include <utility>
+#include <vector>
+#include <stdint.h>
+#include "dri.h"]=]
+  "Scenario::scenario.h include <string>")
+alicehub_patch_replace(patched_scenario_h
+  [=[	uint8_t getd() { return data_[addr_++]; }
+	uint16_t getw() {
+		uint16_t w = data_[addr_++];
+		w |= data_[addr_++] << 8;
+		return w;
+	}
+	void ungetd() { addr_--; }
+	void skip_syseng_string(Encoding *enc, uint8_t terminator);
+	void get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator);]=]
+  [=[	bool eof() const { return !data_ || addr_ < 0 || static_cast<size_t>(addr_) >= data_size_; }
+	uint8_t getd() { return data_[addr_++]; }
+	uint8_t getd_checked();
+	uint16_t getw() {
+		uint16_t w = data_[addr_++];
+		w |= data_[addr_++] << 8;
+		return w;
+	}
+	void ungetd() { addr_--; }
+	void skip_syseng_string(Encoding *enc, uint8_t terminator);
+	void get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator);
+	std::string get_syseng_string_dynamic(Encoding *enc, uint8_t terminator);]=]
+  "Scenario bounded string API decls")
+alicehub_patch_replace(patched_scenario_h
+  [=[	const uint8_t* data_;
+	size_t data_size_;
+	int page_;
+	int addr_;
+	int cmd_addr_;]=]
+  [=[	const uint8_t* data_ = nullptr;
+	size_t data_size_ = 0;
+	int page_ = 0;
+	int addr_ = 0;
+	int cmd_addr_ = 0;]=]
+  "Scenario member default initializers")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/scenario.h" CONTENT "${patched_scenario_h}" @ONLY)
+
+set(orig_scenario_cpp "${src}/sys/scenario.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_scenario_cpp}")
+file(READ "${orig_scenario_cpp}" patched_scenario_cpp)
+alicehub_patch_replace(patched_scenario_cpp
+  [=[void Scenario::skip_syseng_string(Encoding *enc, uint8_t terminator)
+{
+	for (uint8_t c = getd(); c != terminator; c = getd()) {
+		if (c == '\\')
+			c = getd();
+		skip(enc->mblen(c) - 1);
+	}
+}
+
+void Scenario::get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator)
+{
+	int i = 0;
+	for (uint8_t c = getd(); c != terminator; c = getd()) {
+		if (c == '\\')
+			c = getd();
+		int len = enc->mblen(c);
+		if (i + len >= size)
+			sys_error("String buffer overrun at %d:%04x", page_, cmd_addr_);
+		buf[i++] = c;
+		for (int j = 1; j < len; ++j)
+			buf[i++] = getd();
+	}
+	buf[i] = '\0';
+}]=]
+  [=[uint8_t Scenario::getd_checked()
+{
+	if (!data_ || addr_ < 0 || static_cast<size_t>(addr_) >= data_size_)
+		sys_error("Scenario error: unexpected end of page at %d:%04x", page_, cmd_addr_);
+	return data_[addr_++];
+}
+
+void Scenario::skip_syseng_string(Encoding *enc, uint8_t terminator)
+{
+	for (;;) {
+		uint8_t c = getd_checked();
+		if (c == terminator)
+			break;
+		if (c == '\\')
+			c = getd_checked();
+		int len = enc->mblen(c);
+		for (int j = 1; j < len; ++j)
+			(void)getd_checked();
+	}
+}
+
+void Scenario::get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator)
+{
+	int i = 0;
+	for (;;) {
+		uint8_t c = getd_checked();
+		if (c == terminator)
+			break;
+		if (c == '\\')
+			c = getd_checked();
+		int len = enc->mblen(c);
+		if (i + len >= size)
+			sys_error("String buffer overrun at %d:%04x", page_, cmd_addr_);
+		buf[i++] = c;
+		for (int j = 1; j < len; ++j)
+			buf[i++] = getd_checked();
+	}
+	buf[i] = '\0';
+}
+
+std::string Scenario::get_syseng_string_dynamic(Encoding *enc, uint8_t terminator)
+{
+	std::string out;
+	for (;;) {
+		uint8_t c = getd_checked();
+		if (c == terminator)
+			break;
+		if (c == '\\')
+			c = getd_checked();
+		int len = enc->mblen(c);
+		out.push_back(static_cast<char>(c));
+		for (int j = 1; j < len; ++j)
+			out.push_back(static_cast<char>(getd_checked()));
+	}
+	return out;
+}]=]
+  "Scenario::getd_checked and bounded syseng string helpers")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/scenario.cpp" CONTENT "${patched_scenario_cpp}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/scenario.cpp")
+
+# Copy nact.h and remaining sys/*.cpp that include nact.h so every translation unit sees patched scenario.h
+foreach(_sys_copy nact.h msgskip.cpp nact_sys1.cpp nact_gakuenking.cpp)
+  set(_sys_copy_src "${src}/sys/${_sys_copy}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_sys_copy_src}")
+  configure_file("${_sys_copy_src}" "${CMAKE_CURRENT_BINARY_DIR}/${_sys_copy}" COPYONLY)
+endforeach()
+list(APPEND vm_sources
+  "${CMAKE_CURRENT_BINARY_DIR}/msgskip.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/nact_sys1.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/nact_gakuenking.cpp")
+
 # --- Patch sys/nact.cpp ---
 set(orig_nact_cpp "${src}/sys/nact.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_cpp}")
@@ -1050,24 +1205,22 @@ alicehub_patch_replace(patched_nact_cpp
 	}]=]
   [=[	std::string buf;
 	if (first_byte == '\'' || first_byte == '"') {  // SysEng
-		for (uint8_t c = sco.getd(); c != first_byte; c = sco.getd()) {
-			if (c == '\\')
-				c = sco.getd();
-			int len = encoding->mblen(c);
-			buf.push_back(static_cast<char>(c));
-			for (int j = 1; j < len; ++j)
-				buf.push_back(static_cast<char>(sco.getd()));
-		}
+		buf = sco.get_syseng_string_dynamic(encoding.get(), first_byte);
 	} else {
 		uint8_t c = first_byte;
 		while (is_message(c)) {
 			int len = encoding->mblen(c);
 			buf.push_back(static_cast<char>(c));
 			for (int j = 1; j < len; ++j)
-				buf.push_back(static_cast<char>(sco.getd()));
-			c = sco.getd();
+				buf.push_back(static_cast<char>(sco.getd_checked()));
+			if (sco.eof())
+				break;
+			c = sco.getd_checked();
+			if (!is_message(c)) {
+				sco.ungetd();
+				break;
+			}
 		}
-		sco.ungetd();
 	}]=]
   "NACT::message std::string dynamic buffer")
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/nact.cpp" CONTENT "${patched_nact_cpp}" @ONLY)
@@ -1097,20 +1250,13 @@ alicehub_patch_replace(patched_nact_sys2
 {
 	std::string string;
 
-	int d = sco.getd();
+	int d = sco.getd_checked();
 	if (d == '\'' || d == '"') {  // SysEng
-		for (uint8_t c = sco.getd(); c != d; c = sco.getd()) {
-			if (c == '\\')
-				c = sco.getd();
-			int len = encoding->mblen(c);
-			string.push_back(static_cast<char>(c));
-			for (int j = 1; j < len; ++j)
-				string.push_back(static_cast<char>(sco.getd()));
-		}
+		string = sco.get_syseng_string_dynamic(encoding.get(), static_cast<uint8_t>(d));
 	} else {
-		while(d != ':') {
+		while (d != ':') {
 			string.push_back(static_cast<char>(d));
-			d = sco.getd();
+			d = sco.getd_checked();
 		}
 	}]=]
   "NACT_Sys2::cmd_m std::string dynamic buffer")
@@ -1141,20 +1287,13 @@ alicehub_patch_replace(patched_nact_sys3
 {
 	std::string string;
 
-	int d = sco.getd();
+	int d = sco.getd_checked();
 	if (d == '\'' || d == '"') {  // SysEng
-		for (uint8_t c = sco.getd(); c != d; c = sco.getd()) {
-			if (c == '\\')
-				c = sco.getd();
-			int len = encoding->mblen(c);
-			string.push_back(static_cast<char>(c));
-			for (int j = 1; j < len; ++j)
-				string.push_back(static_cast<char>(sco.getd()));
-		}
+		string = sco.get_syseng_string_dynamic(encoding.get(), static_cast<uint8_t>(d));
 	} else {
-		while(d != ':') {
+		while (d != ':') {
 			string.push_back(static_cast<char>(d));
-			d = sco.getd();
+			d = sco.getd_checked();
 		}
 	}]=]
   "NACT_Sys3::cmd_m std::string dynamic buffer")

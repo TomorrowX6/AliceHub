@@ -132,6 +132,18 @@ char *fc_resolve_existing_path(const char *path) {
 	return NULL;
 }
 
+int fc_remove_case_variants(const char *canonical_path, bool keep_canonical, const char *backup_first_to) {
+	(void)backup_first_to;
+	if (!canonical_path || !*canonical_path || keep_canonical)
+		return 0;
+	wchar_t wpath[PATH_MAX + 1];
+	if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, canonical_path, -1, wpath, PATH_MAX + 1) &&
+	    _wunlink(wpath) == 0) {
+		return 1;
+	}
+	return 0;
+}
+
 FILE *fopen_utf8(const char *path_utf8, char type) {
 	wchar_t wpath[PATH_MAX + 1];
 	if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path_utf8, -1, wpath, PATH_MAX + 1))
@@ -176,16 +188,11 @@ FILE *fc_open(const char *fname_utf8, char type) {
 
 #else // !_WIN32
 
-char *fc_resolve_existing_path(const char *path) {
-	if (!path || !*path)
-		return NULL;
-	if (access(path, F_OK) == 0)
-		return strdup(path);
-
+static bool fc_split_dir_base(const char *path, const char **dir_out, char **dir_alloc_out, const char **base_out, bool *has_slash_out) {
 	const char *slash = strrchr(path, '/');
 	const char *base = slash ? slash + 1 : path;
 	if (!*base)
-		return NULL;
+		return false;
 
 	char *dir_alloc = NULL;
 	const char *dir = ".";
@@ -196,12 +203,43 @@ char *fc_resolve_existing_path(const char *path) {
 			size_t dlen = (size_t)(slash - path);
 			dir_alloc = malloc(dlen + 1);
 			if (!dir_alloc)
-				return NULL;
+				return false;
 			memcpy(dir_alloc, path, dlen);
 			dir_alloc[dlen] = '\0';
 			dir = dir_alloc;
 		}
 	}
+	*dir_out = dir;
+	*dir_alloc_out = dir_alloc;
+	*base_out = base;
+	*has_slash_out = (slash != NULL);
+	return true;
+}
+
+static char *fc_join_dir_entry(const char *dir, bool has_slash, const char *name) {
+	if (!has_slash)
+		return strdup(name);
+	if (strcmp(dir, "/") == 0) {
+		char *p = malloc(strlen(name) + 2);
+		if (p)
+			sprintf(p, "/%s", name);
+		return p;
+	}
+	return get_fullpath(dir, name);
+}
+
+char *fc_resolve_existing_path(const char *path) {
+	if (!path || !*path)
+		return NULL;
+	if (access(path, F_OK) == 0)
+		return strdup(path);
+
+	const char *dir = NULL;
+	char *dir_alloc = NULL;
+	const char *base = NULL;
+	bool has_slash = false;
+	if (!fc_split_dir_base(path, &dir, &dir_alloc, &base, &has_slash))
+		return NULL;
 
 	DIR *d = opendir(dir);
 	if (!d) {
@@ -213,21 +251,93 @@ char *fc_resolve_existing_path(const char *path) {
 	struct dirent *entry;
 	while ((entry = readdir(d)) != NULL) {
 		if (strcasecmp(base, entry->d_name) == 0) {
-			if (!slash) {
-				found = strdup(entry->d_name);
-			} else if (strcmp(dir, "/") == 0) {
-				found = malloc(strlen(entry->d_name) + 2);
-				if (found)
-					sprintf(found, "/%s", entry->d_name);
-			} else {
-				found = get_fullpath(dir, entry->d_name);
-			}
+			found = fc_join_dir_entry(dir, has_slash, entry->d_name);
 			break;
 		}
 	}
 	closedir(d);
 	free(dir_alloc);
 	return found;
+}
+
+int fc_remove_case_variants(const char *canonical_path, bool keep_canonical, const char *backup_first_to) {
+	if (!canonical_path || !*canonical_path)
+		return 0;
+
+	int removed = 0;
+	if (!keep_canonical) {
+		if (unlink(canonical_path) == 0)
+			removed++;
+	}
+
+	const char *dir = NULL;
+	char *dir_alloc = NULL;
+	const char *base = NULL;
+	bool has_slash = false;
+	if (!fc_split_dir_base(canonical_path, &dir, &dir_alloc, &base, &has_slash))
+		return removed;
+
+	struct stat canon_st;
+	bool has_canon = keep_canonical && (stat(canonical_path, &canon_st) == 0);
+
+	DIR *d = opendir(dir);
+	if (!d) {
+		free(dir_alloc);
+		return removed;
+	}
+
+	char **matches = NULL;
+	size_t match_cnt = 0;
+	size_t match_cap = 0;
+	struct dirent *entry;
+	while ((entry = readdir(d)) != NULL) {
+		if (strcasecmp(base, entry->d_name) != 0)
+			continue;
+		if (keep_canonical && strcmp(base, entry->d_name) == 0)
+			continue;
+		char *full = fc_join_dir_entry(dir, has_slash, entry->d_name);
+		if (!full)
+			continue;
+		if (match_cnt == match_cap) {
+			size_t new_cap = match_cap ? match_cap * 2 : 4;
+			char **tmp = realloc(matches, new_cap * sizeof(*matches));
+			if (!tmp) {
+				free(full);
+				break;
+			}
+			matches = tmp;
+			match_cap = new_cap;
+		}
+		matches[match_cnt++] = full;
+	}
+	closedir(d);
+
+	bool backed_up = false;
+	for (size_t i = 0; i < match_cnt; i++) {
+		if (has_canon) {
+			struct stat var_st;
+			if (stat(matches[i], &var_st) == 0 &&
+			    var_st.st_dev == canon_st.st_dev &&
+			    var_st.st_ino == canon_st.st_ino) {
+				free(matches[i]);
+				continue;
+			}
+		}
+		if (keep_canonical && backup_first_to && !backed_up) {
+			if (rename(matches[i], backup_first_to) == 0) {
+				backed_up = true;
+				removed++;
+				free(matches[i]);
+				continue;
+			}
+		}
+		if (unlink(matches[i]) == 0)
+			removed++;
+		free(matches[i]);
+	}
+	free(matches);
+	free(dir_alloc);
+	return removed;
 }
 
 static char *fc_search(const char *fname_utf8, const char *dir) {
