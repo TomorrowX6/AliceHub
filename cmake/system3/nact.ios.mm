@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #include <SDL_syswm.h>
 #include "nact.h"
+#include "ags.h"
 #include "encoding.h"
 
 extern SDL_Window *g_window;
@@ -76,7 +77,11 @@ void NACT::set_skip_menu_state(bool, bool)
 {
 }
 
-bool NACT::handle_platform_event(const SDL_Event &)
+bool NACT::handle_platform_event(const SDL_Event &e)
 {
+    if (e.type == SDL_APP_DIDENTERFOREGROUND || e.type == SDL_RENDER_DEVICE_RESET) {
+        ags->invalidate_screen(0, 0, ags->screen_width, ags->screen_height);
+        return true;
+    }
     return false;
 }

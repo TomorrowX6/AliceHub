@@ -27,6 +27,8 @@
 #include <stdbool.h>
 
 void fc_init(const char *name);
+void fc_fini(void);
+char *fc_resolve_existing_path(const char *path);
 char *fc_get_path(const char *fname_utf8);
 bool fc_exists(const char *fname_utf8);
 FILE *fc_open(const char *fname_utf8, char type);

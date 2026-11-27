@@ -23,6 +23,7 @@
 #include "config.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -78,10 +79,28 @@ struct volume_sav_channel {
 	uint8_t reserved;  // zero
 };
 
+void volume_fini(void) {
+	for (int i = 0; i < MAXVOLCH; i++) {
+		free(vval[i].label);
+		vval[i].label = NULL;
+		vval[i].vol = 0;
+		vval[i].mute = false;
+	}
+	vval_max = 0;
+	mute_on_unfocus = false;
+	global_mute = false;
+}
+
 void volume_init(void) {
 	int i;
 	char fn[256];
 	int nvalancer = 0;
+
+	for (i = 0; i < MAXVOLCH; i++) {
+		free(vval[i].label);
+		vval[i].label = NULL;
+	}
+	vval_max = 0;
 
 	FILE *fp = nact->files.init ? fopen(nact->files.init, "r") : NULL;
 	if (fp) {
@@ -101,6 +120,7 @@ void volume_init(void) {
 			CharacterEncoding label_enc = (gbk_valid > 0 && sjis_err > gbk_err) ? GBK
 				: (nact->encoding == GBK && gbk_err > sjis_err) ? SHIFT_JIS
 				: nact->encoding;
+			free(vval[i].label);
 			vval[i].label = codeconv(UTF8, label_enc, s1);
 			vval_max = max(vval_max, i);
 			nvalancer++;

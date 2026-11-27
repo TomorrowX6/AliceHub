@@ -161,6 +161,10 @@ uint32_t sys_get_ticks(void) {
 }
 
 void sys_sleep(int msec) {
+	if (sys_is_quit_requested()) {
+		nact_quit(false);
+		return;
+	}
 	gfx_updateScreen();
 	dbg_onsleep();
 #ifdef __EMSCRIPTEN__
@@ -168,7 +172,13 @@ void sys_sleep(int msec) {
 #elif defined(__ANDROID__)
 	gfx_android_delay(msec);
 #else
-	SDL_Delay(msec);
+	while (msec > 0 && !sys_is_quit_requested()) {
+		int chunk = msec > 50 ? 50 : msec;
+		SDL_Delay(chunk);
+		msec -= chunk;
+	}
+	if (sys_is_quit_requested())
+		nact_quit(false);
 #endif
 	scheduler_on_event(SCHEDULER_EVENT_SLEEP);
 }
@@ -185,6 +195,10 @@ EM_JS(void, wait_vsync, (void), {
 #endif
 
 void sys_wait_vsync(void) {
+	if (sys_is_quit_requested()) {
+		nact_quit(false);
+		return;
+	}
 #ifdef __ANDROID__
 	gfx_android_pre_present();
 	gfx_updateScreen();

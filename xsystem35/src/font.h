@@ -48,6 +48,7 @@ typedef struct {
 } FontSpec;
 
 extern void font_init(void);
+extern void font_fini(void);
 extern void font_set_name_and_index(FontType type, const char *name, int index);
 extern void font_set_encoding(CharacterEncoding encoding);
 extern void font_clear_cache(void);

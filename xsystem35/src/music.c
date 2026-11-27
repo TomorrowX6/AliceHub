@@ -40,8 +40,16 @@ bool mus_init(int audio_buffer_size) {
 void mus_exit(void) {
 	musbgm_exit();
 	muscd_exit();
-	if (prv.midi_valid) musmidi_exit();
-	if (prv.pcm_valid) muspcm_exit();
+	if (prv.midi_valid)
+		musmidi_stop();
+	if (prv.pcm_valid) {
+		muspcm_exit();
+		prv.pcm_valid = false;
+	}
+	if (prv.midi_valid) {
+		musmidi_exit();
+		prv.midi_valid = false;
+	}
 }
 
 void mus_reset(void) {

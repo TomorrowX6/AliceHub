@@ -103,6 +103,8 @@ bgi_t *bgi_find(int no) {
 	return NULL;
 }
 
+void bgi_clear(void) {}
+
 /* --- Mixer stubs --- */
 
 mixer_music *mixer_music_load(const void *data, size_t size) {

@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
@@ -109,10 +110,27 @@ int mkdir_p(const char *path_utf8)
 /*   name : save/load directory      */
 void fc_init(const char *name) {
 	mkdir_p(name);
+	free(saveDataPath);
 	saveDataPath = strdup(name);
 }
 
+void fc_fini(void) {
+	free(saveDataPath);
+	saveDataPath = NULL;
+}
+
 #ifdef _WIN32
+
+char *fc_resolve_existing_path(const char *path) {
+	if (!path || !*path)
+		return NULL;
+	wchar_t wpath[PATH_MAX + 1];
+	if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wpath, PATH_MAX + 1) &&
+	    _waccess(wpath, F_OK) == 0) {
+		return strdup(path);
+	}
+	return NULL;
+}
 
 FILE *fopen_utf8(const char *path_utf8, char type) {
 	wchar_t wpath[PATH_MAX + 1];
@@ -122,7 +140,7 @@ FILE *fopen_utf8(const char *path_utf8, char type) {
 }
 
 char *fc_get_path(const char *fname_utf8) {
-	return get_fullpath(saveDataPath, fname_utf8);
+	return get_fullpath(saveDataPath ? saveDataPath : ".", fname_utf8);
 }
 
 bool fc_exists(const char *fname_utf8)
@@ -158,7 +176,63 @@ FILE *fc_open(const char *fname_utf8, char type) {
 
 #else // !_WIN32
 
+char *fc_resolve_existing_path(const char *path) {
+	if (!path || !*path)
+		return NULL;
+	if (access(path, F_OK) == 0)
+		return strdup(path);
+
+	const char *slash = strrchr(path, '/');
+	const char *base = slash ? slash + 1 : path;
+	if (!*base)
+		return NULL;
+
+	char *dir_alloc = NULL;
+	const char *dir = ".";
+	if (slash) {
+		if (slash == path) {
+			dir = "/";
+		} else {
+			size_t dlen = (size_t)(slash - path);
+			dir_alloc = malloc(dlen + 1);
+			if (!dir_alloc)
+				return NULL;
+			memcpy(dir_alloc, path, dlen);
+			dir_alloc[dlen] = '\0';
+			dir = dir_alloc;
+		}
+	}
+
+	DIR *d = opendir(dir);
+	if (!d) {
+		free(dir_alloc);
+		return NULL;
+	}
+
+	char *found = NULL;
+	struct dirent *entry;
+	while ((entry = readdir(d)) != NULL) {
+		if (strcasecmp(base, entry->d_name) == 0) {
+			if (!slash) {
+				found = strdup(entry->d_name);
+			} else if (strcmp(dir, "/") == 0) {
+				found = malloc(strlen(entry->d_name) + 2);
+				if (found)
+					sprintf(found, "/%s", entry->d_name);
+			} else {
+				found = get_fullpath(dir, entry->d_name);
+			}
+			break;
+		}
+	}
+	closedir(d);
+	free(dir_alloc);
+	return found;
+}
+
 static char *fc_search(const char *fname_utf8, const char *dir) {
+	if (!dir)
+		dir = ".";
 	// If path contains no directory separator, do case-insensitive search.
 	if (strchr(fname_utf8, '/') == NULL) {
 		DIR *d = opendir(dir);
@@ -176,22 +250,22 @@ static char *fc_search(const char *fname_utf8, const char *dir) {
 		closedir(d);
 		return found;
 	} else {
-		// If path contains directory separator, do case-sensitive existence check.
+		// Check exact path first, then case-insensitive filename fallback.
 		char *fullpath = get_fullpath(dir, fname_utf8);
-		if (access(fullpath, F_OK) == 0) {
-			return fullpath;
-		} else {
-			free(fullpath);
+		if (!fullpath)
 			return NULL;
-		}
+		char *resolved = fc_resolve_existing_path(fullpath);
+		free(fullpath);
+		return resolved;
 	}
 }
 
 char *fc_get_path(const char *fname_utf8) {
-	char *path = fc_search(fname_utf8, saveDataPath);
+	const char *dir = saveDataPath ? saveDataPath : ".";
+	char *path = fc_search(fname_utf8, dir);
 	if (path)
 		return path;
-	return get_fullpath(saveDataPath, fname_utf8);
+	return get_fullpath(dir, fname_utf8);
 }
 
 bool fc_exists(const char *fname_utf8)
@@ -203,14 +277,15 @@ bool fc_exists(const char *fname_utf8)
 }
 
 FILE *fc_open(const char *fname_utf8, char type) {
-	char *fullpath = fc_search(fname_utf8, saveDataPath);
+	const char *dir = saveDataPath ? saveDataPath : ".";
+	char *fullpath = fc_search(fname_utf8, dir);
 	if (!fullpath) {
 		if (type == 'r') {
 			fullpath = fc_search(fname_utf8, ".");
 			if (!fullpath)
 				return NULL;
 		} else {
-			fullpath = get_fullpath(saveDataPath, fname_utf8);
+			fullpath = get_fullpath(dir, fname_utf8);
 		}
 	}
 

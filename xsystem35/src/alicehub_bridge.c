@@ -249,9 +249,10 @@ static int vk_to_sdl_mouse_button(int vk) {
 	}
 }
 
-static void send_cursor_ui_state(bool force) {
+static void send_cursor_ui_state(bool force, bool ctrl_applied) {
 #ifdef __ANDROID__
 	static int last_param = -1;
+	(void)ctrl_applied;
 #endif
 	SDL_Window *win = gfx_getWindow();
 	int ww = 0, wh = 0;
@@ -287,7 +288,7 @@ static void send_cursor_ui_state(bool force) {
 	}
 #else
 	(void)force;
-	alicehub_ios_gamepad_frame(nx, ny, cursor_visible, false, false, ctrl_skip_applied);
+	alicehub_ios_gamepad_frame(nx, ny, cursor_visible, false, false, ctrl_applied);
 #endif
 }
 
@@ -318,7 +319,7 @@ static void dispatch_emu_cmd(int cmd) {
 		cursor_visible = !cursor_visible;
 		if (cursor_visible)
 			event_inject_mouse_motion((int)(cursor_x + 0.5f), (int)(cursor_y + 0.5f));
-		send_cursor_ui_state(true);
+		send_cursor_ui_state(true, ctrl_skip_applied);
 	} else if (cmd > 0) {
 #ifdef __ANDROID__
 		SDL_AndroidSendMessage(COMMAND_GAMEPAD_UI_EVENT, GAMEPAD_UI_EMU_CMD | ((cmd & 0xFF) << 8));
@@ -450,7 +451,10 @@ static void apply_virtual_stick_deadzone(float *x, float *y) {
 void alicehub_on_touch_input(void) {
 	if (cursor_visible) {
 		cursor_visible = false;
-		send_cursor_ui_state(true);
+		pthread_mutex_lock(&bridge_lock);
+		bool applied = ctrl_skip_applied;
+		pthread_mutex_unlock(&bridge_lock);
+		send_cursor_ui_state(true, applied);
 	}
 }
 
@@ -575,6 +579,9 @@ void alicehub_pump_events(void) {
 	}
 
 	bool final_ctrl = ctrl_skip_latched || want_ctrl;
+	bool ctrl_skip_changed = (final_ctrl != ctrl_skip_applied);
+	if (ctrl_skip_changed)
+		ctrl_skip_applied = final_ctrl;
 	pthread_mutex_unlock(&bridge_lock);
 
 	escalayer_modifier_tick();
@@ -584,7 +591,7 @@ void alicehub_pump_events(void) {
 		event_inject_mouse_motion((int)(cursor_x + 0.5f), (int)(cursor_y + 0.5f));
 	}
 #ifdef __ANDROID__
-	send_cursor_ui_state(false);
+	send_cursor_ui_state(false, final_ctrl);
 #endif
 
 	// Emit mouse buttons cleanly on edges
@@ -610,8 +617,7 @@ void alicehub_pump_events(void) {
 		bridge_ctrl_down = ctrl_down;
 		event_inject_rawkey(KEY_CTRL, ctrl_down);
 	}
-	if (final_ctrl != ctrl_skip_applied) {
-		ctrl_skip_applied = final_ctrl;
+	if (ctrl_skip_changed) {
 		msgskip_activate(final_ctrl);
 	}
 
@@ -636,7 +642,7 @@ void alicehub_pump_events(void) {
 		bridge_joy_mask = desired_joy_mask;
 	}
 #ifdef ALICEHUB_IOS
-	send_cursor_ui_state(false);
+	send_cursor_ui_state(false, final_ctrl);
 	unsigned commands = pending_commands;
 	pending_commands = 0;
 	for (int cmd = EMU_TOGGLE_VPAD; cmd <= EMU_OPEN_EDITOR; cmd++) {
@@ -805,10 +811,13 @@ Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConfigJson(
 	if (!jjson)
 		return;
 	const char *json = (*env)->GetStringUTFChars(env, jjson, NULL);
-	if (json) {
-		xsystem35_set_gamepad_config_json(json);
-		(*env)->ReleaseStringUTFChars(env, jjson, json);
+	if (!json) {
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionClear(env);
+		return;
 	}
+	xsystem35_set_gamepad_config_json(json);
+	(*env)->ReleaseStringUTFChars(env, jjson, json);
 }
 
 JNIEXPORT void JNICALL
@@ -1102,8 +1111,11 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeApplyLiveAction(
 	if (!jactionSpec)
 		return;
 	const char *s = (*env)->GetStringUTFChars(env, jactionSpec, NULL);
-	if (!s)
+	if (!s) {
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionClear(env);
 		return;
+	}
 	xsystem35_modifier_apply_action(s);
 	(*env)->ReleaseStringUTFChars(env, jactionSpec, s);
 }
@@ -1144,8 +1156,9 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetCtrlSkip(
 	(void)env; (void)clazz;
 	pthread_mutex_lock(&bridge_lock);
 	bool val = pending_ctrl_set ? pending_ctrl_val : ctrl_skip_latched;
+	bool applied = ctrl_skip_applied;
 	pthread_mutex_unlock(&bridge_lock);
-	return (val || ctrl_skip_applied) ? JNI_TRUE : JNI_FALSE;
+	return (val || applied) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
@@ -1175,10 +1188,16 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
 	if (!jsrcPath || !jdstPath)
 		return JNI_FALSE;
 	const char *src = (*env)->GetStringUTFChars(env, jsrcPath, NULL);
+	if (!src) {
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionClear(env);
+		return JNI_FALSE;
+	}
 	const char *dst = (*env)->GetStringUTFChars(env, jdstPath, NULL);
-	if (!src || !dst) {
-		if (src) (*env)->ReleaseStringUTFChars(env, jsrcPath, src);
-		if (dst) (*env)->ReleaseStringUTFChars(env, jdstPath, dst);
+	if (!dst) {
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionClear(env);
+		(*env)->ReleaseStringUTFChars(env, jsrcPath, src);
 		return JNI_FALSE;
 	}
 
@@ -1198,7 +1217,8 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
 		if (ferror(in))
 			ok = false;
 	}
-	if (out) fclose(out);
+	if (out && fclose(out) != 0)
+		ok = false;
 	if (in) fclose(in);
 
 	(*env)->ReleaseStringUTFChars(env, jsrcPath, src);

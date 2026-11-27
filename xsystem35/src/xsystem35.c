@@ -66,6 +66,8 @@
 #include "menu.h"
 #include "music.h"
 #include "music_cdrom.h"
+#include "audio_meta.h"
+#include "hacks.h"
 #include "savedata.h"
 #include "scenario.h"
 #include "variable.h"
@@ -123,7 +125,6 @@ void xsystem35_ios_exit(int code) {
 void sl_fini(void);
 void ald_fini(void);
 void msgskip_fini(void);
-void font_fini(void);
 void cg_fini(void);
 void freeGameResource(GameResource *gr);
 void s39ain_fini(S39AIN *ain);
@@ -220,6 +221,7 @@ void sys35_remove(void) {
 	dbg_quit();
 	mus_exit();
 	ags_remove();
+	cmdf_reset();
 }
 
 static void sys_reset(void) {
@@ -492,9 +494,15 @@ static void check_profile() {
 }
 
 #ifdef HAVE_SIGACTION
+static volatile sig_atomic_t quit_requested = 0;
+
+bool sys_is_quit_requested(void) {
+	return quit_requested != 0;
+}
+
 static void signal_handler(int sig_num) {
-	sys35_remove();
-	exit(1);
+	(void)sig_num;
+	quit_requested = 1;
 }
 
 static void signal_handler_segv(int sig_num) {
@@ -502,7 +510,6 @@ static void signal_handler_segv(int sig_num) {
 	snprintf(msg, sizeof(msg), "Signal %d @ page %03d, 0x%05x", sig_num, sl_getPage(), sl_getIndex());
 	fprintf(stderr, "PID(%d), %s\n", (int)getpid(), msg);
 	sys_write_crash_log(msg);
-	sys35_remove();
 	_exit(1);
 }
 
@@ -520,12 +527,16 @@ void sys_set_signalhandler(int SIG, void (*handler)(int)) {
 	sigaction(SIG, &act, NULL);
 }
 
-static void init_signalhandler() {
+static void init_signalhandler(void) {
+	quit_requested = 0;
 	sys_set_signalhandler(SIGINT, signal_handler);
 	sys_set_signalhandler(SIGTERM, signal_handler);
 	sys_set_signalhandler(SIGPIPE, SIG_IGN);
-	sys_set_signalhandler(SIGABRT, signal_handler);
 	sys_set_signalhandler(SIGSEGV, signal_handler_segv);
+}
+#else
+bool sys_is_quit_requested(void) {
+	return false;
 }
 #endif
 
@@ -730,6 +741,9 @@ int main(int argc, char **argv) {
 
 #ifdef ALICEHUB_IOS
 int xsystem35_main(int argc, char **argv) {
+#ifdef HAVE_SIGACTION
+	quit_requested = 0;
+#endif
 	escalayer_modifier_reset(true);
 	jmp_buf target;
 	exit_target = &target;
@@ -743,6 +757,8 @@ int xsystem35_main(int argc, char **argv) {
 		mus_exit();
 		music_started = false;
 	}
+	muscd_reset_playlist();
+	audio_meta_fini();
 	if (graphics_started) {
 		ags_remove();
 		font_fini();
@@ -754,8 +770,14 @@ int xsystem35_main(int argc, char **argv) {
 	sl_fini();
 	v_set_names(0, NULL);
 	v_reset();
+	cmdf_reset();
 	freeGameResource(&nact->files);
 	ald_fini();
+	fc_fini();
+	volume_fini();
+	hacks_reset();
+	save_resetFormat();
+	chs_tbl_reset();
 	memset(nact, 0, sizeof(*nact));
 	profile_fini();
 	gameResourceFile = "xsystem35.gr";

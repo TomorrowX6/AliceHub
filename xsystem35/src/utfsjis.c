@@ -192,8 +192,12 @@ uint8_t *sjis2utf(const uint8_t *src) {
 					}
 				}
 			}
-			if (!c)
-				c = s2u[*src - 0x80][*(src+1) - 0x40];
+			if (!c) {
+				if (src[1] >= 0x40)
+					c = s2u[*src - 0x80][*(src+1) - 0x40];
+				else
+					c = '?';
+			}
 			src += 2;
 		}
 
@@ -261,9 +265,19 @@ uint8_t *utf2sjis(const uint8_t *src) {
 
 		int u;
 		if (*src <= 0xdf) {
+			if ((src[1] & 0xc0) != 0x80) {
+				*dstp++ = '?';
+				src++;
+				continue;
+			}
 			u = (src[0] & 0x1f) << 6 | (src[1] & 0x3f);
 			src += 2;
 		} else if (*src <= 0xef) {
+			if ((src[1] & 0xc0) != 0x80 || (src[2] & 0xc0) != 0x80) {
+				*dstp++ = '?';
+				src++;
+				continue;
+			}
 			u = (src[0] & 0xf) << 12 | (src[1] & 0x3f) << 6 | (src[2] & 0x3f);
 			src += 3;
 		} else {
@@ -463,14 +477,29 @@ int utf8_next_codepoint(const char **msg) {
 		code = '?';
 		s++;
 	} else if (*s <= 0xdf) {
-		code = (s[0] & 0x1f) << 6 | (s[1] & 0x3f);
-		s += 2;
+		if ((s[1] & 0xc0) != 0x80) {
+			code = 0xfffd;
+			s++;
+		} else {
+			code = (s[0] & 0x1f) << 6 | (s[1] & 0x3f);
+			s += 2;
+		}
 	} else if (*s <= 0xef) {
-		code = (s[0] & 0xf) << 12 | (s[1] & 0x3f) << 6 | (s[2] & 0x3f);
-		s += 3;
+		if ((s[1] & 0xc0) != 0x80 || (s[2] & 0xc0) != 0x80) {
+			code = 0xfffd;
+			s++;
+		} else {
+			code = (s[0] & 0xf) << 12 | (s[1] & 0x3f) << 6 | (s[2] & 0x3f);
+			s += 3;
+		}
 	} else if (*s <= 0xf7) {
-		code = (s[0] & 0x7) << 18 | (s[1] & 0x3f) << 12 | (s[2] & 0x3f) << 6 | (s[3] & 0x3f);
-		s += 4;
+		if ((s[1] & 0xc0) != 0x80 || (s[2] & 0xc0) != 0x80 || (s[3] & 0xc0) != 0x80) {
+			code = 0xfffd;
+			s++;
+		} else {
+			code = (s[0] & 0x7) << 18 | (s[1] & 0x3f) << 12 | (s[2] & 0x3f) << 6 | (s[3] & 0x3f);
+			s += 4;
+		}
 	} else {
 		code = 0xfffd;  // REPLACEMENT CHARACTER
 		s++;
@@ -479,6 +508,22 @@ int utf8_next_codepoint(const char **msg) {
 	}
 	*msg = (const char *)s;
 	return code;
+}
+
+int cjk_display_width(const char *s, CharacterEncoding enc) {
+	if (!s)
+		return 0;
+	if (enc != UTF8)
+		return (int)strlen(s);
+	int width = 0;
+	while (*s) {
+		int cp = utf8_next_codepoint(&s);
+		if (cp <= 0x7f || (cp >= 0xff61 && cp <= 0xff9f))
+			width += 1;
+		else
+			width += 2;
+	}
+	return width;
 }
 
 char *advance_char(const char *s, CharacterEncoding e) {

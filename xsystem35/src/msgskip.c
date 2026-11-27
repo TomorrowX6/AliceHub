@@ -29,9 +29,6 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
-#if defined(HAVE_MMAP) || defined(__EMSCRIPTEN__) || defined(__ANDROID__)
-#include <sys/mman.h>
-#endif
 
 // These parameters are chosen so that the false positive rate is less than 0.5%
 // in Kichikuou Rance (122,915 distinct messages).
@@ -189,9 +186,7 @@ EMSCRIPTEN_KEEPALIVE
 void msgskip_syncFile(void) {
 	if (!msgskip.dirty || !msgskip.map)
 		return;
-#if defined(HAVE_MMAP) || defined(__EMSCRIPTEN__) || defined(__ANDROID__)
-	msync(msgskip.map->addr, msgskip.map->length, MS_ASYNC);
-#endif
+	sync_mapped_file(msgskip.map);
 #ifdef __EMSCRIPTEN__
 	EM_ASM( xsystem35.shell.syncfs(); );
 #endif
