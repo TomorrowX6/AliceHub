@@ -275,7 +275,7 @@ enum LocalGameImport {
         switch launch.engine {
         case .system4:
             guard let local = try? names(url) else { return false }
-            return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini"
+            return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini" || !system4Code(local).isEmpty
         case .system3, .legacySystem3:
             return true
         }

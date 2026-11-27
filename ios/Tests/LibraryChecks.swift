@@ -910,6 +910,13 @@ struct LibraryChecks {
         try fixture(iniWrapper, "RealGame/dummy.dat", "payload")
         try importArchive(makeArchive(iniWrapper, name: "IniWrapper.zip"), expected: "RealGame")
         precondition(installed("RealGame/AliceCN.ain"))
+
+        let standaloneWithBonus = root.appendingPathComponent("Standalone With Bonus")
+        try fixture(standaloneWithBonus, "MainGame.ain", "main")
+        try fixture(standaloneWithBonus, "BonusDemo/System40.ini", "GameName = \"Bonus\"\nCodeName = \"Demo.ain\"\n")
+        try fixture(standaloneWithBonus, "BonusDemo/Demo.ain", "demo")
+        try importArchive(makeArchive(standaloneWithBonus, name: "StandaloneMain.zip"), expected: "StandaloneMain")
+        precondition(installed("StandaloneMain/MainGame.ain"))
         for catalogID in ["kichikuou", "rance02", "ixseal", "galzoo"] {
             library.setSelectedInstallation(nil, for: catalogID)
         }
@@ -1335,6 +1342,18 @@ struct LibraryChecks {
         try writeFile(lowerAliceStartDir, "alicestart.ini", "CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n")
         try writeFile(lowerAliceStartDir, "DaiSengoku.ain", "ain")
         precondition(library.saveDirectoryName(for: Game(url: lowerAliceStartDir)) == "LowercaseAliceStartDsr\(GameLibrary.daiSengokuSaveDirSuffix)")
+
+        // Pre-upgrade lowercase-INI DaiSengoku install with existing unsuffixed saves preserves legacy saves when unambiguous.
+        let legacyLowerDsrDir = root.appendingPathComponent("LegacyLowerDsr")
+        try writeFile(legacyLowerDsrDir, "system40.ini", "CodeName = \"DaiSengoku.ain\"\nSaveFolder = \"SaveDataDSR\"\n")
+        try writeFile(legacyLowerDsrDir, "DaiSengoku.ain", "ain")
+        let legacyUnsuffixedSave = documents.appendingPathComponent("Saves/LegacyLowerDsr/Save001.asd")
+        try files.createDirectory(at: legacyUnsuffixedSave.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("legacy-dsr".utf8).write(to: legacyUnsuffixedSave)
+        precondition(library.saveDirectoryName(for: Game(url: legacyLowerDsrDir)) == "LegacyLowerDsr")
+        // Once vanilla AliceCN.ain coexists (shared boot entries), DaiSengoku isolates to __SaveDataDSR.
+        try writeFile(legacyLowerDsrDir, "AliceCN.ain", "ain")
+        precondition(library.saveDirectoryName(for: Game(url: legacyLowerDsrDir)) == "LegacyLowerDsr\(GameLibrary.daiSengokuSaveDirSuffix)")
 
         print("PASS: Sengoku Rance CN staging/classification, NSPic markers, persisted installation selection, mojibake CodeName boot entries, and case-insensitive SaveFolder isolation")
     }

@@ -187,6 +187,47 @@ static char *join_dir_and_rel(const char *dir, const char *utf_rel)
 	return resolved;
 }
 
+static bool path_component_has_non_ascii(const char *s)
+{
+	for (const unsigned char *p = (const unsigned char *)s; p && *p; p++) {
+		if (*p >= 0x80)
+			return true;
+	}
+	return false;
+}
+
+static char *dir_find_mojibake_icase(const char *dir, const char *component)
+{
+	if (!path_component_has_non_ascii(component))
+		return NULL;
+	UDIR *d = opendir_utf8(dir);
+	if (!d)
+		return NULL;
+	char *target_repaired = cjk_repair_sjis_as_gbk_utf8(component);
+	const char *target = target_repaired ? target_repaired : component;
+	char *found = NULL;
+	char *d_name;
+	while ((d_name = readdir_utf8(d))) {
+		char *entry_repaired = cjk_repair_sjis_as_gbk_utf8(d_name);
+		const char *candidate = entry_repaired ? entry_repaired : d_name;
+		if (!strcmp(candidate, target)) {
+			free(found);
+			found = path_join(dir, d_name);
+			free(entry_repaired);
+			free(d_name);
+			break;
+		}
+		if (!found && !strcasecmp(candidate, target)) {
+			found = path_join(dir, d_name);
+		}
+		free(entry_repaired);
+		free(d_name);
+	}
+	closedir_utf8(d);
+	free(target_repaired);
+	return found;
+}
+
 static char *relative_path_get_icase(const char *dir, char *relative)
 {
 	char *resolved = xstrdup(dir);
@@ -197,11 +238,19 @@ static char *relative_path_get_icase(const char *dir, char *relative)
 			*slash = '\0';
 		if (*component) {
 			char *next = path_join(resolved, component);
+			if (!file_exists(next)) {
+				char *matched = path_get_icase(next);
+				if (!matched)
+					matched = dir_find_mojibake_icase(resolved, component);
+				free(next);
+				next = matched;
+			}
 			free(resolved);
 			resolved = next;
-			if (!file_exists(next)) {
-				resolved = path_get_icase(next);
-				free(next);
+			if (!resolved) {
+				if (slash)
+					*slash = '/';
+				return NULL;
 			}
 		}
 		if (!slash) {
@@ -223,7 +272,7 @@ static char *relative_path_get_icase(const char *dir, char *relative)
 static char *find_path_icase(const char *resolved, const char *dir, char *relative, bool nested_icase)
 {
 	char *match = path_get_icase(resolved);
-	if (!match && nested_icase && !is_absolute_path(relative) && strchr(relative, '/'))
+	if (!match && nested_icase && !is_absolute_path(relative))
 		return relative_path_get_icase(dir, relative);
 	return match;
 }

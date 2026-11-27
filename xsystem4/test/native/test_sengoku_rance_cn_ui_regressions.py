@@ -66,6 +66,7 @@ class SengokuRanceChineseUiRegressionTest(unittest.TestCase):
 #include <stdlib.h>
 #include <string.h>
 #include "system4/file.h"
+#include "system4/utfsjis.h"
 #include "xsystem4.h"
 
 struct config config;
@@ -80,12 +81,37 @@ static void check_path(const char *code_name, const char *expected, char *(*reso
 
 int main(int argc, char **argv)
 {
-    assert(argc == 5);
+    assert(argc == 8);
     config.game_dir = argv[1];
     check_path("dAtA\\pAtChEs\\PATCH.AIN", argv[2], gamedir_path);
     check_path("dAtA\\pAtChEs\\PATCH.AIN", argv[2], gamedir_path_icase);
     check_path("LAUNCHERS\\eNtRiEs\\PATCH.AIN", argv[3], gamedir_path);
     check_path("dAtA\\pAtChEs\\", argv[4], gamedir_path);
+    // Legacy CP932 CodeName (戦国ランス_alt.ain) resolves mojibake filename on disk (愴崙儔儞僗_alt.ain)
+    sys4_set_text_gbk(false);
+    sys4_set_source_utf8(false);
+    char *sjis_repaired = utf2sjis("戦国ランス_alt.ain", 0);
+    char *sjis_nested = utf2sjis("dAtA\\戦国ランス.AIN", 0);
+    check_path(sjis_repaired, argv[6], gamedir_path);
+    check_path(sjis_repaired, argv[6], gamedir_path_icase);
+    check_path(sjis_nested, argv[7], gamedir_path_icase);
+    free(sjis_repaired);
+    free(sjis_nested);
+
+    // UTF-8/GBK CodeName (ini_parse encodes UTF-8 to GBK) resolves both repaired and mojibake filenames
+    sys4_set_text_gbk(true);
+    sys4_set_source_utf8(true);
+    char *gbk_repaired = utf2sjis("戦国ランス_alt.ain", 0);
+    char *gbk_mojibake = utf2sjis("愴崙儔儞僗.ain", 0);
+    char *gbk_nested = utf2sjis("dAtA\\愴崙儔儞僗.AIN", 0);
+    check_path(gbk_mojibake, argv[5], gamedir_path);
+    check_path(gbk_mojibake, argv[5], gamedir_path_icase);
+    check_path(gbk_repaired, argv[6], gamedir_path);
+    check_path(gbk_repaired, argv[6], gamedir_path_icase);
+    check_path(gbk_nested, argv[7], gamedir_path_icase);
+    free(gbk_repaired);
+    free(gbk_mojibake);
+    free(gbk_nested);
     return 0;
 }
 """
@@ -104,6 +130,12 @@ int main(int argc, char **argv)
             exact_script = root / "LAUNCHERS" / "Entries" / "Patch.ain"
             exact_script.parent.mkdir(parents=True)
             exact_script.touch()
+            repaired_script = root / "戦国ランス.ain"
+            repaired_script.touch()
+            mojibake_script = root / "愴崙儔儞僗_alt.ain"
+            mojibake_script.touch()
+            nested_repaired = data / "戦国ランス.ain"
+            nested_repaired.touch()
 
             libsys4 = ROOT / "subprojects/libsys4"
             source = root / "test.c"
@@ -118,7 +150,11 @@ int main(int argc, char **argv)
                  *linker, "-o", str(exe)],
                 check=True,
             )
-            subprocess.run([str(exe), str(root), str(script), str(exact_script), f"{script.parent}/"], check=True)
+            subprocess.run(
+                [str(exe), str(root), str(script), str(exact_script), f"{script.parent}/",
+                 str(repaired_script), str(mojibake_script), str(nested_repaired)],
+                check=True,
+            )
 
     def test_skip_graphic_only_relabels_the_original_chinese_session_button(self):
         fix = extract_function("src/asset_manager.c", "localize_sengoku_skip_cg")
@@ -375,6 +411,7 @@ int main(void)
             (nspic / ".DS_Store").write_bytes(b"junk")
             (nspic / "Thumbs.db").write_bytes(b"junk")
             (nspic / "cg0.qnt").write_bytes(nspic_10001)
+            (nspic / "cg10002.bmp").write_bytes(b"BM\x36\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00")  # unsupported BMP must not mask GA.ald
             (nspic / "cg10009.qnt").write_bytes(b"")  # 0-byte file must be ignored
             (nspic / "cg99999999999999999999.qnt").write_bytes(nspic_10001)
             (nspic / "cg10002.QNT").mkdir()  # directory with matching name must be ignored

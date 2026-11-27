@@ -1331,7 +1331,7 @@ final class GameLibrary: ObservableObject {
 
     static let daiSengokuSaveDirSuffix = "__SaveDataDSR"
 
-    private static func usesDaiSengokuSaveFolder(_ gameURL: URL) -> Bool {
+    private static func daiSengokuIniStatus(_ gameURL: URL) -> (usesDSR: Bool, nonCanonicalCaseOnly: Bool) {
         let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
         let regularFiles = ((try? FileManager.default.contentsOfDirectory(
             at: gameURL, includingPropertiesForKeys: keys, options: .skipsHiddenFiles
@@ -1340,13 +1340,25 @@ final class GameLibrary: ObservableObject {
             return values.isRegularFile == true && values.isSymbolicLink != true
         }
         for fileName in ["System40.ini", "AliceStart.ini"] {
-            guard let iniURL = regularFiles.first(where: { $0.lastPathComponent == fileName }) ??
-                regularFiles.first(where: { $0.lastPathComponent.caseInsensitiveCompare(fileName) == .orderedSame }) else {
-                continue
+            if let exact = regularFiles.first(where: { $0.lastPathComponent == fileName }),
+               let usesDSR = iniUsesDaiSengokuSaveFolder(exact) {
+                return (usesDSR, false)
             }
-            if let usesDSR = iniUsesDaiSengokuSaveFolder(iniURL) { return usesDSR }
+            if let icase = regularFiles.first(where: { $0.lastPathComponent.caseInsensitiveCompare(fileName) == .orderedSame }),
+               let usesDSR = iniUsesDaiSengokuSaveFolder(icase) {
+                return (usesDSR, true)
+            }
         }
-        return false
+        return (false, false)
+    }
+
+    private static func usesDaiSengokuSaveFolder(_ gameURL: URL) -> Bool {
+        daiSengokuIniStatus(gameURL).usesDSR
+    }
+
+    private static func directoryHasFiles(_ url: URL) -> Bool {
+        guard let items = try? FileManager.default.contentsOfDirectory(atPath: url.path) else { return false }
+        return items.contains { !$0.hasPrefix(".") }
     }
 
     private static func iniUsesDaiSengokuSaveFolder(_ iniURL: URL) -> Bool? {
@@ -1381,22 +1393,29 @@ final class GameLibrary: ObservableObject {
         return false
     }
 
-    private static func saveDirectoryName(for gameURL: URL, target: URL) -> String {
+    private func saveDirectoryName(for gameURL: URL, target: URL) -> String {
         let base = gameURL.lastPathComponent
-        let usesDSR: Bool
+        let dsrName = "\(base)\(Self.daiSengokuSaveDirSuffix)"
         if target.path == gameURL.path {
-            usesDSR = usesDaiSengokuSaveFolder(gameURL)
+            let status = Self.daiSengokuIniStatus(gameURL)
+            guard status.usesDSR else { return base }
+            if status.nonCanonicalCaseOnly &&
+                !Self.directoryHasFiles(savesDirectory(named: dsrName)) &&
+                Self.directoryHasFiles(savesDirectory(named: base)) &&
+                Self.system4BootEntries(gameURL).count <= 1 {
+                return base
+            }
+            return dsrName
         } else if target.pathExtension.lowercased() == "ini" || target.lastPathComponent.lowercased() == "alicestart.chs" {
-            usesDSR = iniUsesDaiSengokuSaveFolder(target) == true
+            return Self.iniUsesDaiSengokuSaveFolder(target) == true ? dsrName : base
         } else {
-            usesDSR = false
+            return base
         }
-        return usesDSR ? "\(base)\(daiSengokuSaveDirSuffix)" : base
     }
 
     func saveDirectoryName(for game: Game) -> String {
         let target = (try? Self.launchInfo(game.url, bootEntry: bootEntry(for: game)))?.target ?? game.url
-        return Self.saveDirectoryName(for: game.url, target: target)
+        return saveDirectoryName(for: game.url, target: target)
     }
 
     private func savesDirectory(named name: String) -> URL {
@@ -1414,7 +1433,7 @@ final class GameLibrary: ObservableObject {
             let info = try Self.launchInfo(game.url, bootEntry: bootEntry(for: game))
             guard let resources = Bundle.main.resourceURL else { throw LibraryError.resourcePath }
             let home = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("xsystem4")
-            let saveName = Self.saveDirectoryName(for: game.url, target: info.target)
+            let saveName = saveDirectoryName(for: game.url, target: info.target)
             let saves = savesDirectory(named: saveName)
             let logs = documents.appendingPathComponent("Logs")
             for directory in [home, saves, logs] {

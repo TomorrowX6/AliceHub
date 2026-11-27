@@ -417,7 +417,7 @@ static void loose_cg_entry_free(void *p)
 static bool is_supported_loose_cg_ext(const char *ext)
 {
 	static const char * const exts[] = {
-		"qnt", "pms", "ajp", "dcf", "webp", "png", "bmp", "jpg", "jpeg"
+		"qnt", "pms", "ajp", "dcf", "webp", "png", "jpg", "jpeg"
 	};
 	for (size_t i = 0; i < sizeof(exts) / sizeof(exts[0]); i++) {
 		if (!strcasecmp(ext, exts[i]))
