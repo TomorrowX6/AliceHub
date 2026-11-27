@@ -439,13 +439,44 @@ bool hub_system4_has_daisengoku_entry(const char *dir, bool *has_dsr)
     return ok;
 }
 
+static const char *path_leaf(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    return slash ? slash + 1 : path;
+}
+
+static char *default_save_folder(const char *dir)
+{
+    char ini[HUB_PATH_SIZE];
+    if (default_ini(dir, ini))
+        return ini_value(ini, "SaveFolder", false);
+    DIR *d = opendir(dir);
+    if (!d)
+        return NULL;
+    char best[HUB_NAME_SIZE] = "";
+    char path[HUB_PATH_SIZE], script[HUB_PATH_SIZE];
+    for (struct dirent *e; (e = readdir(d)); ) {
+        const char *name = e->d_name;
+        if (!boot_leaf(name) || !config_name(name) ||
+            !boot_path(path, dir, name) || !boot_regular(path) ||
+            !hub_system4_configured_script(dir, name, script))
+            continue;
+        if (!*best || strcmp(name, best) < 0)
+            strcpy(best, name);
+    }
+    closedir(d);
+    if (!*best || !boot_path(ini, dir, best))
+        return NULL;
+    return ini_value(ini, "SaveFolder", false);
+}
+
 bool hub_system4_save_key(const char *name, const char *dir, const char *target,
                           char key[HUB_PATH_SIZE])
 {
     char *folder = NULL, ini[HUB_PATH_SIZE];
     if (target && !strcmp(dir, target) && default_ini(dir, ini))
         folder = ini_value(ini, "SaveFolder", false);
-    else if (target && strcmp(dir, target) && config_name(target))
+    else if (target && strcmp(dir, target) && config_name(path_leaf(target)))
         folder = ini_value(target, "SaveFolder", false);
     int length;
     if (folder && !strcasecmp(folder, "SaveDataDSR")) {
@@ -453,13 +484,76 @@ bool hub_system4_save_key(const char *name, const char *dir, const char *target,
     } else if (!folder || !strcasecmp(folder, "SaveData")) {
         length = snprintf(key, HUB_PATH_SIZE, "%s", name);
     } else {
-        uint64_t hash = UINT64_C(14695981039346656037);
-        for (const unsigned char *p = (const unsigned char *)folder; *p; ++p)
-            hash = (hash ^ *p) * UINT64_C(1099511628211);
-        length = snprintf(key, HUB_PATH_SIZE, HUB_ENTRY_SAVES "/%s/%016" PRIx64, name, hash);
+        char *def_folder = default_save_folder(dir);
+        if (def_folder && !strcasecmp(folder, def_folder)) {
+            length = snprintf(key, HUB_PATH_SIZE, "%s", name);
+        } else {
+            uint64_t hash = UINT64_C(14695981039346656037);
+            for (const unsigned char *p = (const unsigned char *)folder; *p; ++p)
+                hash = (hash ^ *p) * UINT64_C(1099511628211);
+            length = snprintf(key, HUB_PATH_SIZE, HUB_ENTRY_SAVES "/%s/%016" PRIx64, name, hash);
+        }
+        free(def_folder);
     }
     free(folder);
     return (size_t)length < HUB_PATH_SIZE;
+}
+
+bool hub_system4_save_folder(const char *dir, char folder[HUB_NAME_SIZE])
+{
+    strcpy(folder, "SaveData");
+    if (!dir || !*dir)
+        return false;
+    char target[HUB_PATH_SIZE], ini[HUB_PATH_SIZE];
+    bool uses_dsr = false;
+    if (!hub_system4_resolve(dir, target, &uses_dsr))
+        return false;
+    char *value = NULL;
+    if (!strcmp(dir, target) && default_ini(dir, ini))
+        value = ini_value(ini, "SaveFolder", false);
+    else if (strcmp(dir, target) && config_name(path_leaf(target)))
+        value = ini_value(target, "SaveFolder", false);
+    bool valid = value && boot_leaf(value);
+    if (valid)
+        snprintf(folder, HUB_NAME_SIZE, "%s", value);
+    free(value);
+    return valid;
+}
+
+bool hub_system4_active_script(const char *dir, char script[HUB_PATH_SIZE])
+{
+    *script = '\0';
+    if (!dir || !*dir)
+        return false;
+    char target[HUB_PATH_SIZE], ini[HUB_PATH_SIZE];
+    bool uses_dsr = false;
+    if (!hub_system4_resolve(dir, target, &uses_dsr))
+        return false;
+    if (!strcmp(dir, target)) {
+        if (default_ini(dir, ini) && hub_system4_configured_script(dir, path_leaf(ini), script))
+            return true;
+    } else if (config_name(path_leaf(target))) {
+        if (hub_system4_configured_script(dir, path_leaf(target), script))
+            return true;
+    } else if (script_name(path_leaf(target), true) && boot_regular(target)) {
+        snprintf(script, HUB_PATH_SIZE, "%s", target);
+        return true;
+    }
+    DIR *d = opendir(dir);
+    if (!d)
+        return false;
+    char best[HUB_NAME_SIZE] = "";
+    char path[HUB_PATH_SIZE];
+    for (struct dirent *e; (e = readdir(d)); ) {
+        const char *name = e->d_name;
+        if (!boot_leaf(name) || !suffix(name, ".ain") || !strcasecmp(name, "system39.ain") ||
+            !boot_path(path, dir, name) || !boot_regular(path))
+            continue;
+        if (!*best || strcmp(name, best) < 0)
+            strcpy(best, name);
+    }
+    closedir(d);
+    return *best && boot_path(script, dir, best);
 }
 
 static bool selected_save_key(const char *root, const HubGame *game, char key[HUB_PATH_SIZE])

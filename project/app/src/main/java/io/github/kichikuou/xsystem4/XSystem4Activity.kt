@@ -62,6 +62,21 @@ class XSystem4Activity : SDLActivity() {
         @JvmStatic
         fun resolveSystem4LaunchArg(gameRoot: String, bootEntry: String?): String =
             System4BootEntry.resolveLaunchTarget(java.io.File(gameRoot), bootEntry).path
+
+        @JvmStatic
+        @JvmName("normalizeInputNumberBounds")
+        internal fun normalizeInputNumberBounds(min: Int, max: Int, initial: Int): Triple<Int, Int, Int> {
+            val low = minOf(min, max)
+            val high = maxOf(min, max)
+            return Triple(low, high, initial.coerceIn(low, high))
+        }
+
+        @JvmStatic
+        @JvmName("parseClampedInputNumber")
+        internal fun parseClampedInputNumber(text: String?, low: Int, high: Int, fallback: Int): Int {
+            val parsed = text?.trim()?.toIntOrNull() ?: fallback
+            return parsed.coerceIn(low, high)
+        }
         const val COMMAND_OPEN_PLAYING_MANUAL = 0x8000  // xsystem4/src/hll/SystemService.c
         const val COMMAND_SHOW_WAIT_MESSAGE = 0x8001
         const val COMMAND_TOGGLE_CTRL_OVERLAY = 0x8002  // xsystem4/src/input.c
@@ -115,16 +130,22 @@ class XSystem4Activity : SDLActivity() {
     private var modifierOverlay: FloatingModifierOverlay? = null
     private var ctrlOverlayContainer: FrameLayout? = null
     private var ctrlPill: TextView? = null
+    @Volatile
     private var ctrlSkipLatched: Boolean = false
+    @Volatile
     private var lastSyncedConfigSeq: Int = -1
     private var activeMessageBoxDialog: Dialog? = null
+    private var activeInputDialog: Dialog? = null
+    private var messageboxDone: Boolean = true
     private var lastBackDispatchMs: Long = 0L
     private var backHandledInCurrentGesture: Boolean = false
     private var backInvokedCallback: Any? = null
 
     private var virtualCursorView: VirtualCursorOverlayView? = null
     private var virtualGamepadView: VirtualGamepadView? = null
+    @Volatile
     private var activeGamepadProfile: GamepadProfile = GamepadProfile()
+    @Volatile
     private var nativePadCount: Int = 0
     private var lastReportedConnectedPads: Int = 0
     private var inputDeviceListener: InputManager.InputDeviceListener? = null
@@ -857,6 +878,7 @@ class XSystem4Activity : SDLActivity() {
             )
             return
         }
+        if (isLegacySystem3Game) return
         try {
             GameModifierBridge.syncNativeConfigPath(this)
             val curSeq = GameModifierBridge.getConfigSeq(this)
@@ -887,15 +909,16 @@ class XSystem4Activity : SDLActivity() {
             xsystem35Midi.onActivityPause()
         }
         if (launchedGameRoot != null && !isLegacySystem3Game) {
+            val localSeq = maxOf(lastSyncedConfigSeq, GameModifierBridge.getLastWrittenConfigSeq())
             lastSyncedConfigSeq = if (isSystem3xGame()) {
                 val s35Gid = currentGenericModifierGameId()
                 if (s35Gid != null) {
-                    GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid)
+                    GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid, localSeq)
                 } else {
-                    GameModifierBridge.syncEscLockMaskFromNative(this)
+                    GameModifierBridge.syncEscLockMaskFromNative(this, localSeq)
                 }
             } else {
-                GameModifierBridge.syncLockMaskFromNative(this)
+                GameModifierBridge.syncLockMaskFromNative(this, localSeq)
             }
         }
         super.onPause()
@@ -940,6 +963,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (isLegacySystem3Game) return super.dispatchKeyEvent(event)
         if (activeGamepadProfile.physical.enabled && GamepadBridge.isGamepadKeyEvent(event)) {
             val isDown = event.action == KeyEvent.ACTION_DOWN
             val isUp = event.action == KeyEvent.ACTION_UP
@@ -987,6 +1011,7 @@ class XSystem4Activity : SDLActivity() {
     }
 
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
+        if (isLegacySystem3Game) return super.dispatchGenericMotionEvent(ev)
         if (activeGamepadProfile.physical.enabled) {
             GamepadBridge.extractMotionAxes(ev)?.let { axes ->
                 try {
@@ -1052,22 +1077,81 @@ class XSystem4Activity : SDLActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    private fun finishMessageBoxWait() {
+        synchronized(messageboxSelection) {
+            messageboxDone = true
+            @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+            (messageboxSelection as Object).notifyAll()
+        }
+    }
+
+    override fun messageboxShowMessageBox(
+        flags: Int,
+        title: String?,
+        message: String?,
+        buttonFlags: IntArray,
+        buttonIds: IntArray,
+        buttonTexts: Array<String?>,
+        colors: IntArray?
+    ): Int {
+        synchronized(messageboxSelection) {
+            messageboxSelection[0] = -1
+            messageboxDone = false
+        }
+        if ((buttonFlags.size != buttonIds.size) && (buttonIds.size != buttonTexts.size)) {
+            finishMessageBoxWait()
+            return -1
+        }
+        if (isFinishing || isDestroyed) {
+            finishMessageBoxWait()
+            return -1
+        }
+        val args = Bundle().apply {
+            putInt("flags", flags)
+            putString("title", title)
+            putString("message", message)
+            putIntArray("buttonFlags", buttonFlags)
+            putIntArray("buttonIds", buttonIds)
+            putStringArray("buttonTexts", buttonTexts)
+            putIntArray("colors", colors)
+        }
+        runOnUiThread {
+            try {
+                messageboxCreateAndShow(args)
+            } catch (t: Throwable) {
+                Log.w("XSystem4Activity", "messageboxCreateAndShow failed", t)
+                activeMessageBoxDialog = null
+                finishMessageBoxWait()
+            }
+        }
+        synchronized(messageboxSelection) {
+            while (!messageboxDone) {
+                try {
+                    @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
+                    (messageboxSelection as Object).wait()
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return -1
+                }
+            }
+            return messageboxSelection[0]
+        }
+    }
+
     override fun messageboxCreateAndShow(args: Bundle) {
         if (isFinishing || isDestroyed) {
-            synchronized(messageboxSelection) {
-                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
-                (messageboxSelection as Object).notifyAll()
-            }
+            finishMessageBoxWait()
             return
         }
         activeMessageBoxDialog?.let { prev ->
-            if (prev.isShowing) {
+            if (!isDestroyed && prev.isShowing) {
                 try {
                     prev.dismiss()
                 } catch (_: Throwable) {
                 }
             }
         }
+        activeMessageBoxDialog = null
 
         val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(this), R.style.Theme_Launcher)
         val flags = args.getInt("flags", 0)
@@ -1172,13 +1256,13 @@ class XSystem4Activity : SDLActivity() {
                 },
                 onDismissed = {
                     activeMessageBoxDialog = null
-                    synchronized(messageboxSelection) {
-                        @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
-                        (messageboxSelection as Object).notifyAll()
-                    }
+                    finishMessageBoxWait()
                 }
             )
             activeMessageBoxDialog = dlg
+            if (dlg == null) {
+                finishMessageBoxWait()
+            }
             return
         }
 
@@ -1353,10 +1437,7 @@ class XSystem4Activity : SDLActivity() {
             if (activeMessageBoxDialog === dialog) {
                 activeMessageBoxDialog = null
             }
-            synchronized(messageboxSelection) {
-                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
-                (messageboxSelection as Object).notifyAll()
-            }
+            finishMessageBoxWait()
         }
         dialog.setOnKeyListener { _, keyCode, event ->
             val mapped = keyMapping.get(keyCode)
@@ -1381,7 +1462,30 @@ class XSystem4Activity : SDLActivity() {
             addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         }
 
-        dialog.show()
+        if (isFinishing || isDestroyed) {
+            if (activeMessageBoxDialog === dialog) {
+                activeMessageBoxDialog = null
+            }
+            finishMessageBoxWait()
+            return
+        }
+        try {
+            dialog.show()
+        } catch (e: WindowManager.BadTokenException) {
+            Log.w("XSystem4Activity", "Cannot show messagebox dialog: invalid window token", e)
+            if (activeMessageBoxDialog === dialog) {
+                activeMessageBoxDialog = null
+            }
+            finishMessageBoxWait()
+            return
+        } catch (e: Exception) {
+            Log.w("XSystem4Activity", "Failed to show messagebox dialog", e)
+            if (activeMessageBoxDialog === dialog) {
+                activeMessageBoxDialog = null
+            }
+            finishMessageBoxWait()
+            return
+        }
 
         dialog.window?.let { dlgWin ->
             @Suppress("DEPRECATION")
@@ -1465,7 +1569,7 @@ class XSystem4Activity : SDLActivity() {
         } catch (_: Throwable) {
         }
         activeMessageBoxDialog?.let { dlg ->
-            if (dlg.isShowing) {
+            if (!isDestroyed && dlg.isShowing) {
                 try {
                     dlg.dismiss()
                 } catch (_: Throwable) {
@@ -1473,23 +1577,34 @@ class XSystem4Activity : SDLActivity() {
             }
         }
         activeMessageBoxDialog = null
+        finishMessageBoxWait()
+        activeInputDialog?.let { dlg ->
+            if (!isDestroyed && dlg.isShowing) {
+                try {
+                    dlg.dismiss()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        activeInputDialog = null
         setCtrlSkipLatched(false)
         resetMovieSkipOverlay()
         if (launchedGameRoot != null) {
             GameCatalog.clearRunningGameRoot(this)
             GameModifierBridge.clearActiveUiScaleGameKey()
             try {
+                val localSeq = maxOf(lastSyncedConfigSeq, GameModifierBridge.getLastWrittenConfigSeq())
                 when {
                     isLegacySystem3Game -> Unit
                     isSystem3xGame() -> {
                         val s35Gid = currentGenericModifierGameId()
                         if (s35Gid != null) {
-                            GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid)
+                            GameModifierBridge.syncGenericS35LockMaskFromNative(this, s35Gid, localSeq)
                         } else {
-                            GameModifierBridge.syncEscLockMaskFromNative(this)
+                            GameModifierBridge.syncEscLockMaskFromNative(this, localSeq)
                         }
                     }
-                    else -> GameModifierBridge.syncLockMaskFromNative(this)
+                    else -> GameModifierBridge.syncLockMaskFromNative(this, localSeq)
                 }
             } catch (_: Throwable) {
             }
@@ -1592,67 +1707,175 @@ class XSystem4Activity : SDLActivity() {
     // Native JNI helpers invoked by the SDL engines.
     @Suppress("unused")
     fun inputString(msg: String, oldVal: String, maxLen: Int): String? {
-        val result = arrayOfNulls<String?>(1)
+        if (isFinishing || isDestroyed) return null
+        val lock = Object()
+        var done = false
+        var value: String? = null
+        fun finish(out: String? = value) {
+            synchronized(lock) {
+                if (!done) {
+                    value = out
+                    done = true
+                    lock.notifyAll()
+                }
+            }
+        }
         runOnUiThread {
-            val input = EditText(this).apply {
-                inputType = InputType.TYPE_CLASS_TEXT
-                setText(oldVal)
+            if (isFinishing || isDestroyed) {
+                finish(null)
+                return@runOnUiThread
             }
-            AlertDialog.Builder(this)
-                .setMessage(msg)
-                .setView(input)
-                .setPositiveButton(R.string.ok) { _, _ ->
-                    val s = input.text.toString()
-                    result[0] = if (maxLen <= 0) "" else if (s.length <= maxLen) s else s.substring(0, maxLen)
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .setOnDismissListener {
-                    synchronized(result) {
-                        @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).notify()
-                    }
-                }
-                .show()
-        }
-        synchronized(result) {
+            var dlg: AlertDialog? = null
             try {
-                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).wait()
-            } catch (_: InterruptedException) {
+                val input = EditText(this).apply {
+                    inputType = InputType.TYPE_CLASS_TEXT
+                    setText(oldVal)
+                    setSelection(text.length)
+                }
+                val dialog = AlertDialog.Builder(this)
+                    .setMessage(msg)
+                    .setView(input)
+                    .setPositiveButton(R.string.ok) { _, _ ->
+                        val s = input.text.toString()
+                        val bounded = if (maxLen <= 0) "" else if (s.length <= maxLen) s else s.substring(0, maxLen)
+                        finish(bounded)
+                    }
+                    .setNegativeButton(R.string.cancel) { _, _ ->
+                        finish(null)
+                    }
+                    .setOnCancelListener {
+                        finish(null)
+                    }
+                    .setOnDismissListener { d ->
+                        if (activeInputDialog === d) {
+                            activeInputDialog = null
+                        }
+                        finish()
+                    }
+                    .create()
+                dlg = dialog
+                activeInputDialog = dialog
+                dialog.show()
+            } catch (e: WindowManager.BadTokenException) {
+                Log.w("XSystem4Activity", "Cannot show inputString dialog: invalid window token", e)
+                if (activeInputDialog === dlg) {
+                    activeInputDialog = null
+                }
+                finish(null)
+            } catch (e: Exception) {
+                Log.w("XSystem4Activity", "Failed to show inputString dialog", e)
+                if (activeInputDialog === dlg) {
+                    activeInputDialog = null
+                }
+                finish(null)
             }
         }
-        return result[0]
+        synchronized(lock) {
+            while (!done) {
+                try {
+                    lock.wait()
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            return value
+        }
     }
 
     @Suppress("unused")
     fun inputNumber(msg: String, min: Int, max: Int, initial: Int): Int {
-        val result = intArrayOf(-1)
-        runOnUiThread {
-            val input = NumberPicker(this).apply {
-                minValue = min
-                maxValue = max
-                value = initial.coerceIn(min, max)
-            }
-            AlertDialog.Builder(this)
-                .setMessage(msg)
-                .setView(input)
-                .setPositiveButton(R.string.ok) { _, _ ->
-                    input.clearFocus()
-                    result[0] = input.value
+        if (isFinishing || isDestroyed) return -1
+        val (low, high, clampedInit) = normalizeInputNumberBounds(min, max, initial)
+        val lock = Object()
+        var done = false
+        var value = -1
+        fun finish(out: Int = value) {
+            synchronized(lock) {
+                if (!done) {
+                    value = out
+                    done = true
+                    lock.notifyAll()
                 }
-                .setNegativeButton(R.string.cancel, null)
-                .setOnDismissListener {
-                    synchronized(result) {
-                        @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).notify()
+            }
+        }
+        runOnUiThread {
+            if (isFinishing || isDestroyed) {
+                finish(-1)
+                return@runOnUiThread
+            }
+            var dlg: AlertDialog? = null
+            try {
+                val inputView: View
+                val readValue: () -> Int
+                if (low < 0) {
+                    val edit = EditText(this).apply {
+                        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
+                        setText(clampedInit.toString())
+                        setSelection(text.length)
+                        hint = "$low .. $high"
+                    }
+                    inputView = edit
+                    readValue = { parseClampedInputNumber(edit.text?.toString(), low, high, clampedInit) }
+                } else {
+                    val picker = NumberPicker(this).apply {
+                        minValue = low
+                        maxValue = high
+                        this.value = clampedInit
+                    }
+                    inputView = picker
+                    readValue = {
+                        picker.clearFocus()
+                        picker.value.coerceIn(low, high)
                     }
                 }
-                .show()
-        }
-        synchronized(result) {
-            try {
-                @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN") (result as Object).wait()
-            } catch (_: InterruptedException) {
+                val dialog = AlertDialog.Builder(this)
+                    .setMessage(msg)
+                    .setView(inputView)
+                    .setPositiveButton(R.string.ok) { _, _ ->
+                        finish(readValue())
+                    }
+                    .setNegativeButton(R.string.cancel) { _, _ ->
+                        finish(-1)
+                    }
+                    .setOnCancelListener {
+                        finish(-1)
+                    }
+                    .setOnDismissListener { d ->
+                        if (activeInputDialog === d) {
+                            activeInputDialog = null
+                        }
+                        finish()
+                    }
+                    .create()
+                dlg = dialog
+                activeInputDialog = dialog
+                dialog.show()
+            } catch (e: WindowManager.BadTokenException) {
+                Log.w("XSystem4Activity", "Cannot show inputNumber dialog: invalid window token", e)
+                if (activeInputDialog === dlg) {
+                    activeInputDialog = null
+                }
+                finish(-1)
+            } catch (e: Exception) {
+                Log.w("XSystem4Activity", "Failed to show inputNumber dialog", e)
+                if (activeInputDialog === dlg) {
+                    activeInputDialog = null
+                }
+                finish(-1)
             }
         }
-        return result[0]
+        synchronized(lock) {
+            while (!done) {
+                try {
+                    lock.wait()
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            return value
+        }
     }
 
     @Suppress("unused")

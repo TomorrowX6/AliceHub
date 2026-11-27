@@ -83,11 +83,29 @@ final class BackgroundActivity {
 
 #if os(iOS)
     private func begin() {
-        legacyTask = UIApplication.shared.beginBackgroundTask(withName: title) { [weak self] in
+        lock.lock()
+        let alreadyEnded = ended
+        lock.unlock()
+        guard !alreadyEnded else { return }
+
+        let taskID = UIApplication.shared.beginBackgroundTask(withName: title) { [weak self] in
             guard let self else { return }
-            if self.continuedTask == nil { self.expire(resumable: true) }
+            self.lock.lock()
+            let hasContinued = self.continuedTask != nil
+            self.lock.unlock()
+            if !hasContinued { self.expire(resumable: true) }
             self.endLegacyTask()
         }
+        lock.lock()
+        if ended {
+            lock.unlock()
+            if taskID != .invalid {
+                UIApplication.shared.endBackgroundTask(taskID)
+            }
+            return
+        }
+        legacyTask = taskID
+        lock.unlock()
 #if compiler(>=6.2)
         if #available(iOS 26.0, *) { submitContinuedTask() }
 #endif
@@ -114,15 +132,16 @@ final class BackgroundActivity {
     @available(iOS 26.0, *)
     private func attach(_ task: BGContinuedProcessingTask) {
         lock.lock()
-        let finished = ended
-        lock.unlock()
-        if finished {
-            task.setTaskCompleted(success: !expired)
+        if ended {
+            let didExpire = self.didExpire
+            lock.unlock()
+            task.setTaskCompleted(success: !didExpire)
             return
         }
         task.progress.totalUnitCount = 1000
         task.expirationHandler = { [weak self] in self?.expire(resumable: false) }
         continuedTask = task
+        lock.unlock()
         pushProgress()
     }
 #endif
@@ -131,10 +150,12 @@ final class BackgroundActivity {
 #if compiler(>=6.2)
         guard #available(iOS 26.0, *) else { return }
         let apply = {
-            guard let task = self.continuedTask as? BGContinuedProcessingTask else { return }
             self.lock.lock()
+            let task = self.continuedTask as? BGContinuedProcessingTask
             let fraction = self.fraction, detail = self.detail
+            let finished = self.ended
             self.lock.unlock()
+            guard !finished, let task else { return }
             if let fraction { task.progress.completedUnitCount = Int64(fraction * 1000) }
             task.updateTitle(self.title, subtitle: detail)
         }
@@ -143,23 +164,31 @@ final class BackgroundActivity {
     }
 
     private func finish(_ outcome: Outcome) {
+        lock.lock()
+        let continued = continuedTask
+        continuedTask = nil
+        lock.unlock()
 #if compiler(>=6.2)
-        if #available(iOS 26.0, *), let task = continuedTask as? BGContinuedProcessingTask {
+        if #available(iOS 26.0, *), let task = continued as? BGContinuedProcessingTask {
             if case .succeeded = outcome { task.progress.completedUnitCount = task.progress.totalUnitCount }
             var success = false
             if case .succeeded = outcome { success = true }
             task.setTaskCompleted(success: success)
         }
+#else
+        _ = continued
 #endif
-        continuedTask = nil
         if UIApplication.shared.applicationState != .active { notify(outcome) }
         endLegacyTask()
     }
 
     private func endLegacyTask() {
-        guard legacyTask != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(legacyTask)
+        lock.lock()
+        let taskID = legacyTask
         legacyTask = .invalid
+        lock.unlock()
+        guard taskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(taskID)
     }
 
     private func notify(_ outcome: Outcome) {

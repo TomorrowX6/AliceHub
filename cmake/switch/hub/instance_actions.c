@@ -1,5 +1,7 @@
 #include "hub.h"
+#include "install_transaction.h"
 #include "instances.h"
+#include "online_download.h"
 
 #include <pthread.h>
 #include <stdatomic.h>
@@ -84,6 +86,17 @@ static void applet_hook(AppletHookType hook, void *unused)
 
 static bool start_worker(HubApp *app, const HubGame *game, OperationKind kind, const char *name)
 {
+    if (operation.running || hub_online_worker_busy() || hub_install_pending(HUB_ROOT, game)) {
+        hub_toast(app, "Wait for active downloads or installs to finish.");
+        return false;
+    }
+    if (kind == COPY && name) {
+        HubGame dest;
+        if (hub_game_init(&dest, game->engine, name) && hub_install_pending(HUB_ROOT, &dest)) {
+            hub_toast(app, "Wait for active downloads or installs to finish.");
+            return false;
+        }
+    }
     HubProgress progress = {.id = PROGRESS_ID, .state = HUB_PROGRESS_ACTIVE};
     snprintf(progress.title, sizeof(progress.title), "%s", kind == COPY ? "Copying game..." : "Deleting game...");
     snprintf(progress.detail, sizeof(progress.detail), "Please wait. Do not remove the SD card.");

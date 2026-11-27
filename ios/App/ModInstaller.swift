@@ -502,9 +502,11 @@ final class ModInstaller: ObservableObject {
         }
 
         let stateLock = NSLock()
+        let progressEmitLock = NSLock()
         var activeEtag = saved?["etag"] as? String
         var hasCurrentUrlEtag = (saved?["url"] as? String) == release.downloadUrl && ModDownloadTransfer.strong(activeEtag)
         var fileDoneBytes = segments.reduce(Int64(0)) { $0 + $1.done }
+        var maxEmittedBytes = fileDoneBytes
         var bytesSinceMeta: Int64 = 0
         var lastProgressEmit = Date.distantPast
         var fileAborted = false
@@ -564,21 +566,37 @@ final class ModInstaller: ObservableObject {
                 Darwin.close(fd)
             }
         }
-        func recordDelta(_ delta: Int64) {
+        func emitMonotonicProgress(force: Bool = false) {
+            progressEmitLock.lock()
+            defer { progressEmitLock.unlock() }
+            stateLock.lock()
+            let now = Date()
+            let currentDone = min(fileDoneBytes, knownTotal)
             var emitDone: Int64?
+            if force || now.timeIntervalSince(lastProgressEmit) >= 0.08 || currentDone >= knownTotal {
+                if currentDone > maxEmittedBytes {
+                    maxEmittedBytes = currentDone
+                    lastProgressEmit = now
+                    emitDone = maxEmittedBytes
+                } else if force {
+                    lastProgressEmit = now
+                    emitDone = maxEmittedBytes
+                }
+            }
+            stateLock.unlock()
+            if let emitDone { progress(emitDone, knownTotal) }
+        }
+        func recordDelta(_ delta: Int64) {
             stateLock.lock()
             fileDoneBytes += delta
             bytesSinceMeta += delta
             let now = Date()
-            if now.timeIntervalSince(lastProgressEmit) >= 0.08 {
-                lastProgressEmit = now
-                emitDone = min(fileDoneBytes, knownTotal)
-            }
+            let shouldEmit = now.timeIntervalSince(lastProgressEmit) >= 0.08 || fileDoneBytes >= knownTotal
             let shouldPersist = bytesSinceMeta >= Self.segmentMetaPersistBytes
             if shouldPersist { bytesSinceMeta = 0 }
             stateLock.unlock()
             if shouldPersist { snapshotMeta(segmented: true) }
-            if let emitDone { progress(emitDone, knownTotal) }
+            if shouldEmit { emitMonotonicProgress() }
         }
 
         let localGroup: DispatchGroup?
@@ -722,7 +740,10 @@ final class ModInstaller: ObservableObject {
                     }
                 }
                 snapshotMeta(segmented: false)
-                progress(knownTotal, knownTotal)
+                stateLock.lock()
+                fileDoneBytes = knownTotal
+                stateLock.unlock()
+                emitMonotonicProgress(force: true)
                 finishFile(.success(part))
             } catch {
                 finishFile(.failure(error))
@@ -894,6 +915,7 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
     var total: Int64 = -1
     var rangeHeader: String?
     var ifRangeHeader: String?
+    var lastProgressEmit = Date.distantPast
     init(part: URL, release: ModReleaseEntry, saved: [String: Any]?, cancelled: @escaping () -> Bool, progress: @escaping (Int64, Int64) -> Void) {
         self.part = part; self.release = release; self.saved = saved; self.cancelled = cancelled; self.progress = progress
     }
@@ -974,12 +996,22 @@ private final class ModDownloadTransfer: NSObject, URLSessionDataDelegate {
             if release.expectedSize >= 0 && Int64(data.count) > release.expectedSize - received {
                 throw ModError.message(hubText("下载文件大小不匹配"))
             }
-            try handle?.write(contentsOf: data); received += Int64(data.count); progress(received, total)
+            try handle?.write(contentsOf: data)
+            received += Int64(data.count)
+            let now = Date()
+            let isComplete = total > 0 && received >= total
+            if isComplete || now.timeIntervalSince(lastProgressEmit) >= 0.08 {
+                lastProgressEmit = now
+                progress(received, total)
+            }
         } catch { self.error = error; dataTask.cancel() }
     }
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         do { try handle?.synchronize(); try handle?.close() } catch { self.error = self.error ?? error }
         self.error = self.error ?? error
+        if self.error == nil {
+            progress(received, total > 0 ? total : received)
+        }
         done.signal()
     }
 }
@@ -1184,6 +1216,7 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
     var fullHandle: FileHandle?
     var fullWritten: Int64 = 0
     var fullTotal: Int64 = -1
+    var lastFullProgressEmit = Date.distantPast
     var error: Error?
 
     init(urlString: String, part: URL, reqStart: Int64, reqEnd: Int64, expectedTotal: Int64,
@@ -1307,7 +1340,12 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
                 }
                 try fullHandle?.write(contentsOf: data)
                 fullWritten += Int64(data.count)
-                onFull200Progress(fullWritten, fullTotal)
+                let now = Date()
+                let isComplete = fullTotal > 0 && fullWritten >= fullTotal
+                if isComplete || now.timeIntervalSince(lastFullProgressEmit) >= 0.08 {
+                    lastFullProgressEmit = now
+                    onFull200Progress(fullWritten, fullTotal)
+                }
             }
         } catch {
             self.error = error; dataTask.cancel()
@@ -1320,6 +1358,9 @@ private final class ModProbeSegmentTransfer: NSObject, URLSessionDataDelegate {
         }
         if mode != 3 && self.error == nil {
             self.error = error
+        }
+        if mode == 2 && self.error == nil {
+            onFull200Progress(fullWritten, fullTotal > 0 ? fullTotal : fullWritten)
         }
         done.signal()
     }

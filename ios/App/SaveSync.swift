@@ -30,7 +30,6 @@ final class SaveSync {
     enum Mode: Equatable { case twoWay, uploadOnly }
 
     private let files = FileManager.default
-    private let coordinator = NSFileCoordinator()
     let local: URL
     let remote: URL
     let state: URL?
@@ -162,6 +161,7 @@ final class SaveSync {
 
     private func coordinatedRead(path: [String], under root: URL) throws -> Snapshot {
         let url = try checkedURL(path, under: root)
+        let coordinator = NSFileCoordinator()
         var error: NSError?
         var result: Result<Snapshot, Error> = .failure(Failure.folderUnavailable)
         coordinator.coordinate(readingItemAt: url, options: [], error: &error) { coordinatedURL in
@@ -178,7 +178,7 @@ final class SaveSync {
     private func existingBytes(at url: URL) throws -> Data? {
         do { return try Data(contentsOf: url) }
         catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
-            let siblings = try files.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+            let siblings = (try? files.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)) ?? []
             guard !siblings.contains(".\(url.lastPathComponent).icloud") else { throw Failure.unreadableCloudFile }
             return nil
         }
@@ -188,6 +188,7 @@ final class SaveSync {
                                   isCancelled: () -> Bool, sourceStillMatches: () -> Bool = { true }) throws -> WriteResult {
         let url = try checkedURL(path, under: root)
         try files.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let coordinator = NSFileCoordinator()
         var error: NSError?
         var result: Result<WriteResult, Error> = .failure(Failure.folderUnavailable)
         coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &error) { coordinatedURL in
@@ -219,8 +220,17 @@ final class SaveSync {
     }
 
     private func publishedRename(source: String, hash: String) throws -> Rename? {
-        guard let marker = try renameSnapshot(at: renameRecordPath(source: source, hash: hash)) else { return nil }
-        let rename = try JSONDecoder().decode(Rename.self, from: marker.data)
+        let path = renameRecordPath(source: source, hash: hash)
+        guard let marker = try renameSnapshot(at: path) else { return nil }
+        guard let rename = try? JSONDecoder().decode(Rename.self, from: marker.data) else {
+            if let url = try? checkedURL(path, under: folder) {
+                var coordError: NSError?
+                NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &coordError) { coordinatedURL in
+                    try? files.removeItem(at: coordinatedURL)
+                }
+            }
+            return nil
+        }
         return rename.source == source && rename.hash == hash && rename.destination != source ? rename : nil
     }
 
@@ -239,6 +249,7 @@ final class SaveSync {
             return
         }
 
+        let coordinator = NSFileCoordinator()
         var error: NSError?
         var result: Result<Void, Error> = .failure(Failure.folderUnavailable)
         coordinator.coordinate(writingItemAt: source, options: .forMoving,
@@ -260,31 +271,43 @@ final class SaveSync {
                 try manager.rename(entry, named: name)
                 let destination = newParts.joined(separator: "/")
                 let markerPath = renameRecordPath(source: entry.path, hash: base.hash)
+                let markerURL = try checkedURL(markerPath, under: folder)
                 var published: (previous: Snapshot?, current: Snapshot)?
                 do {
-                    let previous = try renameSnapshot(at: markerPath)
+                    let previous: Snapshot?
+                    if let existingMarkerBytes = try existingBytes(at: markerURL) {
+                        let modified = try markerURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .distantPast
+                        previous = Snapshot(data: existingMarkerBytes, modified: modified)
+                    } else {
+                        previous = nil
+                    }
                     let rename = Rename(source: entry.path, destination: destination, hash: base.hash)
                     let marker = Snapshot(data: try JSONEncoder().encode(rename), modified: Date())
-                    guard try coordinatedWrite(marker, path: markerPath, under: folder, expected: previous?.data,
-                                               isCancelled: { false }) == .written else { throw Failure.targetChanged }
+                    try files.createDirectory(at: markerURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    let verifiedMarker = try checkedURL(markerPath, under: folder)
+                    guard try existingBytes(at: verifiedMarker) == previous?.data else { throw Failure.targetChanged }
+                    try marker.data.write(to: verifiedMarker, options: .atomic)
+                    try files.setAttributes([.modificationDate: marker.modified], ofItemAtPath: verifiedMarker.path)
                     published = (previous, marker)
                     coordinator.item(at: sourceURL, willMoveTo: targetURL)
                     try files.moveItem(at: sourceURL, to: targetURL)
                     coordinator.item(at: sourceURL, didMoveTo: targetURL)
                 } catch {
-                    if let published {
+                    if let published, let rollbackMarker = try? checkedURL(markerPath, under: folder) {
                         if let previous = published.previous {
-                            _ = try? coordinatedWrite(previous, path: markerPath, under: folder,
-                                                      expected: published.current.data, isCancelled: { false })
-                        } else if let marker = try? checkedURL(markerPath, under: folder) {
-                            try? files.removeItem(at: marker)
+                            if (try? existingBytes(at: rollbackMarker)) == published.current.data {
+                                try? previous.data.write(to: rollbackMarker, options: .atomic)
+                                try? files.setAttributes([.modificationDate: previous.modified], ofItemAtPath: rollbackMarker.path)
+                            }
+                        } else {
+                            try? files.removeItem(at: rollbackMarker)
                         }
                     }
                     try files.moveItem(at: localTarget, to: entry.url)
                     throw error
                 }
                 records.removeValue(forKey: entry.path)
-                records[newParts.joined(separator: "/")] = base
+                records[destination] = base
                 try? saveRecords(records)
             }
         }
@@ -422,12 +445,6 @@ enum SaveSyncFolder {
 
     static func enqueue(_ work: @escaping () -> Void) {
         queue.async { work() }
-    }
-
-    static func finish(_ work: @escaping () -> Void) {
-        let done = DispatchSemaphore(value: 0)
-        enqueue { work(); done.signal() }
-        done.wait()
     }
 
     static var isConfigured: Bool { UserDefaults.standard.data(forKey: SaveSync.bookmarkKey) != nil }

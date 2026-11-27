@@ -346,7 +346,11 @@ internal object ErrorReportKit {
         decisionSpecs: List<ErrorDialogButtonSpec>,
         onSelected: (Int) -> Unit,
         onDismissed: () -> Unit
-    ): Dialog {
+    ): Dialog? {
+        if (activity.isFinishing || activity.isDestroyed) {
+            onDismissed()
+            return null
+        }
         val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(activity), R.style.Theme_Launcher)
         val specs = decisionSpecs.ifEmpty {
             listOf(
@@ -486,7 +490,19 @@ internal object ErrorReportKit {
         immersiveMatchWindow: Boolean,
         onSelected: (Int) -> Unit,
         onDismissed: (Dialog) -> Unit
-    ): Dialog {
+    ): Dialog? {
+        val dialog = Dialog(activity)
+        var dismissNotified = false
+        fun notifyDismissOnce() {
+            if (!dismissNotified) {
+                dismissNotified = true
+                onDismissed(dialog)
+            }
+        }
+        if (activity.isFinishing || activity.isDestroyed) {
+            notifyDismissOnce()
+            return null
+        }
         fun dp(v: Int): Int = UiKit.dpInt(uiCtx, v)
 
         val dm = uiCtx.resources.displayMetrics
@@ -512,7 +528,6 @@ internal object ErrorReportKit {
         val padBottom = if (isCompactLandscape) dp(14) else dp(18)
         val sectionGap = if (isCompactLandscape) dp(10) else dp(13)
 
-        val dialog = Dialog(activity)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
 
         val keyMapping = SparseArray<Button>()
@@ -846,7 +861,15 @@ internal object ErrorReportKit {
                         selectionMade = true
                         onSelected(spec.id)
                     }
-                    dialog.dismiss()
+                    if (!activity.isDestroyed && dialog.isShowing) {
+                        try {
+                            dialog.dismiss()
+                        } catch (_: Throwable) {
+                            notifyDismissOnce()
+                        }
+                    } else {
+                        notifyDismissOnce()
+                    }
                 }
             }.also { btn ->
                 if (spec.isReturnDefault || spec.isPrimary) {
@@ -963,7 +986,15 @@ internal object ErrorReportKit {
                 if (escId != null && !selectionMade) {
                     selectionMade = true
                     onSelected(escId)
-                    dialog.dismiss()
+                    if (!activity.isDestroyed && dialog.isShowing) {
+                        try {
+                            dialog.dismiss()
+                        } catch (_: Throwable) {
+                            notifyDismissOnce()
+                        }
+                    } else {
+                        notifyDismissOnce()
+                    }
                 }
             }
             addView(
@@ -987,7 +1018,7 @@ internal object ErrorReportKit {
             }
         }
         dialog.setOnDismissListener {
-            onDismissed(dialog)
+            notifyDismissOnce()
         }
         dialog.setOnKeyListener { _, keyCode, event ->
             val mapped = keyMapping.get(keyCode)
@@ -1018,7 +1049,21 @@ internal object ErrorReportKit {
         card.scaleX = 0.96f
         card.scaleY = 0.96f
 
-        dialog.show()
+        if (activity.isFinishing || activity.isDestroyed) {
+            notifyDismissOnce()
+            return null
+        }
+        try {
+            dialog.show()
+        } catch (e: WindowManager.BadTokenException) {
+            Log.w(TAG, "Cannot show error report dialog: invalid window token", e)
+            notifyDismissOnce()
+            return null
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to show error report dialog", e)
+            notifyDismissOnce()
+            return null
+        }
 
         if (immersiveMatchWindow) {
             dialog.window?.let { dlgWin ->

@@ -4,9 +4,8 @@ import UIKit
 /// moves to the background and when the game ends. Only launch may pull.
 /// Failures are logged and never block play.
 enum SaveSyncSession {
-    private static var game: String?
-    private static var observers: [NSObjectProtocol] = []
-    private static var registered = false
+    @MainActor private static var game: String?
+    @MainActor private static var observers: [NSObjectProtocol] = []
     @MainActor private static var backgroundTask: BackgroundTask?
 
     private final class Cancellation: @unchecked Sendable {
@@ -26,24 +25,43 @@ enum SaveSyncSession {
         }
     }
 
-    @MainActor
-    private final class BackgroundTask {
+    private final class BackgroundTask: @unchecked Sendable {
+        private let lock = NSLock()
         private var id = UIBackgroundTaskIdentifier.invalid
         let cancellation = Cancellation()
 
+        @MainActor
         init() {
-            id = UIApplication.shared.beginBackgroundTask { [weak self] in self?.cancel() }
+            let cancellation = self.cancellation
+            let taskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+                cancellation.cancel()
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { self?.end() }
+                } else {
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated { self?.end() }
+                    }
+                }
+            }
+            lock.lock()
+            id = taskID
+            lock.unlock()
         }
 
+        @MainActor
         func cancel() {
             cancellation.cancel()
             end()
         }
 
+        @MainActor
         func end() {
-            guard id != .invalid else { return }
-            UIApplication.shared.endBackgroundTask(id)
+            lock.lock()
+            let current = id
             id = .invalid
+            lock.unlock()
+            guard current != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(current)
         }
     }
 
@@ -51,20 +69,25 @@ enum SaveSyncSession {
         SaveSyncFolder.enqueue {
             run(game, "launch", mode: .twoWay)
             DispatchQueue.main.async {
-                observe(game)
+                MainActor.assumeIsolated {
+                    observe(game)
+                }
                 ready()
             }
         }
     }
 
     @MainActor
+    private static func removeObservers() {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers.removeAll()
+    }
+
+    @MainActor
     private static func observe(_ game: String) {
+        removeObservers()
         guard SaveSyncFolder.isConfigured else { return }
         Self.game = game
-        if !registered {
-            registered = true
-            atexit { SaveSyncSession.finishUpload() }
-        }
         let notifications = NotificationCenter.default
         observers.append(notifications.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
@@ -75,8 +98,10 @@ enum SaveSyncSession {
                 SaveSyncFolder.enqueue {
                     run(game, "background", mode: .uploadOnly, isCancelled: { cancellation.isCancelled })
                     DispatchQueue.main.async {
-                        task.end()
-                        if backgroundTask === task { backgroundTask = nil }
+                        MainActor.assumeIsolated {
+                            task.end()
+                            if backgroundTask === task { backgroundTask = nil }
+                        }
                     }
                 }
             }
@@ -93,18 +118,22 @@ enum SaveSyncSession {
 
     @MainActor
     static func end() {
+        removeObservers()
         backgroundTask?.cancel()
         backgroundTask = nil
-        finishUpload()
-    }
-
-    private static func finishUpload() {
-        for observer in observers { NotificationCenter.default.removeObserver(observer) }
-        observers.removeAll()
         guard let game else { return }
         Self.game = nil
-        SaveSyncFolder.finish {
-            run(game, "exit", mode: .uploadOnly)
+        let task = BackgroundTask()
+        backgroundTask = task
+        let cancellation = task.cancellation
+        SaveSyncFolder.enqueue {
+            run(game, "exit", mode: .uploadOnly, isCancelled: { cancellation.isCancelled })
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    task.end()
+                    if backgroundTask === task { backgroundTask = nil }
+                }
+            }
         }
     }
 

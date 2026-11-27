@@ -55,6 +55,9 @@ enum ModFiles {
         return current
     }
     static func replace(_ source: URL, _ destination: URL) throws {
+        guard !isDirectory(destination) else {
+            throw ModError.message(hubText("MOD 目标路径不是文件：%@", destination.lastPathComponent))
+        }
         if rename(source.path, destination.path) == 0 { return }
         try removeIfPresent(destination)
         try files.copyItem(at: source, to: destination)
@@ -76,11 +79,18 @@ enum ModFiles {
 enum ModOverlay {
     static let journalName = ".mod_installed_files.txt"
     static let nonVanillaBaselineName = ".mod_non_vanilla_baseline"
+    private static func originalURL(forVanillaBackup backup: URL) -> URL? {
+        let name = backup.lastPathComponent
+        guard name.hasSuffix(".vanilla.bak") else { return nil }
+        let stem = String(name.dropLast(".vanilla.bak".count))
+        guard !stem.isEmpty, stem != ".", stem != ".." else { return nil }
+        return backup.deletingLastPathComponent().appendingPathComponent(stem)
+    }
     static func detectInstalledMod(_ directory: URL) -> Bool {
         if ModFiles.isFile(directory.appendingPathComponent(InstalledModInfo.metaFileName)) || ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.isFile(directory.appendingPathComponent(nonVanillaBaselineName)) { return true }
         for file in ModFiles.children(directory).filter(ModFiles.isFile) {
             let name = file.lastPathComponent.lowercased()
-            if name.hasSuffix(".vanilla.bak") || (name.hasPrefix("rance10modcg") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10modflat") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10cgbfyy") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10flatbfyy") && name.hasSuffix(".afa")) || name == "daisengoku.ain" || name == "daisengokugm.ald" || name == "daisengokubm.ald" || (name.hasSuffix("gm.ald") && (name.contains("愴崙") || name.contains("戦国") || name.contains("sengoku"))) || ["asratest.ini", "作弊码.txt"].contains(name) { return true }
+            if (name.hasSuffix(".vanilla.bak") && originalURL(forVanillaBackup: file) != nil) || (name.hasPrefix("rance10modcg") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10modflat") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10cgbfyy") && name.hasSuffix(".afa")) || (name.hasPrefix("rance10flatbfyy") && name.hasSuffix(".afa")) || name == "daisengoku.ain" || name == "daisengokugm.ald" || name == "daisengokubm.ald" || (name.hasSuffix("gm.ald") && (name.contains("愴崙") || name.contains("戦国") || name.contains("sengoku"))) || ["asratest.ini", "作弊码.txt"].contains(name) { return true }
             if name == "rance10.ain", let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 8_000_000 { return true }
         }
         let ini = ModFiles.ini(directory), name = ini["gamename"] ?? "", saveFolder = ini["savefolder"]?.lowercased() ?? ""
@@ -88,7 +98,10 @@ enum ModOverlay {
     }
     static func canRestoreVanilla(_ directory: URL) -> Bool {
         if ModFiles.isFile(directory.appendingPathComponent(nonVanillaBaselineName)) { return false }
-        return ModFiles.isFile(directory.appendingPathComponent(journalName)) || ModFiles.children(directory).contains { $0.lastPathComponent.hasSuffix(".vanilla.bak") }
+        if ModFiles.isFile(directory.appendingPathComponent(journalName)) { return true }
+        return ((try? ModFiles.walk(directory)) ?? []).contains {
+            ModFiles.isFile($0) && originalURL(forVanillaBackup: $0) != nil
+        }
     }
     static func displayName(_ directory: URL, baseName: String? = nil) -> String {
         let info = InstalledModInfo.readOrInfer(directory)
@@ -190,8 +203,8 @@ enum ModOverlay {
         }
         let asra = target.appendingPathComponent("AsraTest.ini")
         if ModFiles.isFile(asra) && !ModFiles.isFile(asra.appendingPathExtension("vanilla.bak")) { try ModFiles.files.removeItem(at: asra) }
-        for backup in try ModFiles.walk(target).reversed() where ModFiles.isFile(backup) && backup.lastPathComponent.hasSuffix(".vanilla.bak") {
-            let original = backup.deletingLastPathComponent().appendingPathComponent(String(backup.lastPathComponent.dropLast(".vanilla.bak".count)))
+        for backup in try ModFiles.walk(target).reversed() where ModFiles.isFile(backup) {
+            guard let original = originalURL(forVanillaBackup: backup) else { continue }
             try ModFiles.replace(backup, original)
         }
     }
@@ -220,14 +233,18 @@ enum ModOverlay {
             for file in before where ModFiles.isFile(file) && (file.lastPathComponent.hasSuffix(".vanilla.bak.tmp") || (file.lastPathComponent.hasPrefix(".mod_apply_") && file.lastPathComponent.hasSuffix(".tmp"))) {
                 affected.insert(file)
             }
-            for file in before where ModFiles.isFile(file) && file.lastPathComponent.hasSuffix(".vanilla.bak") {
+            for file in before where ModFiles.isFile(file) {
+                guard let original = originalURL(forVanillaBackup: file) else { continue }
                 affected.insert(file)
-                affected.insert(file.deletingLastPathComponent().appendingPathComponent(String(file.lastPathComponent.dropLast(".vanilla.bak".count))))
+                affected.insert(original)
             }
             let journal = target.appendingPathComponent(journalName)
             if ModFiles.isFile(journal) {
-                for line in try String(contentsOf: journal, encoding: .utf8).components(separatedBy: .newlines) where !line.isEmpty {
-                    affected.insert(try ModFiles.checked(target, line))
+                for line in try String(contentsOf: journal, encoding: .utf8).components(separatedBy: .newlines) {
+                    let relative = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !relative.isEmpty, let checked = try? ModFiles.checked(target, relative) {
+                        affected.insert(checked)
+                    }
                 }
             }
         }

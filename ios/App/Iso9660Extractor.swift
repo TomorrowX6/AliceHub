@@ -115,6 +115,17 @@ enum Iso9660Extractor {
         return false
     }
 
+    private static func sumExtents(_ extents: [Extent]) throws -> Int64 {
+        var sum: Int64 = 0
+        for extent in extents {
+            guard extent.size >= 0 else { throw ArchiveError.invalidImage }
+            let (next, overflow) = sum.addingReportingOverflow(extent.size)
+            guard !overflow else { throw ArchiveError.invalidImage }
+            sum = next
+        }
+        return sum
+    }
+
     @discardableResult
     static func extract(_ source: URL, to destination: URL,
                         shouldSkip: (String) -> Bool = { _ in false },
@@ -125,7 +136,7 @@ enum Iso9660Extractor {
         guard let desc = try descriptor(file) else { throw ArchiveError.invalidImage }
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         var queue: [(String, Extent)] = [("", desc.root)], visited = Set<Int64>(), index = 0
-        var tasks: [(String, URL, [Extent])] = []
+        var tasks: [(String, URL, [Extent], Int64)] = []
         var total: Int64 = 0
         while index < queue.count {
             try checkCancelled()
@@ -134,7 +145,7 @@ enum Iso9660Extractor {
             for entry in try entries(directoryBytes(file, desc.layout, extent), joliet: desc.joliet) {
                 try checkCancelled()
                 let relative = prefix.isEmpty ? entry.name : prefix + "/" + entry.name
-                let size = entry.extents.reduce(Int64(0)) { $0 + $1.size }
+                let size = try sumExtents(entry.extents)
                 let path = try ArchiveExtractor.outputPath(relative + (entry.directory ? "/" : ""),
                                                            size: entry.directory ? 0 : size,
                                                            root: destination, shouldSkip: shouldSkip)
@@ -144,16 +155,18 @@ enum Iso9660Extractor {
                         queue.append((relative, entry.extents[0]))
                     }
                 } else if let path = path {
-                    tasks.append((relative, path, entry.extents))
-                    total += size
+                    let (nextTotal, overflow) = total.addingReportingOverflow(size)
+                    guard !overflow else { throw ArchiveError.invalidImage }
+                    total = nextTotal
+                    tasks.append((relative, path, entry.extents, size))
                 }
             }
         }
         try ArchiveExtractor.checkSpace(total, at: destination)
         var done: Int64 = 0
-        for (name, path, extents) in tasks {
+        for (name, path, extents, size) in tasks {
             try checkCancelled()
-            try ArchiveExtractor.checkSpace(extents.reduce(0) { $0 + $1.size }, at: destination)
+            try ArchiveExtractor.checkSpace(size, at: destination)
             guard FileManager.default.createFile(atPath: path.path, contents: nil) else {
                 throw ArchiveError.extraction(hubText("无法创建文件：%@", name))
             }

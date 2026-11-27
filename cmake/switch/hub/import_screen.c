@@ -113,8 +113,10 @@ static void worker(void *unused)
     screen.ok = hub_local_import(HUB_ROOT, screen.source, &cb, &screen.game, screen.error);
     HubProgress progress = {.id = TASK_ID, .title = "Importing local game",
         .permille = screen.ok ? 1000 : 0, .state = screen.ok ? HUB_PROGRESS_DONE : HUB_PROGRESS_FAILED};
+    bool rollback_error = !screen.ok && strstr(screen.error, "Could not clean up the install") != NULL;
     snprintf(progress.detail, sizeof(progress.detail), "%.159s",
-             screen.ok ? screen.game.name : atomic_load(&screen.cancel) ? "Import canceled" : screen.error);
+             screen.ok ? screen.game.name : rollback_error ? screen.error :
+             atomic_load(&screen.cancel) ? "Import canceled" : screen.error);
     hub_progress_publish(&progress);
     atomic_store(&screen.done, true);
 }
@@ -192,6 +194,8 @@ static void draw(HubApp *app, size_t *focus, const HubGame *unused)
                 hub_toast(app, "Game imported");
             else
                 hub_dialog(app, "Game imported", "Could not refresh the library. Reopen AliceHub to see it.");
+        } else if (strstr(screen.error, "Could not clean up the install")) {
+            hub_dialog(app, "SD recovery needed", screen.error);
         } else if (atomic_load(&screen.cancel)) {
             hub_toast(app, "Import canceled");
         } else {

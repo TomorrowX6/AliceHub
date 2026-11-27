@@ -382,10 +382,14 @@ static int replace_hard_link(const char *source, const char *destination)
 		sprintf(temp_path, "%s/content", temp_dir);
 		if (link(source, temp_path) != 0) {
 			int link_error = errno;
-			if ((link_error != EPERM && link_error != EXDEV && link_error != ENOTSUP &&
-				link_error != EOPNOTSUPP && link_error != EMLINK) ||
-				copy_link_target(source, temp_path) != 0) {
-				error = errno;
+			if (link_error == EPERM || link_error == EACCES || link_error == EXDEV ||
+				link_error == ENOTSUP || link_error == EOPNOTSUPP ||
+				link_error == ENOSYS || link_error == EMLINK) {
+				if (copy_link_target(source, temp_path) != 0) {
+					error = errno;
+				}
+			} else {
+				error = link_error;
 			}
 		}
 		if (!error && rename(temp_path, destination) != 0) error = errno;
@@ -682,6 +686,11 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 				throw_io_exception(env, msg);
 				goto cleanup;
 			}
+			if (chunk_off < 0 || chunk_off < cur_off) {
+				close(out_fd);
+				throw_io_exception(env, "Invalid or non-monotonic sparse block offset in archive");
+				goto cleanup;
+			}
 			if (chunk_off > cur_off) {
 				if (lseek(out_fd, (off_t)chunk_off, SEEK_SET) == (off_t)-1) {
 					int seek_err = errno;
@@ -694,6 +703,11 @@ Java_io_github_kichikuou_xsystem4_ArchiveExtractor_nativeExtractFd(
 				cur_off = chunk_off;
 			}
 			if (chunk && chunk_len > 0) {
+				if (chunk_len > (size_t)(INT64_MAX - cur_off)) {
+					close(out_fd);
+					throw_io_exception(env, "Archive entry size exceeds 64-bit offset limit");
+					goto cleanup;
+				}
 				int write_err = 0;
 				if (write_all_fd(out_fd, (const uint8_t *)chunk, chunk_len, &write_err) != 0) {
 					close(out_fd);

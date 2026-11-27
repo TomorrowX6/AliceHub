@@ -17,15 +17,18 @@ static const char *const global_files[] = {
 };
 static const char edit_suffix[] = ".hub-edit.bak";
 
+enum { SAVE_SCAN_MAX_DEPTH = 64 };
+
 bool hub_save_join(HubSavePath path, const char *dir, const char *name)
 {
-    return (size_t)snprintf(path, HUB_SAVE_FILE_SIZE, "%s/%s", dir, name) < HUB_SAVE_FILE_SIZE;
+    int n = snprintf(path, HUB_SAVE_FILE_SIZE, "%s/%s", dir, name);
+    return n >= 0 && (size_t)n < HUB_SAVE_FILE_SIZE;
 }
 
 static int file_state(const char *path)
 {
     struct stat st;
-    if (stat(path, &st))
+    if (lstat(path, &st))
         return errno == ENOENT ? 0 : -1;
     return S_ISREG(st.st_mode) ? 1 : -1;
 }
@@ -33,7 +36,7 @@ static int file_state(const char *path)
 static bool is_dir(const char *path)
 {
     struct stat st;
-    return !stat(path, &st) && S_ISDIR(st.st_mode);
+    return !lstat(path, &st) && S_ISDIR(st.st_mode);
 }
 
 bool hub_save_supported(const char *game_dir)
@@ -65,11 +68,16 @@ static bool local_slot(const char *name)
     return end != digits && !strcasecmp(end, ".asd");
 }
 
-static bool scan(const char *root, const char *dir, HubSaveSlots *slots, size_t *capacity)
+static bool scan(size_t root_len, char *dir, HubSaveSlots *slots, size_t *capacity, unsigned depth)
 {
+    if (depth > SAVE_SCAN_MAX_DEPTH) {
+        errno = ELOOP;
+        return false;
+    }
     DIR *handle = opendir(dir);
     if (!handle)
         return errno == ENOENT;
+    size_t dir_len = strlen(dir);
     bool ok = true;
     for (;;) {
         errno = 0;
@@ -80,36 +88,55 @@ static bool scan(const char *root, const char *dir, HubSaveSlots *slots, size_t 
         }
         if (ent->d_name[0] == '.')
             continue;
-        struct stat st;
-        HubSavePath path;
-        if (!hub_save_join(path, dir, ent->d_name) || stat(path, &st))
+        int written = snprintf(dir + dir_len, HUB_SAVE_FILE_SIZE - dir_len, "/%s", ent->d_name);
+        if (written < 0 || (size_t)written >= HUB_SAVE_FILE_SIZE - dir_len) {
+            dir[dir_len] = '\0';
             continue;
-        if (S_ISDIR(st.st_mode) && !scan(root, path, slots, capacity)) {
-            ok = false;
-            break;
         }
-        if (!S_ISREG(st.st_mode))
+        struct stat st;
+        if (lstat(dir, &st)) {
+            dir[dir_len] = '\0';
             continue;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            if (!scan(root_len, dir, slots, capacity, depth + 1)) {
+                ok = false;
+                dir[dir_len] = '\0';
+                break;
+            }
+            dir[dir_len] = '\0';
+            continue;
+        }
+        if (!S_ISREG(st.st_mode)) {
+            dir[dir_len] = '\0';
+            continue;
+        }
         if (!local_slot(ent->d_name)) {
-            size_t length = strlen(path), suffix_length = strlen(edit_suffix);
-            if (length <= suffix_length || strcmp(path + length - suffix_length, edit_suffix))
+            size_t length = dir_len + (size_t)written, suffix_length = strlen(edit_suffix);
+            if (length <= suffix_length || strcmp(dir + length - suffix_length, edit_suffix)) {
+                dir[dir_len] = '\0';
                 continue;
-            path[length - suffix_length] = 0;
-            const char *name = strrchr(path, '/') + 1;
-            if (!local_slot(name) || file_state(path) != 0)
+            }
+            dir[length - suffix_length] = 0;
+            const char *name = strrchr(dir, '/') + 1;
+            if (!local_slot(name) || file_state(dir) != 0) {
+                dir[dir_len] = '\0';
                 continue;
+            }
         }
         if (slots->count == *capacity) {
             size_t n = *capacity ? 2 * *capacity : 16;
             HubSavePath *paths = realloc(slots->paths, n * sizeof(*paths));
             if (!paths) {
                 ok = false;
+                dir[dir_len] = '\0';
                 break;
             }
             slots->paths = paths;
             *capacity = n;
         }
-        strcpy(slots->paths[slots->count++], path + strlen(root) + 1);
+        strcpy(slots->paths[slots->count++], dir + root_len + 1);
+        dir[dir_len] = '\0';
     }
     closedir(handle);
     return ok;
@@ -127,8 +154,19 @@ static int compare_slots(const void *a, const void *b)
 bool hub_save_scan(const char *dir, HubSaveSlots *slots)
 {
     *slots = (HubSaveSlots){0};
+    if (!dir)
+        return false;
+    size_t root_len = strlen(dir);
+    if (root_len >= HUB_SAVE_FILE_SIZE)
+        return false;
+    char *cursor = malloc(HUB_SAVE_FILE_SIZE);
+    if (!cursor)
+        return false;
+    memcpy(cursor, dir, root_len + 1);
     size_t capacity = 0;
-    if (!scan(dir, dir, slots, &capacity)) {
+    bool ok = scan(root_len, cursor, slots, &capacity, 0);
+    free(cursor);
+    if (!ok) {
         free(slots->paths);
         *slots = (HubSaveSlots){0};
         return false;
@@ -296,6 +334,15 @@ bool hub_save_has_backup(const char *path, HubSaveBackup kind)
     return has;
 }
 
+static bool clear_backup(const char *path, HubSaveBackup kind)
+{
+    char *bak = backup_path(path, kind, false), *absent = backup_path(path, kind, true);
+    bool ok = bak && absent && unlink_if_present(bak) && unlink_if_present(absent);
+    free(bak);
+    free(absent);
+    return ok;
+}
+
 bool hub_save_restore(const char *path, HubSaveBackup kind)
 {
     char *bak = backup_path(path, kind, false), *absent = backup_path(path, kind, true);
@@ -306,6 +353,8 @@ bool hub_save_restore(const char *path, HubSaveBackup kind)
         ok = copy_to(bak, path) && unlink(bak) == 0;
     else if (old && b == 0 && a == 1 && file_state(path) >= 0)
         ok = unlink_if_present(old) && unlink_if_present(path) && unlink(absent) == 0;
+    if (ok && kind == HUB_SAVE_UNLOCK_BACKUP)
+        ok = clear_backup(path, HUB_SAVE_EDIT_BACKUP);
     free(bak);
     free(absent);
     free(old);
@@ -331,9 +380,12 @@ static bool walk_set(const char *dir, HubSaveBackup kind, const char *assets, bo
         for (size_t i = 0; i < total; ++i)
             if (!backup(targets[i], kind))
                 return false;
-        for (size_t i = 0; i < total; ++i)
+        for (size_t i = 0; i < total; ++i) {
             if (!hub_save_join(source, assets, files[i % count]) || !copy_to(source, targets[i]))
                 return false;
+            if (kind == HUB_SAVE_UNLOCK_BACKUP && !clear_backup(targets[i], HUB_SAVE_EDIT_BACKUP))
+                return false;
+        }
         return true;
     }
     bool found = false, ok = true;

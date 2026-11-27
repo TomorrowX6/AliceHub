@@ -124,6 +124,8 @@ static inline unsigned picker_mix(unsigned from, unsigned to, unsigned alpha)
 
 static inline void picker_text(Picker *picker, int x, int baseline, int right, unsigned color, const char *text)
 {
+    if (!text)
+        return;
     while (*text && x < right) {
         u32 codepoint;
         ssize_t bytes = decode_utf8(&codepoint, (const u8 *)text);

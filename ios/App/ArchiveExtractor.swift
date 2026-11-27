@@ -73,6 +73,43 @@ enum ArchiveExtractor {
         return j > c || (j == c && !preferGbkOnTie) ? japanese : chinese
     }
 
+    private enum Cp932ScalarClass {
+        case ascii, kanaSym, jis1, jis2, halfwidth, ext, nonCp932, pua
+    }
+
+    private static func classifyCp932Scalar(_ scalar: UnicodeScalar) -> Cp932ScalarClass {
+        let value = scalar.value
+        if value < 0x80 { return .ascii }
+        if (0xE000...0xF8FF).contains(value) || value == 0xFFFD { return .pua }
+        guard let encoded = String(scalar).data(using: String.Encoding(rawValue: cp932), allowLossyConversion: false) else {
+            return .nonCp932
+        }
+        if encoded.count == 1 { return .halfwidth }
+        guard encoded.count == 2 else { return .ext }
+        let code = (UInt16(encoded[0]) << 8) | UInt16(encoded[1])
+        switch code {
+        case 0x8140...0x84BE: return .kanaSym
+        case 0x889F...0x9872: return .jis1
+        case 0x989F...0xEAA4: return .jis2
+        default: return .ext
+        }
+    }
+
+    private static func scoreJapanesePlausibility(_ text: String) -> Int {
+        var score = 0
+        for scalar in text.unicodeScalars {
+            switch classifyCp932Scalar(scalar) {
+            case .ascii: break
+            case .kanaSym: score += 4
+            case .jis1: score += 3
+            case .jis2: score -= 1
+            case .halfwidth, .ext, .nonCp932: score -= 4
+            case .pua: score -= 20
+            }
+        }
+        return score
+    }
+
     static func repairSjisAsGbkMojibake(_ input: String) -> String {
         let separator = input.contains("\\") && !input.contains("/") ? "\\" : "/"
         return input.replacingOccurrences(of: "\\", with: "/").components(separatedBy: "/").map { segment in
@@ -95,6 +132,13 @@ enum ArchiveExtractor {
                   let repaired = String(data: data, encoding: String.Encoding(rawValue: cp932)) ?? String(data: data, encoding: .shiftJIS),
                   !repaired.contains("\u{FFFD}")
             else { return segment }
+            let origNonAscii = segment.unicodeScalars.filter { $0.value >= 0x80 }.map(classifyCp932Scalar)
+            if origNonAscii.allSatisfy({ $0 == .kanaSym || $0 == .jis1 }) { return segment }
+            let decNonAscii = repaired.unicodeScalars.filter { $0.value >= 0x80 }.map(classifyCp932Scalar)
+            if decNonAscii.contains(where: { $0 == .pua || $0 == .nonCp932 || $0 == .ext || $0 == .halfwidth }) { return segment }
+            let origScore = scoreJapanesePlausibility(segment)
+            let decScore = scoreJapanesePlausibility(repaired)
+            guard decScore > origScore && decScore > 0 else { return segment }
             return repaired
         }.joined(separator: separator)
     }

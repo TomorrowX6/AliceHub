@@ -93,7 +93,9 @@ final class OnlineGameInstaller {
 
         if effectiveConcurrency <= 1 || groups.count <= 1 {
             var completed: Int64 = 0
+            let progressLock = NSLock()
             var lastProgress = Date.distantPast
+            var maxReported: Int64 = 0
             let perFileConns = groups.count == 1 ? effectiveConcurrency : 1
             for group in groups {
                 try checkCancelled()
@@ -107,10 +109,19 @@ final class OnlineGameInstaller {
                     maxConnections: perFileConns,
                     minSegmentedBytes: minSegmentedBytes
                 ) { done, _ in
-                    guard Date().timeIntervalSince(lastProgress) >= 0.08 else { return }
-                    lastProgress = Date()
                     let credited = min(before + min(done, group.entrySize) * multiplier, total)
-                    progress(hubText("正在下载 %lld / %lld\n%@", firstIndex + 1, totalFiles, group.displayPath), credited, total)
+                    progressLock.lock()
+                    let now = Date()
+                    let isFinal = done >= group.entrySize
+                    guard isFinal || now.timeIntervalSince(lastProgress) >= 0.08 else {
+                        progressLock.unlock()
+                        return
+                    }
+                    lastProgress = now
+                    if credited > maxReported { maxReported = credited }
+                    let reported = maxReported
+                    progressLock.unlock()
+                    progress(hubText("正在下载 %lld / %lld\n%@", firstIndex + 1, totalFiles, group.displayPath), reported, total)
                 }
                 for idx in group.entryIndices {
                     downloadedByEntry[idx] = downloaded

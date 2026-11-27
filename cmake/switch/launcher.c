@@ -2,6 +2,7 @@
 #define SDL_MAIN_HANDLED
 #endif
 #include <SDL.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
@@ -23,6 +24,15 @@
 int alicehub_switch_engine_main(int argc, char **argv);
 
 static char launch_error[512];
+static bool romfs_mounted;
+
+static void exit_romfs(void)
+{
+    if (romfs_mounted) {
+        romfs_mounted = false;
+        romfsExit();
+    }
+}
 
 void alicehub_switch_set_launch_error(const char *message)
 {
@@ -324,6 +334,74 @@ static bool prepare_save(const char *game, const char *target, char *save, size_
     return hub_save_recover(save) && ensure_save_dir(save);
 }
 
+#if defined(ALICEHUB_SWITCH_XSYSTEM35)
+static bool contains_icase(const char *hay, const char *needle)
+{
+    if (!hay || !needle || !*needle)
+        return false;
+    size_t nlen = strlen(needle);
+    for (const char *p = hay; *p; ++p) {
+        size_t i = 0;
+        while (i < nlen && p[i] &&
+               tolower((unsigned char)p[i]) == tolower((unsigned char)needle[i]))
+            ++i;
+        if (i == nlen)
+            return true;
+    }
+    return false;
+}
+
+static const char *match_xsystem35_modifier_game(const char *text)
+{
+    if (!text || !*text)
+        return NULL;
+    if (contains_icase(text, "kichiku") || strstr(text, "鬼畜王"))
+        return "kichikuou";
+    if (contains_icase(text, "kaeru") || contains_icase(text, "panyo") ||
+        strstr(text, "かえるにょ") || strstr(text, "ぱにょ"))
+        return "kaerunyo";
+    if (contains_icase(text, "escalayer") || strstr(text, "エスカレイヤー"))
+        return "escalayer";
+    if (contains_icase(text, "daiakuji") || strstr(text, "大悪司") || strstr(text, "大恶司"))
+        return "daiakuji";
+    if (contains_icase(text, "rance5d") || contains_icase(text, "r5d_"))
+        return "rance5d";
+    if (contains_icase(text, "tsumamigui") || strstr(text, "妻みぐい") || strstr(text, "妻中蜜"))
+        return "tsumamigui";
+    return NULL;
+}
+
+static const char *resolve_xsystem35_modifier_game(const char *game_dir, char buf[64])
+{
+    char marker[HUB_PATH_SIZE];
+    if ((size_t)snprintf(marker, sizeof(marker), "%s/.alicehub-online-v1", game_dir) < sizeof(marker)) {
+        FILE *fp = fopen(marker, "rb");
+        if (fp) {
+            size_t n = fread(buf, 1, 63, fp);
+            fclose(fp);
+            buf[n] = '\0';
+            buf[strcspn(buf, "\r\n")] = '\0';
+            if (buf[0])
+                return buf;
+        }
+    }
+    const char *base = strrchr(game_dir, '/');
+    const char *matched = match_xsystem35_modifier_game(base ? base + 1 : game_dir);
+    if (matched)
+        return matched;
+    DIR *dir = opendir(game_dir);
+    if (!dir)
+        return NULL;
+    for (struct dirent *ent; (ent = readdir(dir)); ) {
+        matched = match_xsystem35_modifier_game(ent->d_name);
+        if (matched)
+            break;
+    }
+    closedir(dir);
+    return matched;
+}
+#endif
+
 static int launch_game(const char *game, char *target, char *save)
 {
     SDL_SetMainReady();
@@ -333,9 +411,15 @@ static int launch_game(const char *game, char *target, char *save)
     char *args[] = { ALICEHUB_ENGINE, "--save-folder", save, "--save-format=rsm", "--joypad", target, NULL };
 #elif defined(ALICEHUB_SWITCH_XSYSTEM35)
     setenv("XSYSTEM35_SOUNDFONT", "romfs:/soundfonts/TimGM6mb.sf2", 1);
+    char mod_game_buf[64];
+    const char *mod_game = resolve_xsystem35_modifier_game(game, mod_game_buf);
+    if (mod_game && *mod_game)
+        setenv("XSYSTEM35_MODIFIER_GAME", mod_game, 1);
+    else
+        unsetenv("XSYSTEM35_MODIFIER_GAME");
     char *args[] = { ALICEHUB_ENGINE, "-gamedir", target, "-savedir", save, NULL };
 #else
-    romfsExit(); // System 3 mounts its own ROMFS at entry.
+    exit_romfs(); // System 3 mounts its own ROMFS at entry.
     char literal_save[HUB_PATH_SIZE + 1];
     snprintf(literal_save, sizeof(literal_save), "%s/", save);
     char *args[] = { ALICEHUB_ENGINE, "-gamedir", target, "-savedir", literal_save, "-fullscreen", NULL };
@@ -347,8 +431,19 @@ static int standalone_main(void)
 {
     char game[HUB_PATH_SIZE], target[HUB_PATH_SIZE], save[HUB_PATH_SIZE];
     bool uses_dsr;
-    if (R_FAILED(romfsInit()))
-        return 1;
+    if (!romfs_mounted) {
+        if (R_FAILED(romfsInit()))
+            return 1;
+        romfs_mounted = true;
+    }
+    static bool romfs_atexit;
+    if (!romfs_atexit) {
+        if (atexit(exit_romfs)) {
+            exit_romfs();
+            return 1;
+        }
+        romfs_atexit = true;
+    }
     bool retained_nv = false;
     int result = 1;
     for (;;) {
@@ -387,12 +482,13 @@ static int standalone_main(void)
             return result;
         if (R_FAILED(romfsInit()))
             return result;
+        romfs_mounted = true;
 #endif
         if (!*launch_error)
             break;
         SDL_Quit();
     }
-    romfsExit();
+    exit_romfs();
     return result;
 }
 
@@ -437,5 +533,13 @@ int main(int argc, char **argv)
         alicehub_switch_set_launch_error("Cannot open engine resources");
         return 1;
     }
-    return launch_game(game, target, save);
+    romfs_mounted = true;
+    if (atexit(exit_romfs)) {
+        exit_romfs();
+        alicehub_switch_set_launch_error("Cannot register engine resource cleanup");
+        return 1;
+    }
+    int result = launch_game(game, target, save);
+    exit_romfs();
+    return result;
 }

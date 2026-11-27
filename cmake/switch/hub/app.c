@@ -1,5 +1,6 @@
 #include "hub.h"
 #include "install_transaction.h"
+#include "instances.h"
 #include "support_files.h"
 #include "update_screen.h"
 #include "../picker_art.h"
@@ -302,7 +303,8 @@ void hub_hints_extra(HubApp *app, const char *confirm, const char *back, const c
         picker_hint(p, 692, "X", action, false);
     if (confirm)
         picker_hint(p, 900, "A", confirm, true);
-    picker_hint(p, 1094, "B", back, false);
+    if (back)
+        picker_hint(p, 1094, "B", back, false);
 }
 
 void hub_empty(HubApp *app, const char *title, const char *detail)
@@ -443,7 +445,12 @@ int main(int argc, char **argv)
     if (!hub_settings_load(HUB_ROOT, &app.settings))
         hub_toast(&app, "Unsupported or damaged settings; using defaults");
     bool root_ok = !mkdir(HUB_ROOT, 0777) || errno == EEXIST;
-    bool recovered = root_ok && hub_install_recover(HUB_ROOT);
+    bool recovered = false;
+    if (root_ok) {
+        bool installs_ok = hub_install_recover(HUB_ROOT);
+        bool copies_ok = hub_instance_recover(HUB_ROOT);
+        recovered = installs_ok && copies_ok;
+    }
     if (!root_ok || !hub_refresh_library(&app))
         hub_toast(&app, "Could not scan the SD card library");
     else if (!recovered)

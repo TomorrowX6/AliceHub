@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal object SharedStorageMigration {
     private class Session {
         val latest = AtomicReference<AppStorage.MigrationProgress?>()
+        @Volatile
         var displayed: AppStorage.MigrationProgress? = null
         val dialogs = mutableMapOf<Activity, ProgressDialog>()
     }
@@ -39,17 +40,31 @@ internal object SharedStorageMigration {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    @Volatile
     private var running: Session? = null
 
     fun attach(activity: Activity, onComplete: () -> Unit): Boolean {
         val session = running ?: return false
         if (activity.isFinishing || activity.isDestroyed) return false
-        session.dialogs.getOrPut(activity) { ProgressDialog(activity, onComplete) }.update(session.displayed)
+        val dialog = session.dialogs[activity] ?: try {
+            ProgressDialog(activity, onComplete).also { session.dialogs[activity] = it }
+        } catch (e: Throwable) {
+            Log.w("SharedStorageMigration", "Could not show migration progress dialog", e)
+            return true
+        }
+        dialog.update(session.displayed)
         return true
     }
 
     fun detach(activity: Activity) {
-        running?.dialogs?.remove(activity)?.dialog?.dismiss()
+        val binding = running?.dialogs?.remove(activity) ?: return
+        val dlg = binding.dialog
+        if (!activity.isDestroyed && dlg.isShowing) {
+            try {
+                dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     fun showPendingFailureNotice(activity: Activity) {
@@ -63,6 +78,7 @@ internal object SharedStorageMigration {
     }
 
     fun start(activity: Activity, retry: Boolean, onFinished: () -> Unit, onComplete: () -> Unit) {
+        if (UncensoredPatchManager.isAnyDownloading()) return
         if (attach(activity, onComplete)) return
         val session = Session()
         running = session
@@ -74,7 +90,12 @@ internal object SharedStorageMigration {
                     if (session.latest.getAndSet(status) == null) handler.post {
                         session.latest.getAndSet(null)?.let { current ->
                             session.displayed = current
-                            session.dialogs.values.forEach { it.update(current) }
+                            val snapshot = session.dialogs.entries.toList()
+                            for ((host, binding) in snapshot) {
+                                if (!host.isFinishing && !host.isDestroyed) {
+                                    binding.update(current)
+                                }
+                            }
                         }
                     }
                 }
@@ -86,8 +107,15 @@ internal object SharedStorageMigration {
                 running = null
                 onFinished()
                 var resultShown = false
-                for ((host, binding) in session.dialogs) {
-                    binding.dialog.dismiss()
+                val snapshot = session.dialogs.entries.toList()
+                session.dialogs.clear()
+                for ((host, binding) in snapshot) {
+                    if (!host.isFinishing && !host.isDestroyed && binding.dialog.isShowing) {
+                        try {
+                            binding.dialog.dismiss()
+                        } catch (_: Throwable) {
+                        }
+                    }
                     if (host.isFinishing || host.isDestroyed) continue
                     if (!resultShown) {
                         resultShown = true

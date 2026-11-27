@@ -351,7 +351,7 @@ static bool archive_root(const char *source, bool evenicle2, char root[HUB_PATH_
     struct archive_entry *entry;
     unsigned best = IMPORT_DEPTH + 1;
     int rc;
-    while ((rc = archive_read_next_header(a, &entry)) == ARCHIVE_OK) {
+    while ((rc = archive_read_next_header(a, &entry)) == ARCHIVE_OK || rc == ARCHIVE_WARN) {
         if (!update(cb, "Reading archive")) { rc = ARCHIVE_FATAL; break; }
         if (archive_entry_filetype(entry) != AE_IFREG) continue;
         char path[HUB_PATH_SIZE];
@@ -385,7 +385,7 @@ static bool apply_archive(HubInstallTransaction *tx, cJSON *files, const char *s
     unsigned char *buffer = malloc(BUFFER);
     size_t prefix = strlen(root), count = 0;
     int rc = ARCHIVE_FATAL;
-    while (buffer && (rc = archive_read_next_header(a, &entry)) == ARCHIVE_OK) {
+    while (buffer && ((rc = archive_read_next_header(a, &entry)) == ARCHIVE_OK || rc == ARCHIVE_WARN)) {
         if (!update(cb, "Applying archive")) break;
         if (archive_entry_filetype(entry) != AE_IFREG) continue;
         char name[HUB_PATH_SIZE], relative[HUB_PATH_SIZE], path[HUB_PATH_SIZE];

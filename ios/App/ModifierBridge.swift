@@ -157,6 +157,10 @@ enum ModifierBridge {
         applyDisplayScale(for: gameID)
     }
 
+    static func clearDisplayScaleGame() {
+        displayScaleGame = nil
+    }
+
     static func applyDisplayScale(for gameID: String, preview: (GameDisplayScale, Int)? = nil) {
         guard displayScaleGame == gameID else { return }
         func percent(_ scale: GameDisplayScale) -> Int32 {

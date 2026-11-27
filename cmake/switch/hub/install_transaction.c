@@ -181,19 +181,51 @@ static bool recover_one(const HubInstallTransaction *tx)
     return tree(tx->work, true) && commit_device();
 }
 
+static bool recover_orphaned_copies(const char *folder)
+{
+    bool exists;
+    if (!directory(folder, &exists))
+        return false;
+    if (!exists)
+        return true;
+    DIR *dir = opendir(folder);
+    if (!dir)
+        return false;
+    bool ok = true;
+    for (;;) {
+        errno = 0;
+        const struct dirent *entry = readdir(dir);
+        if (!entry) {
+            ok = !errno && ok;
+            break;
+        }
+        const char *name = entry->d_name;
+        if (strncmp(name, ".hub-copy-", 10) != 0 || !name[10] ||
+            strspn(name + 10, "0123456789") != strlen(name + 10))
+            continue;
+        char child[HUB_PATH_SIZE];
+        if (!join(child, folder, name) || !tree(child, true) || !commit_device())
+            ok = false;
+    }
+    closedir(dir);
+    return ok;
+}
+
 static bool recover_engine(const char *root, HubEngine engine)
 {
     char folder[HUB_PATH_SIZE], installs[HUB_PATH_SIZE];
     bool exists;
-    if (!join(folder, root, hub_engines[engine].id) || !join(installs, folder, INSTALL_DIR) ||
-        !directory(installs, &exists))
+    if (!join(folder, root, hub_engines[engine].id) || !join(installs, folder, INSTALL_DIR))
+        return false;
+    bool copies_ok = recover_orphaned_copies(folder);
+    if (!directory(installs, &exists))
         return false;
     if (!exists)
-        return true;
+        return copies_ok;
     DIR *dir = opendir(installs);
     if (!dir)
         return false;
-    bool ok = true;
+    bool ok = copies_ok;
     for (;;) {
         errno = 0;
         const struct dirent *entry = readdir(dir);
@@ -338,14 +370,31 @@ static bool commit(HubInstallTransaction *tx, bool replace)
             tx->replacing_copy = false;
         }
     } else {
+        struct stat st;
+        if (!lstat(tx->target, &st)) {
+            errno = EEXIST;
+            return false;
+        }
+        if (errno != ENOENT)
+            return false;
         FILE *journal = fopen(tx->publishing, "wbx");
         if (!journal) return false;
-        tx->publishing_new = true;
-        if (fclose(journal) || !commit_device())
+        if (fclose(journal) || !commit_device()) {
+            int err = errno;
+            unlink(tx->publishing);
+            commit_device();
+            errno = err;
             return false;
+        }
+        tx->publishing_new = true;
         if (hub_rename_dir(tx->stage, tx->target)) {
-            if (errno == EEXIST)
+            int err = errno;
+            if (err == EEXIST) {
                 tx->publishing_new = false;
+                unlink(tx->publishing);
+                commit_device();
+            }
+            errno = err;
             return false;
         }
         if (!commit_device() || unlink(tx->publishing) || !commit_device())

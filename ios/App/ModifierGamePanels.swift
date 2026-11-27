@@ -240,8 +240,10 @@ struct ModifierGamePanel {
         ModifierGamePanel("daiteikoku", "大帝国",
             locks: ["无限资源", "无限技术", "我方提督满 HP", "我方无限行动", "我方星域满治安"],
             cheats: [
+                cheat("资源 +10 万", ["addResource": 100_000]),
+                cheat("技术 +10 万", ["addTechnology": 100_000]),
                 cheat("资源与技术拉满", ["resource": 9_999_999, "technology": 9_999_999]),
-                cheat("重置我方行动", ["cheat": "fullHeal"]),
+                cheat("全员满血并重置行动", ["cheat": "fullHeal"]),
                 cheat("解锁全部战舰", ["cheat": "unlockShips"]),
                 boostAll(exDt),
             ],
@@ -322,7 +324,7 @@ struct ModifierGamePanel {
                 cheat("敌方攻防清零", ["cheat": "weakenEnemy"]),
             ], characters: exOy),
         ModifierGamePanel("tsumashibori", "榨精人妻",
-            locks: ["无限金钱", "我方满 HP 与 SP", "锁定高爱情度", "情敌精力清零", "无限消耗品"],
+            locks: ["无限金钱", "我方满 HP 与 SP", "女主满好感零嫉妒", "情敌精力清零", "无限消耗品"],
             cheats: exGoldCheats() + [
                 cheat("全员回满 HP 与 SP", ["cheat": "fullHeal"]),
                 cheat("情敌精力清零", ["cheat": "weakenEnemy"]),
@@ -349,8 +351,9 @@ struct ModifierGamePanel {
         ModifierGamePanel("ixseal", "超昂神骑",
             locks: ["我方满 HP", "清除污染度", "锁定高爱情度", "无限魔石板"],
             cheats: [
-                cheat("魔石板 +50000", ["addGold": 50_000]),
+                cheat("魔石板拉满 (12)", ["gold": 12]),
                 cheat("恢复满 HP", ["cheat": "fullHeal"]),
+                cheat("补满消耗品", ["cheat": "maxItems"]),
                 boostAll(exIx),
             ],
             resources: [ModifierField("gold", "魔石板"), ModifierField("energy", "能量")], characters: exIx),
@@ -375,7 +378,7 @@ struct ModifierGamePanel {
         ModifierGamePanel("tsumamigui3", "妻中蜜 3",
             locks: ["无限金钱", "无限精力", "清除情敌痕迹", "无限消耗品"],
             cheats: exGoldCheats() + [
-                cheat("恢复满 HP", ["cheat": "fullHeal"]),
+                cheat("回满精力并清除情敌", ["cheat": "fullHeal"]),
                 cheat("补满消耗品", ["cheat": "maxItems"]),
                 boostAll(exT3g),
             ],

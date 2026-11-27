@@ -56,13 +56,14 @@ class SaveImportPaths @JvmOverloads constructor(
 
     private fun system35Name(name: String): String? {
         if (isSystem35 && name.equals("Volume.sav", ignoreCase = true)) return "Volume.sav"
+        if (isSystem35 && name.equals("msgskip.dat", ignoreCase = true)) return "msgskip.dat"
         val prefix = system35Prefix ?: return null
         val slot = slotFile.matchEntire(name)
         if (slot != null && equivalent(slot.groupValues[1], prefix)) {
             return prefix + slot.groupValues[2].lowercase(Locale.ROOT)
         }
         if (name.endsWith(".msgskip", true) && equivalent(name.dropLast(8), prefix)) {
-            return "$prefix.msgskip"
+            return if (prefix.isEmpty()) "msgskip.dat" else "$prefix.msgskip"
         }
         return null
     }
@@ -168,7 +169,7 @@ class SaveImportPaths @JvmOverloads constructor(
         fun explicitSource(node: T, ancestors: List<T>): Source<T> {
             val visible = visibleChildren(node)
             val competes = if (fromArchive) hasLooseSave(visible, ::isPotentialSlot)
-                else hasLooseSave(visible, saveExtension::matches)
+                else hasLooseSave(visible, ::isSaveFile)
             if (ancestors.size < 3 && !competes) {
                 val child = visible.filter(isDirectory).singleOrNull()
                 if (child != null && explicitSaveFolder(listOf(child)) != null && containsSave(child)) {
@@ -202,7 +203,7 @@ class SaveImportPaths @JvmOverloads constructor(
             if (!fromArchive) explicitSaveFolder(dirs)?.let { return explicitSource(it, parents) }
             return dirs.singleOrNull()?.let { find(it, depth - 1, parents, isSave) }
         }
-        find(root, 3, emptyList(), saveExtension::matches)?.let { return it }
+        find(root, 3, emptyList(), ::isSaveFile)?.let { return it }
         if (!fromArchive) return Source(root)
         find(root, 3, emptyList(), ::isArchiveSave)?.let { return it }
 
@@ -316,6 +317,8 @@ class SaveImportPaths @JvmOverloads constructor(
         val slotFile = Regex("^(.*)(s[a-z]\\.asd)$", RegexOption.IGNORE_CASE)
         val system35MapFile = Regex("王子_M-?\\d+\\.asd", RegexOption.IGNORE_CASE)
         val saveExtension = Regex(".*\\.(asd|sav|rsm|msgskip)$", RegexOption.IGNORE_CASE)
+        val system3SaveFile = Regex("^ASLEEP(?:_[A-Z])?\\.DAT$", RegexOption.IGNORE_CASE)
+        val msgskipDatFile = Regex("^MSGSKIP\\.DAT$", RegexOption.IGNORE_CASE)
         val numberedSlot = Regex("(?:.*[ _.-])?(?:(?:save(?:data)?|slot)[ _.-]*)?\\d+", RegexOption.IGNORE_CASE)
         val namedState = Regex(
             "(?:.*[_-])?(?:af[a-z]+|config|settings?|system(?:data)?|sys|common(?:system)?(?:data)?|" +
@@ -325,16 +328,21 @@ class SaveImportPaths @JvmOverloads constructor(
         val cp932 = runCatching { Charset.forName("windows-31j") }.getOrElse { Charset.forName("Shift_JIS") }
         val gbk = Charset.forName("GBK")
 
+        fun isSaveFile(name: String): Boolean =
+            saveExtension.matches(name) || system3SaveFile.matches(name) || msgskipDatFile.matches(name)
+
         fun isArchiveMarker(name: String): Boolean =
             name.endsWith(".vsf", true) || name.equals("keyfile.dat", true)
 
-        fun isArchiveSave(name: String): Boolean = saveExtension.matches(name) || isArchiveMarker(name)
+        fun isArchiveSave(name: String): Boolean = isSaveFile(name) || isArchiveMarker(name)
 
-        fun isPotentialSlot(name: String): Boolean = saveExtension.matches(name) &&
-            !name.endsWith(".msgskip", true) && !namedState.matches(name.substringBeforeLast('.'))
+        fun isPotentialSlot(name: String): Boolean = isSaveFile(name) &&
+            !name.endsWith(".msgskip", true) && !msgskipDatFile.matches(name) &&
+            !namedState.matches(name.substringBeforeLast('.'))
 
         fun isFallbackState(name: String): Boolean = isArchiveMarker(name) ||
             name.endsWith(".msgskip", true) ||
+            msgskipDatFile.matches(name) ||
             name.endsWith(".sav", true) && !numberedSlot.matches(name.substringBeforeLast('.')) ||
             saveExtension.matches(name) && namedState.matches(name.substringBeforeLast('.'))
 

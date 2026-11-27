@@ -421,8 +421,39 @@ class InstallForegroundService : Service() {
         runningInstance = this
         val action = intent?.action
 
-        // Always promote to foreground FIRST on every onStartCommand so Android's 5s FGS timer is
-        // satisfied even when the session already ended or ACTION_STOP was requested.
+        // Dispatch notification pause/cancel actions BEFORE calling startForeground(), so a
+        // background PendingIntent.getService click is never dropped if FGS promotion fails.
+        when (action) {
+            ACTION_PAUSE_INSTALL -> {
+                val cb = pauseCallback ?: cancelCallback
+                if (cb != null) {
+                    Handler(Looper.getMainLooper()).post { cb() }
+                }
+                val needsPromote = synchronized(stateLock) { pendingForegroundStarts > 0 }
+                if (!needsPromote && !promotedInForeground) {
+                    if (!activeSession || pendingStop) {
+                        stopSelf(startId)
+                    }
+                    return START_NOT_STICKY
+                }
+            }
+            ACTION_CANCEL_INSTALL -> {
+                val cb = cancelCallback
+                if (cb != null) {
+                    Handler(Looper.getMainLooper()).post { cb() }
+                }
+                val needsPromote = synchronized(stateLock) { pendingForegroundStarts > 0 }
+                if (!needsPromote && !promotedInForeground) {
+                    if (!activeSession || pendingStop) {
+                        stopSelf(startId)
+                    }
+                    return START_NOT_STICKY
+                }
+            }
+        }
+
+        // Promote to foreground so Android's 5s FGS timer is satisfied even when the session
+        // already ended or ACTION_STOP was requested.
         val promoted = promoteToForeground(buildProgressNotification(this))
         val shouldStopNow: Boolean
         synchronized(stateLock) {
@@ -439,21 +470,6 @@ class InstallForegroundService : Service() {
         if (!promoted) {
             releaseLocks()
             return START_NOT_STICKY
-        }
-
-        when (action) {
-            ACTION_PAUSE_INSTALL -> {
-                val cb = pauseCallback ?: cancelCallback
-                if (cb != null) {
-                    Handler(Looper.getMainLooper()).post { cb() }
-                }
-            }
-            ACTION_CANCEL_INSTALL -> {
-                val cb = cancelCallback
-                if (cb != null) {
-                    Handler(Looper.getMainLooper()).post { cb() }
-                }
-            }
         }
 
         if (shouldStopNow) {

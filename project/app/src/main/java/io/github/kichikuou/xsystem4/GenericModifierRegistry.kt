@@ -517,8 +517,9 @@ object GenericModifierRegistry {
                     field("energy", "能源", "エネルギー", "Energy")
                 ),
                 cheats = listOf(
-                    cheat("魔石板 +50000", "マジックプレート +50000", "Magic Plates +50K", "addGold" to 50_000),
+                    cheat("魔石板拉满 (12)", "マジックプレート最大 (12)", "Max Magic Plates (12)", "gold" to 12),
                     cheat("全员回满 HP/能量并清除污染", "全員全回復・汚染除去", "Full Heal & Purify", "cheat" to "fullHeal"),
+                    cheat("补满消耗品", "消費アイテム補充", "Refill Consumables", "cheat" to "maxItems"),
                     boostCheat(boost)
                 ),
                 charFields = listOf(

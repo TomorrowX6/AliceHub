@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 struct GlobalSaveEditor {
     enum Backup: String, CaseIterable {
@@ -120,17 +123,29 @@ struct GlobalSaveEditor {
         return entries
     }
 
-    private func saveBackup(_ kind: Backup, entries: [Entry]) throws {
+    private func stageBackup(_ kind: Backup, entries: [Entry]) throws -> URL? {
         let hadBackup = try hasBackup(kind)
         var backup = entries
         if kind == .unlock && hadBackup {
             let previous = try backupEntries(kind)
             let known = Set(previous.map(\.path))
             let added = entries.filter { !known.contains($0.path) }
-            if added.isEmpty { return }
+            if added.isEmpty { return nil }
             backup = previous + added
         }
-        try PropertyListEncoder().encode(backup).write(to: backupURL(kind), options: .atomic)
+        let data = try PropertyListEncoder().encode(backup)
+        let staged = directory.appendingPathComponent(".\(kind.rawValue)-\(UUID().uuidString).plist.tmp")
+        try data.write(to: staged, options: .atomic)
+        return staged
+    }
+
+    private func commitStagedBackup(_ staged: URL?, for kind: Backup) throws {
+        guard let staged else { return }
+        let dest = backupURL(kind)
+        if rename(staged.path, dest.path) != 0 {
+            try? files.removeItem(at: staged)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
     }
 
     private func apply(_ entries: [Entry], to root: URL) throws {
@@ -157,7 +172,9 @@ struct GlobalSaveEditor {
                 applied.append(old)
             }
         } catch {
-            try apply(applied.reversed(), to: directory)
+            for rollbackEntry in applied.reversed() {
+                try? apply([rollbackEntry], to: directory)
+            }
             throw error
         }
     }
@@ -179,8 +196,10 @@ struct GlobalSaveEditor {
         let staged = Dictionary(uniqueKeysWithValues: after.map { ($0.path, $0) })
         let changed = before.filter { staged[$0.path] != $0 }
         guard !changed.isEmpty else { return }
-        try saveBackup(.edit, entries: changed)
+        let stagedBackup = try stageBackup(.edit, entries: changed)
+        defer { if let stagedBackup { try? files.removeItem(at: stagedBackup) } }
         try replace(before, with: after)
+        try commitStagedBackup(stagedBackup, for: .edit)
     }
 
     func unlock(using archive: URL?) throws {
@@ -193,8 +212,10 @@ struct GlobalSaveEditor {
         let before = try snapshot(Self.unlockable, in: directory)
         let after = before.map { Entry(path: $0.path, data: data[URL(fileURLWithPath: $0.path).lastPathComponent]) }
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
-        try saveBackup(.unlock, entries: before)
+        let stagedBackup = try stageBackup(.unlock, entries: before)
+        defer { if let stagedBackup { try? files.removeItem(at: stagedBackup) } }
         try replace(before, with: after)
+        try commitStagedBackup(stagedBackup, for: .unlock)
     }
 
     func restore(_ kind: Backup) throws {

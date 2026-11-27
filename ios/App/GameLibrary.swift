@@ -173,21 +173,21 @@ final class GameLibrary: ObservableObject {
         ("sanbiki", ["sanbiki", "三匹が", "三匹", "slash!thrust!burn!"]),
         ("sengokurance", ["sengoku", "戦国", "战国", "戰國", "rance7", "愴崙", "daisengoku", "大战国", "大戦国"]),
         ("rance1digest", ["rance1digest", "rance1.ain", "兰斯1摘要", "兰斯１摘要", "蘭斯1摘要", "ランス1ダイジェスト", "ランス１ダイジェスト"]),
-        ("rance1classic", ["rance1classic", "rancesa.ald", "rancega.ald", "兰斯1原版", "兰斯1（原版）", "兰斯i寻找小光"]),
+        ("kichikuou", ["kichiku", "鬼畜王"]),
+        ("rance1classic", ["rance1classic", "兰斯1原版", "兰斯1（原版）", "兰斯i寻找小光"]),
         ("rance2classic", ["rance2classic", "rance2sa.ald", "rance2ga.ald", "兰斯2原版", "兰斯2（原版）", "兰斯ii反叛的少女"]),
         ("rance3classic", ["rance3classic", "rance3sa.ald", "rance3ga.ald", "兰斯3原版", "兰斯3（原版）", "兰斯iii利萨斯陥落", "兰斯iii利萨斯陷落"]),
         ("rance01", ["rance01", "兰斯01", "ランス01"]),
-        ("rance02", ["rance02", "兰斯02", "ランス02"]),
+        ("rance02", ["rance02", "兰斯02", "ランス02", "ランス０２"]),
         ("rance03", ["rance03", "兰斯03", "ランス03"]),
         ("rance41", ["rance41", "rance4.1", "ran41sa", "兰斯4.1", "兰斯41", "ランス4.1", "拯救制药厂", "お薬工場"]),
         ("rance42", ["rance42", "rance4.2", "ran42sa", "兰斯4.2", "兰斯42", "ランス4.2", "天使组", "天使組", "エンジェル組"]),
         ("rance04", ["rance04", "rance4sa", "ranceiv", "兰斯iv", "兰斯4", "ランスiv", "ランス4", "教团的遗产", "教団の遺産"]),
         ("rance5d", ["rance5d", "r5dsa", "兰斯5d", "ランス5d", "ランス５ｄ"]),
         ("rance6after", ["rance6after", "ranceviaftermath", "rancevisonogo", "ランス6その後", "ランス６その後", "兰斯06后日谈", "兰斯6后日谈", "兰斯vi后日谈", "儔儞僗俇偦偺屻"]),
-        ("rance06", ["rance06", "兰斯6", "ランス6"]),
+        ("rance06", ["rance06", "rance6", "兰斯6", "ランス6"]),
         ("rance08", ["rance08", "rance8", "兰斯8", "ランスクエスト"]),
         ("rance09", ["rance09", "rance9", "兰斯9", "ランス9"]),
-        ("kichikuou", ["kichiku", "鬼畜王"]),
         ("daiakuji", ["daiakuji", "大悪司", "大恶司"]),
         ("daibanchougaiden", ["daibanchougaiden", "大番長外伝", "大番长外传", "大番長外傳"]),
         ("daibanchou", ["daibanchou", "大番長", "大番长", "bigbangage"]),
@@ -574,6 +574,11 @@ final class GameLibrary: ObservableObject {
         let adiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
         let bdiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyBdiskCrc32FromRegularFiles(regularFiles) : nil
 
+        let kichikuou = engine == .system3 && (
+            regularNamesLower.contains("kichikurancesa.ald") ||
+            regularNamesLower.contains("kichikurancega.ald") ||
+            regularNamesLower.contains("鬼畜王sa.ald")
+        )
         let rance04 = engine == .system3 && regularNamesLower.contains("rance4sa.ald")
         let rance1Classic = (engine == .system3 && regularNamesLower.contains("rancesa.ald")) ||
             (engine == .legacySystem3 && (legacyId == "rance" || (legacyId == nil && adiskCrc == 0x2fffbd60)))
@@ -591,11 +596,20 @@ final class GameLibrary: ObservableObject {
         let dpsSg3Shinkon = engine == .legacySystem3 && ((legacyId == "dps_sg3_shinkon" || legacyId == "dpssg3shinkon") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0x09b4448a))
         let dpsSg3Sotsugyou = engine == .legacySystem3 && ((legacyId == "dps_sg3_sotsugyou" || legacyId == "dpssg3sotsugyou") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0xbc4525d8))
         let rance41 = (engine == .system3 && regularNamesLower.contains("ran41_sa.ald")) ||
-            (legacyId.map { $0 == "rance41" || $0 == "rance41_eng" || $0 == "rance4.1" } ?? false)
+            (engine == .legacySystem3 && (
+                (legacyId.map { $0 == "rance41" || $0 == "rance41_eng" || $0 == "rance4.1" } ?? false) ||
+                (legacyId == nil && (adiskCrc == 0xa43fb4b6 || adiskCrc == 0xc39ca9e6))
+            ))
         let rance42 = (engine == .system3 && regularNamesLower.contains("ran42_sa.ald")) ||
-            (legacyId.map { $0 == "rance42" || $0 == "rance42_eng" || $0 == "rance4.2" } ?? false)
+            (engine == .legacySystem3 && (
+                (legacyId.map { $0 == "rance42" || $0 == "rance42_eng" || $0 == "rance4.2" } ?? false) ||
+                (legacyId == nil && (adiskCrc == 0x04d24d1e || adiskCrc == 0x07e46c85))
+            ))
         let rance5d = engine == .system3 && regularNamesLower.contains("r5d_sa.ald")
-        let yakata2 = legacyId.map { $0 == "yakata2" || $0 == "yakata2_eng" } ?? false
+        let yakata2 = engine == .legacySystem3 && (
+            (legacyId.map { $0 == "yakata2" || $0 == "yakata2_eng" } ?? false) ||
+            (legacyId == nil && adiskCrc == 0x45951cab)
+        )
         let yakata1 = engine == .legacySystem3 && ((legacyId == "yakata" || legacyId == "yakata1") || (legacyId == nil && (adiskCrc == 0x8cef6fa6 || adiskCrc == 0xd8f84e34)))
         let littleVampire = engine == .legacySystem3 && ((legacyId == "vampire" || legacyId == "little_vampire" || legacyId == "littlevampire") || (legacyId == nil && adiskCrc == 0x957bcfbf))
         let intruder = engine == .legacySystem3 && (legacyId == "intruder" || (legacyId == nil && adiskCrc == 0xa7520fb2))
@@ -604,7 +618,10 @@ final class GameLibrary: ObservableObject {
         let dps = engine == .legacySystem3 && (legacyId == "dps" || (legacyId == nil && adiskCrc == 0x69ea4865))
         let sdpsTono = engine == .legacySystem3 && ((legacyId == "sdps_tono" || legacyId == "sdpstono") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xbb1edff1))
         let sdpsKaizoku = engine == .legacySystem3 && ((legacyId == "sdps_kaizoku" || legacyId == "sdpskaizoku") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xf81829e3))
-        let sdpsMaria = legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false
+        let sdpsMaria = engine == .legacySystem3 && (
+            (legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false) ||
+            (legacyId == nil && adiskCrc == 0x9418eef5)
+        )
         let gakuenKing = engine == .legacySystem3 && isGakuenKingFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
         let onlyYou = engine == .legacySystem3 && isOnlyYouFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let ayumiLive = engine == .legacySystem3 && isAyumiLiveFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
@@ -699,6 +716,7 @@ final class GameLibrary: ObservableObject {
 
         let detectedArtworkID: String?
         if isRance10 { detectedArtworkID = "rance10" }
+        else if kichikuou { detectedArtworkID = "kichikuou" }
         else if rance41 { detectedArtworkID = "rance41" }
         else if rance42 { detectedArtworkID = "rance42" }
         else if rance04 { detectedArtworkID = "rance04" }
@@ -838,39 +856,53 @@ final class GameLibrary: ObservableObject {
     }
 
     static func isRance41(_ url: URL) -> Bool {
-        if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
-           let info = try? launchInfo(url), info.engine == .system3,
-           contents.contains(where: {
-               $0.lastPathComponent.lowercased() == "ran41_sa.ald" &&
-                   (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
-           }) {
-            return true
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url) else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        if info.engine == .system3 {
+            return regularFiles.contains { $0.lastPathComponent.lowercased() == "ran41_sa.ald" }
         }
-        guard let game = legacySystem3GameId(url) else { return false }
-        return game == "rance41" || game == "rance41_eng" || game == "rance4.1"
+        guard info.engine == .legacySystem3 else { return false }
+        if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
+            return game == "rance41" || game == "rance41_eng" || game == "rance4.1"
+        }
+        let crc = legacyAdiskCrc32FromRegularFiles(regularFiles)
+        return crc == 0xa43fb4b6 || crc == 0xc39ca9e6
     }
 
     static func isRance42(_ url: URL) -> Bool {
-        if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
-           let info = try? launchInfo(url), info.engine == .system3,
-           contents.contains(where: {
-               $0.lastPathComponent.lowercased() == "ran42_sa.ald" &&
-                   (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
-           }) {
-            return true
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url) else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        if info.engine == .system3 {
+            return regularFiles.contains { $0.lastPathComponent.lowercased() == "ran42_sa.ald" }
         }
-        guard let game = legacySystem3GameId(url) else { return false }
-        return game == "rance42" || game == "rance42_eng" || game == "rance4.2"
+        guard info.engine == .legacySystem3 else { return false }
+        if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
+            return game == "rance42" || game == "rance42_eng" || game == "rance4.2"
+        }
+        let crc = legacyAdiskCrc32FromRegularFiles(regularFiles)
+        return crc == 0x04d24d1e || crc == 0x07e46c85
     }
 
     static func isYakata2(_ url: URL) -> Bool {
-        guard let game = legacySystem3GameId(url) else { return false }
-        return game == "yakata2" || game == "yakata2_eng"
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
+            return game == "yakata2" || game == "yakata2_eng"
+        }
+        return legacyAdiskCrc32FromRegularFiles(regularFiles) == 0x45951cab
     }
 
     static func isSdpsMaria(_ url: URL) -> Bool {
-        guard let game = legacySystem3GameId(url) else { return false }
-        return game == "sdps_maria" || game == "sdps_maria_eng" || game == "sdps" || game == "superdps"
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
+              let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
+        let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+        if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
+            return game == "sdps_maria" || game == "sdps_maria_eng" || game == "sdps" || game == "superdps"
+        }
+        return legacyAdiskCrc32FromRegularFiles(regularFiles) == 0x9418eef5
     }
 
     static func isGakuenKing(_ url: URL) -> Bool {
@@ -1485,6 +1517,8 @@ final class GameLibrary: ObservableObject {
                     if info.engine == .system4 {
                         ModifierBridge.prepareForLaunch(gameID: game.id)
                         input_set_long_press_ctrl(UserDefaults.standard.bool(forKey: "hub.longPressCtrl"))
+                    } else {
+                        ModifierBridge.clearDisplayScaleGame()
                     }
                     var argv = arguments.map { strdup($0) }
                     argv.append(nil)
@@ -1493,6 +1527,9 @@ final class GameLibrary: ObservableObject {
                         case .legacySystem3:
                             _ = system3_main(Int32(arguments.count), buffer.baseAddress)
                         case .system3:
+                            let modifierGameID = Self.resolvedCatalogID(for: game) ?? game.id
+                            setenv("XSYSTEM35_MODIFIER_GAME", modifierGameID, 1)
+                            defer { unsetenv("XSYSTEM35_MODIFIER_GAME") }
                             _ = xsystem35_main(Int32(arguments.count), buffer.baseAddress)
                         case .system4:
                             _ = xsystem4_main(Int32(arguments.count), buffer.baseAddress)

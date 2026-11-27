@@ -21,10 +21,18 @@ struct SaveManagerView: View {
         return SaveManager.resolveAinPath(in: game.url, bootEntry: bootEntry, isDaiSengokuSave: isDsr)
     }
 
+    private var saveFolderName: String {
+        guard game.engine == .system4 else { return "SaveData" }
+        let bootEntry = UserDefaults.standard.string(forKey: "hub.system4BootEntry." + game.id) ?? ""
+        let isDsr = saveDirectoryName.hasSuffix(GameLibrary.daiSengokuSaveDirSuffix)
+        return SaveManager.resolveSaveFolder(in: game.url, bootEntry: bootEntry, isDaiSengokuSave: isDsr)
+    }
+
     private var manager: SaveManager {
         let resolvedAinPath = ainPath
         return SaveManager(
             game: saveDirectoryName,
+            saveFolder: saveFolderName,
             hasXSystem4OnlyState: { savedata_file_has_xsystem4_only_state($0.path) }
         ) { source, destination in
             let ok: Bool

@@ -7248,6 +7248,7 @@ object GameCatalog {
             return ID_SANBIKI
         }
         if (lowerDir == "sengokurance" || lowerDir.startsWith("sengokurance-") || lowerDir.contains("sengoku") ||
+            lowerDir == "alicecn" || lowerDir.startsWith("alicecn-") ||
             lowerDir.contains("daisengoku") || lowerDir.contains("大战国") || lowerDir.contains("大戦国") ||
             lowerDir.contains("战国兰斯") || lowerDir.contains("戦国ランス") || lowerDir.contains("愴崙儔儞僗")
         ) {

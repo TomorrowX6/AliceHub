@@ -200,8 +200,11 @@ static bool unpack(const char *path, HubInstallTransaction *tx, OnlineTransfer *
     struct archive_entry *entry;
     int result = ARCHIVE_FATAL;
     while (okay && !transfer->stopping(transfer->context) &&
-           (result = archive_read_next_header(arc, &entry)) == ARCHIVE_OK) {
-        const char *name = archive_entry_pathname(entry);
+           ((result = archive_read_next_header(arc, &entry)) == ARCHIVE_OK ||
+            result == ARCHIVE_WARN)) {
+        const char *name = archive_entry_pathname_utf8(entry);
+        if (!name)
+            name = archive_entry_pathname(entry);
         char relative[HUB_PATH_SIZE], dest[HUB_PATH_SIZE];
         size_t n = name ? strlen(name) : 0;
         if (++count > 65536 || n >= sizeof(relative) || !n) {

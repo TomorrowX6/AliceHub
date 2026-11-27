@@ -155,11 +155,15 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         ) {
             setIntent(intent)
         }
+        val prevGameId = gameId
         intent?.getStringExtra(EXTRA_GAME_ID)?.takeIf { it.isNotBlank() }?.let {
             gameId = it
         }
-        intent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }?.let {
-            selectedPath = it
+        val incomingPath = intent?.getStringExtra(EXTRA_GAME_PATH)?.takeIf { it.isNotBlank() }
+        if (incomingPath != null) {
+            selectedPath = incomingPath
+        } else if (gameId != prevGameId) {
+            selectedPath = null
         }
         if (::gameList.isInitialized) {
             rebindGameState()
@@ -980,7 +984,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 null
             }
             if (isFinishing || isDestroyed) return@launch
-            if (loadingDlg.isShowing) loadingDlg.dismiss()
+            safeDismiss(loadingDlg)
 
             if (manifest == null) {
                 val builder = AlertDialog.Builder(this@GameHubActivity)
@@ -1071,7 +1075,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         when (st) {
             UncensoredInstallState.Idle -> dismissUncensoredProgressDialog()
             is UncensoredInstallState.Downloading -> {
-                if (curPath != null && st.gameDirPath != curPath) {
+                if (curPath == null || curPath != st.gameDirPath) {
                     dismissUncensoredProgressDialog()
                     return
                 }
@@ -1083,21 +1087,21 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 showUncensoredProgressDialog(st)
             }
             is UncensoredInstallState.Succeeded -> {
-                if (curPath != null && st.gameDirPath != curPath && st.gameId != descriptor.id) return
+                if (curPath == null || curPath != st.gameDirPath) return
                 dismissUncensoredProgressDialog()
                 UncensoredPatchManager.consumeTerminalState()
                 refreshUi()
                 Toast.makeText(this, R.string.uncensored_patch_installed_toast, Toast.LENGTH_SHORT).show()
             }
             is UncensoredInstallState.Cancelled -> {
-                if (curPath != null && st.gameDirPath != curPath && st.gameId != descriptor.id) return
+                if (curPath == null || curPath != st.gameDirPath) return
                 dismissUncensoredProgressDialog()
                 UncensoredPatchManager.consumeTerminalState()
                 refreshUi()
                 Toast.makeText(this, R.string.online_download_paused_toast, Toast.LENGTH_SHORT).show()
             }
             is UncensoredInstallState.Failed -> {
-                if (curPath != null && st.gameDirPath != curPath && st.gameId != descriptor.id) return
+                if (curPath == null || curPath != st.gameDirPath) return
                 dismissUncensoredProgressDialog()
                 UncensoredPatchManager.consumeTerminalState()
                 refreshUi()
@@ -1113,6 +1117,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun showUncensoredProgressDialog(st: UncensoredInstallState.Downloading) {
+        if (isFinishing || isDestroyed) return
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (uncensoredProgressDialog == null) {
             uncensoredProgressDialog = Dialog(this).apply {
@@ -1154,9 +1159,19 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         }
     }
 
+    private fun safeDismiss(dlg: Dialog?) {
+        if (dlg != null && !isDestroyed && dlg.isShowing) {
+            try {
+                dlg.dismiss()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     private fun dismissUncensoredProgressDialog() {
-        uncensoredProgressDialog?.dismiss()
+        val dlg = uncensoredProgressDialog
         uncensoredProgressDialog = null
+        safeDismiss(dlg)
         if (progressDialog == null && uninstallDialog == null && restoreModDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -1313,8 +1328,9 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun dismissRestoreModProgress() {
-        restoreModDialog?.dismiss()
+        val dlg = restoreModDialog
         restoreModDialog = null
+        safeDismiss(dlg)
         if (progressDialog == null && uninstallDialog == null && uncensoredProgressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -1346,6 +1362,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun renderInstallState(state: InstallState) {
+        if (isFinishing || isDestroyed) return
         when (state) {
             InstallState.Idle -> dismissProgressDialog()
             is InstallState.Installing -> {
@@ -1515,16 +1532,18 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
     }
 
     private fun dismissUninstallDialog() {
-        uninstallDialog?.dismiss()
+        val dlg = uninstallDialog
         uninstallDialog = null
+        safeDismiss(dlg)
         if (progressDialog == null && restoreModDialog == null && uncensoredProgressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 
     private fun dismissProgressDialog() {
-        progressDialog?.dismiss()
+        val dlg = progressDialog
         progressDialog = null
+        safeDismiss(dlg)
         if (uninstallDialog == null && restoreModDialog == null && uncensoredProgressDialog == null) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
