@@ -474,14 +474,14 @@ struct ModifierGamePanel {
         ),
         System35ModifierPanel(
             game: ModifierGame(id: "daiakuji", name: "大恶司", lockGame: nil,
-                locks: locks(["无限金钱", "债务清零", "我方满 HP", "锁定高爱情度"]),
+                locks: locks(["无限金钱", "债务清零", "我方满 HP", "锁定满忠诚与人气"]),
                 cheats: [], supportsCheatCodes: false),
             fields: [("gold", "金钱"), ("debt", "债务"), ("subsidy", "补助金"), ("popular", "人气"), ("hp", "当前 HP")],
             actions: [
                 ("资金 +10000", "da_gold_add=10000"), ("资金拉满", "da_gold_max"),
-                ("债务清零", "da_debt_zero"), ("全能力强化", "da_hp_boost"),
-                ("爱情与人气拉满", "da_love_max"), ("治安拉满", "da_security_max"),
-                ("解锁 EX 道具", "da_items_unlock"),
+                ("债务清零", "da_debt_zero"), ("全员体力强化 999", "da_hp_boost"),
+                ("忠诚与人气拉满", "da_love_max"), ("区域治安最佳", "da_security_max"),
+                ("解锁全部特殊道具", "da_items_unlock"),
             ]
         ),
         System35ModifierPanel(

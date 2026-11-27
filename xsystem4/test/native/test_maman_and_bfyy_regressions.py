@@ -834,6 +834,454 @@ int main(void) {
         )
         self.assertEqual(out.strip(), "OK")
 
+    def test_maman_mixed_parts_display_text(self):
+        # Verify system4.c wires parts_set_mixed_display_text(game_maman) after apply_game_specific_hacks(ain).
+        system4_src = (ROOT / "src/system4.c").read_text(encoding="utf-8")
+        self.assertIn("parts_set_mixed_display_text(game_maman);", system4_src)
+
+        def c_esc(b: bytes) -> str:
+            return "".join(f"\\x{x:02x}" for x in b)
+
+        cp932_exit_l1 = c_esc("ゲームを終了しますか？".encode("cp932"))
+        cp932_exit_l2 = c_esc("※セーブされていないデータは失われます".encode("cp932"))
+        cp932_locked = c_esc("？？？".encode("cp932"))
+        cp932_recall_exit = c_esc("回想を終了します".encode("cp932"))
+        cp932_music1 = c_esc("飛べない風船 ～Reach not think～ (short)".encode("cp932"))
+        cp932_music2 = c_esc("ウェルカムママン".encode("cp932"))
+
+        utf8_exit_l1 = c_esc("ゲームを終了しますか？".encode("utf-8"))
+        utf8_exit_l2 = c_esc("※セーブされていないデータは失われます".encode("utf-8"))
+        utf8_locked = c_esc("？？？".encode("utf-8"))
+        utf8_recall_exit = c_esc("回想を終了します".encode("utf-8"))
+        utf8_music1 = c_esc("飛べない風船 ～Reach not think～ (short)".encode("utf-8"))
+        utf8_music2 = c_esc("ウェルカムママン".encode("utf-8"))
+
+        gbk_titles = [
+            c_esc(t.encode("gbk"))
+            for t in ("失意的真生", "奶牛妈妈", "处理热烈的思念", "麻衣完结", "真.end", "真生", "汐梨", "麻衣", "实")
+        ]
+        gbk_titles_init = ", ".join(f'"{t}"' for t in gbk_titles)
+
+        harness = f"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "parts/text.c"
+#include "parts/construction.c"
+
+bool game_evenicle_rance_cn = false;
+bool gfx_text_advance_edges = false;
+static struct string *drawn = NULL;
+static char last_built_text[512];
+
+void gfx_register_reset_callback(gfx_reset_callback cb, void *user) {{ (void)cb; (void)user; }}
+void gfx_unregister_reset_callback(gfx_reset_callback cb, void *user) {{ (void)cb; (void)user; }}
+bool gfx_remap_texture(Texture *t) {{ (void)t; return false; }}
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color color) {{
+    t->handle = 1; t->w = w; t->h = h; (void)color;
+}}
+void gfx_delete_texture(Texture *t) {{ t->handle = 0; }}
+void gfx_fill_with_alpha(Texture *t, int x, int y, int w, int h, int r, int g, int b, int a) {{
+    (void)t; (void)x; (void)y; (void)w; (void)h; (void)r; (void)g; (void)b; (void)a;
+}}
+void gfx_fill_amap(Texture *t, int x, int y, int w, int h, int a) {{
+    (void)t; (void)x; (void)y; (void)w; (void)h; (void)a;
+}}
+float gfx_size_text(struct text_style *ts, const char *text) {{ (void)ts; (void)text; return 12.0f; }}
+float gfx_render_text_mode(Texture *t, float x, int y, char *text, struct text_style *ts, enum text_render_mode mode) {{
+    (void)t; (void)x; (void)y; (void)ts; (void)mode;
+    snprintf(last_built_text, sizeof(last_built_text), "%s", text);
+    return 12.0f;
+}}
+float gfx_size_char(struct text_style *ts, const char *ch) {{ (void)ts; (void)ch; return 12.0f; }}
+float gfx_render_text_edge_only(Texture *t, float x, int y, char *ch, struct text_style *ts) {{
+    (void)t; (void)x; (void)y; (void)ch; (void)ts; return 12.0f;
+}}
+float gfx_render_text_core_only(Texture *t, float x, int y, char *ch, struct text_style *ts) {{
+    (void)t; (void)x; (void)y; (void)ts;
+    string_append_cstr(&drawn, ch, strlen(ch));
+    return 12.0f;
+}}
+void parts_set_dims(struct parts *parts, struct parts_common *common, int w, int h) {{
+    (void)parts; common->w = w; common->h = h;
+}}
+void parts_dirty(struct parts *parts) {{ (void)parts; }}
+
+static void check_converted_utf8(const char *cp932_src, const char *expected_utf8)
+{{
+    char *prepared = parts_prepare_display_text(cp932_src);
+    assert(prepared != NULL);
+    char *u = cjk2utf(prepared, strlen(prepared), true);
+    assert(!strcmp(u, expected_utf8));
+    free(u);
+
+    // Also exercise build_text() (used by C_ACTIVITY_TEXT / Recall / Confirm dialogs).
+    struct parts_construction_process cproc = {{0}};
+    cproc.common.texture.handle = 1;
+    cproc.common.texture.w = 640;
+    cproc.common.texture.h = 64;
+    struct string *s = make_string(cp932_src, strlen(cp932_src));
+    struct parts_cp_text op = {{ .text = s, .style = {{ .size = 24.0f, .scale_x = 1.0f }} }};
+    last_built_text[0] = '\\0';
+    assert(build_text(&cproc, &op, RENDER_BLEND_ALPHA));
+    assert(!strcmp(last_built_text, prepared));
+    free_string(s);
+
+    // Also exercise parts_text_append().
+    struct parts part = {{0}};
+    struct parts_text pt = {{ .ts = {{ .size = 24.0f, .scale_x = 1.0f }} }};
+    drawn = make_string("", 0);
+    s = make_string(cp932_src, strlen(cp932_src));
+    parts_text_append(&part, &pt, s);
+    assert(!strcmp(drawn->text, prepared));
+    free_string(drawn);
+    free_string(s);
+    parts_text_free(&pt);
+    free(prepared);
+}}
+
+int main(void)
+{{
+    sys4_set_text_gbk(true);
+    sys4_set_source_utf8(false);
+
+    // Default (non-Maman): line 2 and locked ??? are NOT converted.
+    assert(!parts_uses_mixed_display_text());
+    assert(parts_prepare_display_text("{cp932_exit_l2}") == NULL);
+    assert(parts_prepare_display_text("{cp932_locked}") == NULL);
+
+    // Heartful Maman CN: mixed display text converts CP932 UI strings cleanly.
+    parts_set_mixed_display_text(true);
+    assert(parts_uses_mixed_display_text());
+    check_converted_utf8("{cp932_exit_l1}", "{utf8_exit_l1}");
+    check_converted_utf8("{cp932_exit_l2}", "{utf8_exit_l2}");
+    check_converted_utf8("{cp932_locked}", "{utf8_locked}");
+    check_converted_utf8("{cp932_recall_exit}", "{utf8_recall_exit}");
+    check_converted_utf8("{cp932_music1}", "{utf8_music1}");
+    check_converted_utf8("{cp932_music2}", "{utf8_music2}");
+
+    // Unlocked GBK Recall titles and GBK character nameplates must stay unchanged (0 false positives).
+    const char *gbk_titles[] = {{ {gbk_titles_init} }};
+    for (size_t i = 0; i < sizeof(gbk_titles) / sizeof(gbk_titles[0]); i++) {{
+        assert(parts_prepare_display_text(gbk_titles[i]) == NULL);
+    }}
+
+    // Disabled in UTF-8 mode, in JP mode, and after parts_text_end_session().
+    sys4_set_source_utf8(true);
+    assert(!parts_uses_mixed_display_text());
+    assert(parts_prepare_display_text("{cp932_locked}") == NULL);
+    sys4_set_source_utf8(false);
+
+    sys4_set_text_gbk(false);
+    assert(!parts_uses_mixed_display_text());
+    assert(parts_prepare_display_text("{cp932_locked}") == NULL);
+    sys4_set_text_gbk(true);
+
+    parts_text_end_session();
+    assert(!parts_uses_mixed_display_text());
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(
+            harness,
+            [*LIBSYS4_CORE],
+            [f"-I{ROOT / 'src'}", f"-I{ROOT / 'src/parts'}",
+             "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
+    def test_maman_full_cg_extra_save_encoding_matrix(self):
+        def c_esc(b: bytes) -> str:
+            return "".join(f"\\x{x:02x}" for x in b)
+
+        recall_key = "管理／日数／失意の真生"
+        cg_key = "イベ／汐梨／イベ／搾乳／部屋／ブラ／目閉じ"
+        cfg_group = "コンフィグデータ"
+        fn_name = "■回想関数取得"
+
+        harness = f"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "system4/ain.h"
+#include "savedata.h"
+#include "system4/savefile.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "vm.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+
+bool game_maman, game_haharanman;
+int load_globals_from_gsave(struct gsave *save, const char *key, const char *group, int *count);
+struct ain *ain;
+union vm_value *stack;
+int32_t stack_ptr;
+
+union vm_value global_get(int i) {{ return heap[0].page->values[i]; }}
+void global_set(int i, union vm_value val, bool dtors) {{ (void)dtors; heap[0].page->values[i] = val; }}
+union vm_value stack_pop(void) {{ abort(); }}
+union vm_value vm_copy(union vm_value val, enum ain_data_type type) {{ (void)val; (void)type; abort(); }}
+void vm_call(int fno, int slot) {{ (void)fno; (void)slot; abort(); }}
+_Noreturn void _vm_error(const char *fmt, ...) {{ (void)fmt; abort(); }}
+
+static void run_case(bool gbk_mode, bool utf8_mode, bool ain_ids_gbk,
+                     const char *saved_recall, const char *saved_cg,
+                     const char *expected_recall, const char *expected_cg,
+                     int leading_ascii_strings)
+{{
+    sys4_set_text_gbk(gbk_mode);
+    sys4_set_source_utf8(utf8_mode);
+    game_maman = true;
+    game_haharanman = false;
+
+    char *groups[] = {{
+        "MAMAN_EXTRA_DATA",
+        ain_ids_gbk ? "{c_esc(cfg_group.encode('gbk'))}" : "{c_esc(cfg_group.encode('cp932'))}",
+    }};
+    struct ain_function funcs[] = {{
+        {{ .name = ain_ids_gbk ? "{c_esc(fn_name.encode('gbk'))}" : "{c_esc(fn_name.encode('cp932'))}" }},
+    }};
+    struct ain_variable key_list_member = {{
+        .name = "m_aszList", .type = {{ .data = AIN_ARRAY_STRING, .rank = 1 }},
+    }};
+    struct ain_variable cg_members[] = {{
+        {{ .name = "m_aszBase", .type = {{ .data = AIN_ARRAY_STRING, .rank = 1 }} }},
+        {{ .name = "m_aszCutIn", .type = {{ .data = AIN_ARRAY_STRING, .rank = 1 }} }},
+    }};
+    struct ain_struct structures[] = {{
+        {{ .name = "C_KEY_LIST", .constructor = -1, .destructor = -1, .nr_members = 1, .members = &key_list_member }},
+        {{ .name = "C_COLLECTED_CG_LIST", .constructor = -1, .destructor = -1, .nr_members = 2, .members = cg_members }},
+    }};
+    struct ain_variable globals[] = {{
+        {{ .name = "g_cGlobalKeyList", .group_index = 0, .type = {{ .data = AIN_STRUCT, .struc = 0 }} }},
+        {{ .name = "g_cCollectedCgList", .group_index = 0, .type = {{ .data = AIN_STRUCT, .struc = 1 }} }},
+    }};
+    struct ain script = {{
+        .version = 8,
+        .nr_globals = 2, .globals = globals,
+        .nr_structures = 2, .structures = structures,
+        .nr_global_groups = 2, .global_group_names = groups,
+        .nr_functions = 1, .functions = funcs,
+    }};
+    ain = &script;
+
+    struct gsave *save = gsave_create(7, "MAMAN_EXTRA", 1, "MAMAN_EXTRA_DATA");
+    // Optionally prepend >64 ASCII strings so encoding detection must skip ASCII entries.
+    for (int i = 0; i < leading_ascii_strings; i++) {{
+        char buf[32];
+        snprintf(buf, sizeof(buf), "ASCII_KEY_%03d", i);
+        struct string *as = make_string(buf, strlen(buf));
+        gsave_add_string(save, as);
+        free_string(as);
+    }}
+
+    struct string *s_rec = make_string(saved_recall, strlen(saved_recall));
+    struct string *s_cg = make_string(saved_cg, strlen(saved_cg));
+    int32_t rec_idx = gsave_add_string(save, s_rec);
+    int32_t cg_idx = gsave_add_string(save, s_cg);
+    free_string(s_rec);
+    free_string(s_cg);
+
+    // Build g_cGlobalKeyList.m_aszList = [saved_recall]
+    struct gsave_array_value *rec_vals = xmalloc(sizeof(*rec_vals));
+    rec_vals[0] = (struct gsave_array_value){{ .type = AIN_STRING, .value = rec_idx }};
+    int32_t *rec_dim = xmalloc(sizeof(*rec_dim));
+    *rec_dim = 1;
+    struct gsave_flat_array *rec_flat = xmalloc(sizeof(*rec_flat));
+    *rec_flat = (struct gsave_flat_array){{ .type = AIN_STRING, .nr_values = 1, .values = rec_vals }};
+    struct gsave_array rec_arr = {{ .rank = 1, .dimensions = rec_dim, .nr_flat_arrays = 1, .flat_arrays = rec_flat }};
+    struct gsave_keyval rec_kv = {{ .name = xstrdup("m_aszList"), .type = AIN_ARRAY_STRING, .value = gsave_add_array(save, &rec_arr) }};
+    struct gsave_record rec_record = {{
+        .type = GSAVE_RECORD_STRUCT, .nr_indices = 1, .indices = xmalloc(sizeof(int32_t)),
+        .struct_index = gsave_add_struct_def(save, &structures[0]),
+    }};
+    rec_record.indices[0] = gsave_add_keyval(save, &rec_kv);
+
+    // Build g_cCollectedCgList.m_aszBase = [saved_cg], m_aszCutIn = []
+    struct gsave_array_value *cg_vals = xmalloc(sizeof(*cg_vals));
+    cg_vals[0] = (struct gsave_array_value){{ .type = AIN_STRING, .value = cg_idx }};
+    int32_t *cg_dim = xmalloc(sizeof(*cg_dim));
+    *cg_dim = 1;
+    struct gsave_flat_array *cg_flat = xmalloc(sizeof(*cg_flat));
+    *cg_flat = (struct gsave_flat_array){{ .type = AIN_STRING, .nr_values = 1, .values = cg_vals }};
+    struct gsave_array cg_arr = {{ .rank = 1, .dimensions = cg_dim, .nr_flat_arrays = 1, .flat_arrays = cg_flat }};
+    struct gsave_array empty_arr = {{ .rank = -1 }};
+    struct gsave_keyval cg_kv0 = {{ .name = xstrdup("m_aszBase"), .type = AIN_ARRAY_STRING, .value = gsave_add_array(save, &cg_arr) }};
+    struct gsave_keyval cg_kv1 = {{ .name = xstrdup("m_aszCutIn"), .type = AIN_ARRAY_STRING, .value = gsave_add_array(save, &empty_arr) }};
+    struct gsave_record cg_record = {{
+        .type = GSAVE_RECORD_STRUCT, .nr_indices = 2, .indices = xmalloc(2 * sizeof(int32_t)),
+        .struct_index = gsave_add_struct_def(save, &structures[1]),
+    }};
+    cg_record.indices[0] = gsave_add_keyval(save, &cg_kv0);
+    cg_record.indices[1] = gsave_add_keyval(save, &cg_kv1);
+
+    gsave_add_globals_record(save, 2);
+    save->globals[0] = (struct gsave_global){{
+        .name = xstrdup("g_cGlobalKeyList"), .type = AIN_STRUCT, .value = gsave_add_record(save, &rec_record),
+    }};
+    save->globals[1] = (struct gsave_global){{
+        .name = xstrdup("g_cCollectedCgList"), .type = AIN_STRUCT, .value = gsave_add_record(save, &cg_record),
+    }};
+
+    int count = 0;
+    assert(load_globals_from_gsave(save, "MAMAN_EXTRA", "MAMAN_EXTRA_DATA", &count) && count == 2);
+
+    struct page *loaded_rec = heap_get_page(heap_get_page(global_get(0).i)->values[0].i);
+    struct page *loaded_cg = heap_get_page(heap_get_page(global_get(1).i)->values[0].i);
+    int exp_rec_slot = heap_alloc_slot(VM_STRING);
+    heap[exp_rec_slot].s = make_string(expected_recall, strlen(expected_recall));
+    int exp_cg_slot = heap_alloc_slot(VM_STRING);
+    heap[exp_cg_slot].s = make_string(expected_cg, strlen(expected_cg));
+
+    assert(array_find(loaded_rec, 0, 1, vm_int(exp_rec_slot), 0, -1) == 0);
+    assert(array_find(loaded_cg, 0, 1, vm_int(exp_cg_slot), 0, -1) == 0);
+
+    heap_unref(global_get(0).i);
+    heap_unref(global_get(1).i);
+    heap_unref(exp_rec_slot);
+    heap_unref(exp_cg_slot);
+    gsave_free(save);
+}}
+
+int main(void)
+{{
+    heap_init();
+    heap[0].ref = 1;
+    heap_set_page(0, alloc_page(GLOBAL_PAGE, 0, 2));
+
+    const char *rec_cp = "{c_esc(recall_key.encode('cp932'))}";
+    const char *cg_cp  = "{c_esc(cg_key.encode('cp932'))}";
+    const char *rec_gb = "{c_esc(recall_key.encode('gbk'))}";
+    const char *cg_gb  = "{c_esc(cg_key.encode('gbk'))}";
+
+    // 1. Online CDN CN Maman (GBK text, CP932 .ain/.ex keys) + JP CP932 full-CG save (with >64 leading ASCII strings)
+    run_case(true, false, false, rec_cp, cg_cp, rec_cp, cg_cp, 80);
+    // 2. Online CDN CN Maman + GBK full-CG save (from another CN site / older xsystem4)
+    run_case(true, false, false, rec_gb, cg_gb, rec_cp, cg_cp, 80);
+    // 3. UTF-8 CN Maman + JP CP932 full-CG save
+    run_case(true, true, false, rec_cp, cg_cp, rec_gb, cg_gb, 0);
+    // 4. UTF-8 CN Maman + GBK full-CG save
+    run_case(true, true, false, rec_gb, cg_gb, rec_gb, cg_gb, 0);
+    // 5. Fully-GBK-identifier CN Maman + JP CP932 full-CG save
+    run_case(true, false, true, rec_cp, cg_cp, rec_gb, cg_gb, 0);
+    // 6. Fully-GBK-identifier CN Maman + GBK full-CG save
+    run_case(true, false, true, rec_gb, cg_gb, rec_gb, cg_gb, 0);
+    // 7. Original JP Maman + CP932 and GBK full-CG saves
+    run_case(false, false, false, rec_cp, cg_cp, rec_cp, cg_cp, 0);
+    run_case(false, false, false, rec_gb, cg_gb, rec_cp, cg_cp, 0);
+
+    puts("OK");
+    return 0;
+}}
+"""
+        out = compile_and_run(
+            harness,
+            [ROOT / "src/savedata.c", ROOT / "src/util.c", ROOT / "src/heap.c", ROOT / "src/page.c", ROOT / "src/vm_v12.c",
+             ROOT / "src/cJSON.c", ROOT / "subprojects/libsys4/src/savefile.c", *LIBSYS4_CORE],
+            ["-DRELEASE", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+        )
+        self.assertEqual(out.strip(), "OK")
+
+    def test_passregister_cross_encoding_lookup(self):
+        import tempfile
+
+        def c_esc(b: bytes) -> str:
+            return "".join(f"\\x{x:02x}" for x in b)
+
+        bgm_cp = c_esc("01_メインテーマ".encode("cp932"))
+        bgm_gb = c_esc("01_メインテーマ".encode("gbk"))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            harness = f"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "hll.h"
+#include "system4/ain.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "vm.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+#include "xsystem4.h"
+
+struct ain *ain;
+struct config config;
+bool game_maman = true, game_haharanman = false;
+union vm_value *stack;
+int32_t stack_ptr;
+extern struct static_library lib_PassRegister;
+
+union vm_value global_get(int i) {{ (void)i; return (union vm_value){{0}}; }}
+void global_set(int i, union vm_value val, bool dtors) {{ (void)i; (void)val; (void)dtors; }}
+union vm_value stack_pop(void) {{ abort(); }}
+union vm_value vm_copy(union vm_value val, enum ain_data_type type) {{ (void)val; (void)type; abort(); }}
+void vm_call(int fno, int slot) {{ (void)fno; (void)slot; abort(); }}
+_Noreturn void _vm_error(const char *fmt, ...) {{ (void)fmt; abort(); }}
+
+static void *find_pr(const char *name) {{
+    for (struct static_hll_function *f = lib_PassRegister.functions; f->name; f++)
+        if (!strcmp(f->name, name))
+            return f->fun;
+    abort();
+}}
+
+int main(void)
+{{
+    config.save_dir = "{tmpdir}";
+    sys4_set_text_gbk(true);
+
+    bool (*set_file)(int, struct string *) = find_pr("SetFileName");
+    bool (*reg_text)(int, struct string *) = find_pr("RegistText");
+    bool (*unreg_text)(int, struct string *) = find_pr("UnregistText");
+    bool (*exist_text)(int, struct string *) = find_pr("ExistText");
+    void (*fini)(void) = find_pr("_ModuleFini");
+
+    struct string *fn = make_string("Maman_AFBGMMode.asd", strlen("Maman_AFBGMMode.asd"));
+    struct string *cp = make_string("{bgm_cp}", strlen("{bgm_cp}"));
+    struct string *gb = make_string("{bgm_gb}", strlen("{bgm_gb}"));
+
+    // Register CP932 key, reload from disk, verify both CP932 and GBK lookups succeed.
+    assert(set_file(2, fn));
+    assert(reg_text(2, cp));
+    fini();
+    assert(set_file(2, fn));
+    assert(exist_text(2, cp));
+    assert(exist_text(2, gb));
+    // Re-registering equivalent GBK key must not create duplicate; unreg removes it.
+    assert(reg_text(2, gb));
+    assert(unreg_text(2, gb));
+    assert(!exist_text(2, cp));
+    assert(!exist_text(2, gb));
+
+    // Reverse direction: save GBK key on disk, verify CP932 lookup matches.
+    assert(reg_text(2, gb));
+    fini();
+    assert(set_file(2, fn));
+    assert(exist_text(2, gb));
+    assert(exist_text(2, cp));
+
+    fini();
+    free_string(fn);
+    free_string(cp);
+    free_string(gb);
+    puts("OK");
+    return 0;
+}}
+"""
+            out = compile_and_run(
+                harness,
+                [ROOT / "src/hll/PassRegister.c", ROOT / "src/savedata.c", ROOT / "src/util.c",
+                 ROOT / "src/heap.c", ROOT / "src/page.c", ROOT / "src/vm_v12.c",
+                 ROOT / "src/cJSON.c", ROOT / "subprojects/libsys4/src/savefile.c", *LIBSYS4_CORE],
+                ["-DRELEASE", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+            )
+            self.assertEqual(out.strip(), "OK")
+
 
 if __name__ == "__main__":
     unittest.main()

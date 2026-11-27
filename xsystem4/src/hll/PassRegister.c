@@ -28,6 +28,7 @@
 #include "system4/zlib.h"
 
 #include "hll.h"
+#include "savedata.h"
 #include "xsystem4.h"
 
 /*
@@ -253,7 +254,14 @@ static char **find_text(int handle, const char *text)
 	struct passregister *reg = registers + handle;
 	if (!reg->nr_strings)
 		return NULL;
-	return bsearch(&text, reg->strings, reg->nr_strings, sizeof(char*), compare_string);
+	char **exact = bsearch(&text, reg->strings, reg->nr_strings, sizeof(char*), compare_string);
+	if (exact)
+		return exact;
+	for (size_t i = 0; i < reg->nr_strings; i++) {
+		if (save_symbols_equal(reg->strings[i], text))
+			return &reg->strings[i];
+	}
+	return NULL;
 }
 
 static bool PassRegister_RegistText(int handle, struct string *text)

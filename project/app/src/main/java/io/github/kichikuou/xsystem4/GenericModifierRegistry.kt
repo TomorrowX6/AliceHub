@@ -637,16 +637,16 @@ object GenericModifierRegistry {
                 lock(0, "无限资金", "資金無限", "Infinite Gold"),
                 lock(1, "债务清零", "借金ゼロ", "Zero Debt"),
                 lock(2, "全员高体力", "全員HP維持", "Keep High HP"),
-                lock(3, "满好感与人气", "愛情・人気最大", "Max Love & Popularity")
+                lock(3, "满忠诚与人气", "忠誠・人気最大", "Max Loyalty & Popularity")
             ),
             cheats = listOf(
                 s35Cheat("资金 +10000", "資金 +10000", "Gold +10,000", "da_gold_add=10000"),
                 s35Cheat("资金设为 60000", "資金 60000", "Max Gold (60,000)", "da_gold_max"),
                 s35Cheat("债务清零", "借金ゼロ", "Clear Debt", "da_debt_zero"),
                 s35Cheat("全员体力强化 999", "全員HP999強化", "Boost All HP to 999", "da_hp_boost"),
-                s35Cheat("满好感与店铺人气", "愛情・人気最大", "Max Love & Popularity", "da_love_max"),
-                s35Cheat("区域治安拉满", "治安レベル最大", "Max Region Security", "da_security_max"),
-                s35Cheat("解锁 EX 道具", "EXアイテム解放", "Unlock EX Items", "da_items_unlock")
+                s35Cheat("满忠诚与店铺人气", "忠誠・人気最大", "Max Loyalty & Popularity", "da_love_max"),
+                s35Cheat("区域治安最佳", "地域治安良好", "Best Region Security", "da_security_max"),
+                s35Cheat("解锁全部特殊道具", "特殊アイテム全解放", "Unlock All Special Items", "da_items_unlock")
             ),
             summaryFields = listOf("gold" to t("资金", "金", "Gold"), "debt" to t("债务", "借", "Debt"))
         ),

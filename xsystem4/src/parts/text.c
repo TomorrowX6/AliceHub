@@ -26,10 +26,17 @@
 #include "parts_internal.h"
 
 static int s_modifier_font_scale_pct = 100;
+static bool s_mixed_display_text = false;
+
+void parts_set_mixed_display_text(bool enable)
+{
+	s_mixed_display_text = enable;
+}
 
 bool parts_uses_mixed_display_text(void)
 {
-	return game_evenicle_rance_cn && sys4_text_is_gbk && !sys4_source_is_utf8;
+	return (game_evenicle_rance_cn || s_mixed_display_text)
+		&& sys4_text_is_gbk && !sys4_source_is_utf8;
 }
 
 char *parts_prepare_display_text(const char *text)
@@ -213,6 +220,7 @@ void parts_text_end_session(void)
 	glyph_cache_used = 0;
 	glyph_cache_initialized = false;
 	s_modifier_font_scale_pct = 100;
+	s_mixed_display_text = false;
 }
 
 static void glyph_lru_remove(int idx)

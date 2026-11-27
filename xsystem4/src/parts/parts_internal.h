@@ -827,6 +827,7 @@ void parts_cg_async_flush_all(void);
 bool PE_SetPartsCGThread(int parts_no, struct string *cg_name, int state);
 bool PE_IsThreadLoading(int parts_no, int state);
 bool PE_IsExistWorkerThread(void);
+void parts_set_mixed_display_text(bool enable);
 bool parts_uses_mixed_display_text(void);
 char *parts_prepare_display_text(const char *text);
 void parts_text_append(struct parts *parts, struct parts_text *t, struct string *text);
