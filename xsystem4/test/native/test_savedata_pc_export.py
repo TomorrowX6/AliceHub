@@ -1897,6 +1897,57 @@ int main(int argc, char **argv) {
     assert(got && strcmp(got->text, "Chapter 3 - Boss") == 0);
     free_string(got);
 
+    // 1b. Rewriting globals via save_globals() must preserve embedded comments (gsave v8 AND v7->v8)!
+    ain->nr_global_groups = 1;
+    ain->global_group_names = xcalloc(1, sizeof(char *));
+    ain->global_group_names[0] = xstrdup("GRP");
+    ain->nr_globals = 1;
+    ain->globals = xcalloc(1, sizeof(struct ain_variable));
+    ain->globals[0].name = xstrdup("g_score");
+    ain->globals[0].type.data = AIN_INT;
+    ain->globals[0].group_index = 0;
+
+    int saved_n = 0;
+    assert(save_globals("TEST_KEY", "slot1.asd", "GRP", &saved_n) == 1);
+    assert(saved_n == 1);
+    got = NULL;
+    assert(read_group_save_comment("TEST_KEY", "slot1.asd", &got) == 1);
+    assert(got && strcmp(got->text, "Chapter 3 - Boss") == 0);
+    free_string(got);
+    rd = gsave_read(p1, &err);
+    assert(rd && err == SAVEFILE_SUCCESS);
+    assert(rd->version == 8 && rd->nr_comments == 1);
+    assert(strcmp(rd->comments[0]->text, "Chapter 3 - Boss") == 0);
+    assert(rd->globals[0].value == 0);  // proves globals were rewritten
+    gsave_free(rd);
+
+    // Also verify AIN v6 (get_gsave_version() == 7) preserves embedded comment across save_globals()!
+    struct ain *ain_v14 = ain;
+    ain = ain_new(6, 0);
+    ain->nr_global_groups = 1;
+    ain->global_group_names = xcalloc(1, sizeof(char *));
+    ain->global_group_names[0] = xstrdup("GRP");
+    ain->nr_globals = 1;
+    ain->globals = xcalloc(1, sizeof(struct ain_variable));
+    ain->globals[0].name = xstrdup("g_hp");
+    ain->globals[0].type.data = AIN_INT;
+    ain->globals[0].group_index = 0;
+    assert(save_globals("TEST_KEY", "v7_rewrite.asd", "GRP", NULL) == 1);
+    struct string *c_v7 = make_string("V7 Preserved Comment", 20);
+    assert(write_group_save_comment("TEST_KEY", "v7_rewrite.asd", c_v7) == 1);
+    free_string(c_v7);
+    assert(save_globals("TEST_KEY", "v7_rewrite.asd", "GRP", NULL) == 1);
+    got = NULL;
+    assert(read_group_save_comment("TEST_KEY", "v7_rewrite.asd", &got) == 1);
+    assert(got && strcmp(got->text, "V7 Preserved Comment") == 0);
+    free_string(got);
+    // Overwriting with a different key must NOT carry forward the previous save's comment
+    assert(save_globals("OTHER_KEY", "v7_rewrite.asd", "GRP", NULL) == 1);
+    got = NULL;
+    assert(read_group_save_comment("OTHER_KEY", "v7_rewrite.asd", &got) == 0);
+    ain_free(ain);
+    ain = ain_v14;
+
     // 2. Legacy AliceHub gsave v8 (no embedded comment) + <file>.comment sidecar
     struct gsave *gs2 = gsave_create(8, "TEST_KEY", 1, "GRP");
     gsave_add_globals_record(gs2, 1);
@@ -1923,12 +1974,12 @@ int main(int argc, char **argv) {
     assert(got && strcmp(got->text, "Sidecar Comment V8") == 0);
     free_string(got);
 
-    // Export via savedata_export_pc_file folds sidecar into gs->comments[0]!
+    // Export via savedata_export_pc_file_with_ain(..., NULL) folds sidecar into gs->comments[0]!
     char exp2[1024];
     snprintf(exp2, sizeof(exp2), "%s/exported_grp.asd", argv[1]);
     struct ain *saved_ain = ain;
     ain = NULL;
-    assert(savedata_export_pc_file(p2, exp2));
+    assert(savedata_export_pc_file_with_ain(p2, exp2, NULL));
     ain = saved_ain;
 
     rd = gsave_read(exp2, &err);
@@ -1937,6 +1988,42 @@ int main(int argc, char **argv) {
     assert(strcmp(rd->comments[0]->text, "Sidecar Comment V8") == 0);
     assert(rd->globals[0].value == 54321);
     gsave_free(rd);
+
+    // 2b. Embedded comment must win over a stale .comment sidecar during export!
+    struct gsave *gs_emb = gsave_create(8, "TEST_KEY", 1, "GRP");
+    gsave_add_globals_record(gs_emb, 1);
+    gs_emb->globals[0].name = xstrdup("g_score");
+    gs_emb->globals[0].type = AIN_INT;
+    gs_emb->globals[0].value = 777;
+    gs_emb->nr_comments = 1;
+    gs_emb->comments = xcalloc(1, sizeof(struct string *));
+    gs_emb->comments[0] = make_string("Chapter 7", 9);
+    char *p_emb = savedir_path("embedded_wins.asd");
+    fp = fopen(p_emb, "wb");
+    assert(fp);
+    assert(gsave_write(gs_emb, fp, false, 1) == SAVEFILE_SUCCESS);
+    fclose(fp);
+    gsave_free(gs_emb);
+
+    char cpath_emb[1024];
+    snprintf(cpath_emb, sizeof(cpath_emb), "%s.comment", p_emb);
+    sfp = fopen(cpath_emb, "wb");
+    assert(sfp);
+    fwrite("Chapter 2", 1, 9, sfp);
+    fclose(sfp);
+
+    char exp_emb[1024];
+    snprintf(exp_emb, sizeof(exp_emb), "%s/exported_embedded_wins.asd", argv[1]);
+    ain = NULL;
+    assert(savedata_export_pc_file_with_ain(p_emb, exp_emb, NULL));
+    ain = saved_ain;
+
+    rd = gsave_read(exp_emb, &err);
+    assert(rd && err == SAVEFILE_SUCCESS);
+    assert(rd->version == 8 && rd->nr_comments == 1);
+    assert(strcmp(rd->comments[0]->text, "Chapter 7") == 0);
+    gsave_free(rd);
+    free(p_emb);
 
     // 3. Also test gsave v7 + sidecar -> upgrades to v8 with embedded comment on export!
     struct gsave *gs3 = gsave_create(7, "TEST_KEY", 1, "GRP");
@@ -1961,7 +2048,7 @@ int main(int argc, char **argv) {
     char exp3[1024];
     snprintf(exp3, sizeof(exp3), "%s/exported_v7.asd", argv[1]);
     ain = NULL;
-    assert(savedata_export_pc_file(p3, exp3));
+    assert(savedata_export_pc_file_with_ain(p3, exp3, NULL));
     ain = saved_ain;
 
     rd = gsave_read(exp3, &err);
@@ -2190,7 +2277,7 @@ int main(int argc, char **argv) {
     assert(file_is_encrypted_gd(enc_v14));
 
     char *dec_v14 = savedir_path("exported_v14.asd");
-    assert(savedata_export_pc_file(enc_v14, dec_v14));
+    assert(savedata_export_pc_file_with_ain(enc_v14, dec_v14, NULL));
     assert(!file_is_encrypted_gd(dec_v14));
     // Verify decompressed payload is byte-identical!
     enum savefile_error err1, err2;
@@ -2199,9 +2286,26 @@ int main(int argc, char **argv) {
     assert(sf1 && sf2 && sf1->len == sf2->len && memcmp(sf1->buf, sf2->buf, sf1->len) == 0);
     savefile_free(sf1); savefile_free(sf2);
 
-    // Encrypted RSM v6 with AIN v4 .ain stays encrypted; with AIN v6 .ain gets decrypted!
+    // Encrypted RSM v7 with ain_path == NULL gets decrypted!
+    char *enc_rsm7 = savedir_path("enc_rsm7.asd");
+    struct rsave *rs_v7 = make_minimal_rsave(7, 0);
+    fp = fopen(enc_rsm7, "wb");
+    assert(fp && rsave_write(rs_v7, fp, true, 1) == SAVEFILE_SUCCESS);
+    fclose(fp);
+    rsave_free(rs_v7);
+    char *exp_rsm7 = savedir_path("exported_rsm7.asd");
+    assert(savedata_export_pc_file_with_ain(enc_rsm7, exp_rsm7, NULL));
+    assert(!file_is_encrypted_gd(exp_rsm7));
+    free(enc_rsm7); free(exp_rsm7);
+
+    // Encrypted RSM v6 with ain_path == NULL stays encrypted (AIN v4 uses RSM v6!),
+    // with AIN v4 .ain stays encrypted, and with AIN v6 .ain gets decrypted!
+    char *exp_v6_noain = savedir_path("exported_v6_noain.asd");
     char *exp_v4_keep = savedir_path("exported_v4_keep.asd");
     char *exp_v6_dec  = savedir_path("exported_v6_dec.asd");
+    assert(savedata_export_pc_file_with_ain(p_v4, exp_v6_noain, NULL));
+    assert(file_is_encrypted_gd(exp_v6_noain));
+    free(exp_v6_noain);
     assert(savedata_export_pc_file_with_ain(p_v4, exp_v4_keep, ain_v4_path));
     assert(file_is_encrypted_gd(exp_v4_keep));
     assert(savedata_export_pc_file_with_ain(p_v4, exp_v6_dec, ain_v6_path));
@@ -2215,7 +2319,7 @@ int main(int argc, char **argv) {
     fclose(fp);
     rsave_free(rs_v4);
     char *exp_rsm4 = savedir_path("exported_rsm4.asd");
-    assert(savedata_export_pc_file(enc_rsm4, exp_rsm4));
+    assert(savedata_export_pc_file_with_ain(enc_rsm4, exp_rsm4, NULL));
     assert(file_is_encrypted_gd(exp_rsm4));
 
     // 4. savedata_file_has_xsystem4_only_state() tests!

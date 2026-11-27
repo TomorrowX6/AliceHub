@@ -257,7 +257,12 @@ public class PcSaveExportTest {
 
         File sys39Dir = temporary.newFolder("Sys39");
         assertTrue(new File(sys39Dir, "System39.ain").createNewFile());
+        assertTrue(new File(sys39Dir, "妻みぐいSA.ALD").createNewFile());
         assertNull(SaveManagerActivity.resolveAinFile(sys39Dir));
+        // Default-layout System 3.5 expects saves directly beside scenario files (no SaveData subfolder)
+        assertNull(new SaveImportPaths(sys39Dir).getPcSaveFolderName());
+        // Explicit non-root save folder override is still honored
+        assertEquals("CustomSaves", new SaveImportPaths(sys39Dir, null, "CustomSaves").getPcSaveFolderName());
     }
 
     @Test

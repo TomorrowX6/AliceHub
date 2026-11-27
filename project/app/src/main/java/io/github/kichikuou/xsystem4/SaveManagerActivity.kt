@@ -779,7 +779,7 @@ class SaveManagerActivity : ThemedActivity() {
                     requireSafeExportDestination(appCtx, uri)
                     val ainPath = if (asPc) resolveAinFileForTarget(appCtx, target)?.absolutePath else null
                     val wrapperDir = if (asPc) {
-                        saveImportPathsForTarget(appCtx, target).pcSaveFolderName
+                        saveImportPathsForTarget(appCtx, target).pcSaveFolderName ?: SaveZipLayout.defaultWrapper
                     } else {
                         SaveZipLayout.defaultWrapper
                     }

@@ -25,17 +25,20 @@ class SaveImportPaths @JvmOverloads constructor(
             names.none { it == "xsystem35.gr" }
     }
     private val system35Prefix = findSystem35Prefix()
-    private val saveFolder = (saveFolderOverride ?: gameDir?.let { dir ->
-        if (launchTarget != null) {
-            System4BootEntry.resolveIniForSaveFolder(dir, launchTarget)
-        } else {
-            resolveLaunchIniFile(dir).takeIf { it.isFile }
-        }
-    }?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() })
-        ?.takeIf { isSafeComponent(it) }
+    private val saveFolder = (saveFolderOverride ?: if (isSystem35) {
+        null
+    } else {
+        gameDir?.let { dir ->
+            if (launchTarget != null) {
+                System4BootEntry.resolveIniForSaveFolder(dir, launchTarget)
+            } else {
+                resolveLaunchIniFile(dir).takeIf { it.isFile }
+            }
+        }?.let { runCatching { System40Ini.parse(it).SaveFolder }.getOrNull() }
+    })?.takeIf { isSafeComponent(it) }
 
-    val pcSaveFolderName: String
-        get() = saveFolder ?: SaveZipLayout.defaultWrapper
+    val pcSaveFolderName: String?
+        get() = if (isSystem35) saveFolder else (saveFolder ?: SaveZipLayout.defaultWrapper)
 
     private fun findSystem35Prefix(): String? {
         if (!isSystem35) return null

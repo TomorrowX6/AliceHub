@@ -222,6 +222,15 @@ struct SaveManagerChecks {
         try Data().write(to: sys39Dir.appendingPathComponent("System39.ain"))
         check(SaveManager.resolveAinPath(in: sys39Dir) == nil)
 
+        let mojibakeDir = root.appendingPathComponent("MojibakeGame")
+        try files.createDirectory(at: mojibakeDir, withIntermediateDirectories: true)
+        try Data().write(to: mojibakeDir.appendingPathComponent("00_fallback.ain"))
+        let mojibakeAin = mojibakeDir.appendingPathComponent("儔儞僗丒僋僄僗僩.ain")
+        try Data().write(to: mojibakeAin)
+        try Data("CodeName = \"ランス・クエスト.ain\"\n".utf8).write(to: mojibakeDir.appendingPathComponent("System40.ini"))
+        let resolvedMojibake = SaveManager.resolveAinPath(in: mojibakeDir)
+        check(resolvedMojibake.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == mojibakeAin.resolvingSymlinksInPath().path)
+
         let global = GlobalSaveEditor(directory: manager.directory)
         let template = URL(fileURLWithPath: CommandLine.arguments[2])
         check(try global.paths() == nil)
