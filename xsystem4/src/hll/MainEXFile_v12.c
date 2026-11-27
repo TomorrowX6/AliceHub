@@ -305,31 +305,50 @@ static bool mainex_exists(struct string *name, int id)
 static bool mainex_aexists(struct string *name, int index, int id) { return avalue(name, index, id); }
 static bool mainex_a2exists(struct string *name, int row, int col, int id) { return a2value(name, row, col, id); }
 
-#define EX_NUMERIC_GETTERS(label, ctype, ex_type, member) \
-	static ctype mainex_##label(struct string *name, ctype fallback, int id) { \
-		struct ex_value *v = value(name, id); \
-		return v && v->type == ex_type ? v->member : fallback; \
-	} \
-	static ctype mainex_a2##label(struct string *name, int row, int col, ctype fallback, int id) { \
-		struct ex_value *v = a2value(name, row, col, id); \
-		return v && v->type == ex_type ? v->member : fallback; \
-	}
-EX_NUMERIC_GETTERS(integer, int, EX_INT, i)
-EX_NUMERIC_GETTERS(floating, float, EX_FLOAT, f)
-#undef EX_NUMERIC_GETTERS
+static int int_value(struct ex_value *v, int fallback)
+{
+	return v && v->type == EX_INT ? v->i : fallback;
+}
+
+static float float_value(struct ex_value *v, float fallback)
+{
+	if (!v)
+		return fallback;
+	if (v->type == EX_FLOAT)
+		return v->f;
+	if (v->type == EX_INT)
+		return (float)v->i;
+	return fallback;
+}
+
+static int mainex_integer(struct string *name, int fallback, int id)
+{
+	return int_value(value(name, id), fallback);
+}
 
 static int mainex_ainteger(struct string *name, int index, int fallback, int id)
 {
-	struct ex_value *v = avalue(name, index, id);
-	return v && v->type == EX_INT ? v->i : fallback;
+	return int_value(avalue(name, index, id), fallback);
+}
+
+static int mainex_a2integer(struct string *name, int row, int col, int fallback, int id)
+{
+	return int_value(a2value(name, row, col, id), fallback);
+}
+
+static float mainex_floating(struct string *name, float fallback, int id)
+{
+	return float_value(value(name, id), fallback);
 }
 
 static float mainex_afloating(struct string *name, int index, float fallback, int id)
 {
-	struct ex_value *v = avalue(name, index, id);
-	if (v && (game_okusama || game_haharanman) && v->type == EX_INT)
-		return (float)v->i;
-	return v && v->type == EX_FLOAT ? v->f : fallback;
+	return float_value(avalue(name, index, id), fallback);
+}
+
+static float mainex_a2floating(struct string *name, int row, int col, float fallback, int id)
+{
+	return float_value(a2value(name, row, col, id), fallback);
 }
 
 static struct string *string_value(struct ex_value *v, struct string *fallback)
@@ -784,10 +803,17 @@ static bool out_int(struct ex_value *v, int *out)
 
 static bool out_float(struct ex_value *v, float *out)
 {
-	if (!out || !v || v->type != EX_FLOAT)
+	if (!out || !v)
 		return false;
-	*out = v->f;
-	return true;
+	if (v->type == EX_FLOAT) {
+		*out = v->f;
+		return true;
+	}
+	if (v->type == EX_INT) {
+		*out = (float)v->i;
+		return true;
+	}
+	return false;
 }
 
 static bool out_string(struct ex_value *v, struct string **out)

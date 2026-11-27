@@ -651,6 +651,7 @@ struct parts {
 	struct parts_motion_list motion;
 	int controller_no;
 	mat4 world_matrix;
+	mat4 committed_matrix;
 	uint64_t world_matrix_gen;
 	struct parts *world_matrix_self;
 };

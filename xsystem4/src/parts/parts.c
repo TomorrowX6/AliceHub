@@ -97,6 +97,7 @@ static void parts_init(struct parts *parts)
 	parts->linked_from = -1;
 	TAILQ_INIT(&parts->children);
 	TAILQ_INIT(&parts->motion);
+	glm_mat4_identity(parts->committed_matrix);
 }
 
 static struct parts *parts_alloc(void)
@@ -1916,6 +1917,7 @@ static void parts_update_component_mat(struct parts *parts, mat4 parent_matrix)
 		glm_mat4_copy(parent_matrix, matrix);
 		parts_apply_local_transform(parts, matrix);
 		parts->global.pos = (SDL_FPoint){matrix[3][0], matrix[3][1]};
+		glm_mat4_copy(matrix, parts->committed_matrix);
 		if (parts->world_matrix_self == parts) {
 			glm_mat4_copy(matrix, parts->world_matrix);
 			parts->world_matrix_gen = parts_render_gen;
@@ -3098,13 +3100,14 @@ int PE_GetPartsUpperLeftPosX(int parts_no, int state)
 	struct parts *parts = parts_get(parts_no);
 	int x = parts->states[state].common.hitbox.x;
 	if (parts_v2) {
+		if (parts_hierarchical_matrix) {
+			vec4 pos = {x, parts->states[state].common.hitbox.y, 0, 1};
+			glm_mat4_mulv(parts->committed_matrix, pos, pos);
+			return pos[0];
+		}
 		mat4 matrix;
 		parts_world_matrix(parts, matrix);
-		if (!parts_hierarchical_matrix)
-			return matrix[3][0] + x;
-		vec4 pos = {x, parts->states[state].common.hitbox.y, 0, 1};
-		glm_mat4_mulv(matrix, pos, pos);
-		return pos[0];
+		return matrix[3][0] + x;
 	}
 	if (parts->parent)
 		x += parts->parent->global.pos.x;
@@ -3118,13 +3121,14 @@ int PE_GetPartsUpperLeftPosY(int parts_no, int state)
 	struct parts *parts = parts_get(parts_no);
 	int y = parts->states[state].common.hitbox.y;
 	if (parts_v2) {
+		if (parts_hierarchical_matrix) {
+			vec4 pos = {parts->states[state].common.hitbox.x, y, 0, 1};
+			glm_mat4_mulv(parts->committed_matrix, pos, pos);
+			return pos[1];
+		}
 		mat4 matrix;
 		parts_world_matrix(parts, matrix);
-		if (!parts_hierarchical_matrix)
-			return matrix[3][1] + y;
-		vec4 pos = {parts->states[state].common.hitbox.x, y, 0, 1};
-		glm_mat4_mulv(matrix, pos, pos);
-		return pos[1];
+		return matrix[3][1] + y;
 	}
 	if (parts->parent)
 		y += parts->parent->global.pos.y;

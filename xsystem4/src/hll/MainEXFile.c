@@ -401,18 +401,28 @@ static bool MainEXFile_Int(int handle, int *data)
 	return 1;
 }
 
+static bool ex_value_to_float(struct ex_value *v, float *data)
+{
+	if (!v || !data)
+		return 0;
+	if (v->type == EX_FLOAT) {
+		*data = v->f;
+		return 1;
+	}
+	if (v->type == EX_INT) {
+		*data = (float)v->i;
+		return 1;
+	}
+	if (v->type != 0)
+		WARNING("Value is not a float");
+	return 0;
+}
+
 static bool MainEXFile_Float(int handle, float *data)
 {
 	if (handle <= 0 || (unsigned)handle >= nr_handles)
 		return 0;
-	if (handles[handle]->type != EX_FLOAT) {
-		if (handles[handle]->type != 0)
-			WARNING("Value is not a float");
-		return 0;
-	}
-
-	*data = handles[handle]->f;
-	return 1;
+	return ex_value_to_float(handles[handle], data);
 }
 
 static bool MainEXFile_String(int handle, struct string **data)
@@ -456,17 +466,7 @@ static bool MainEXFile_AFloat(int handle, int index, float *data)
 	if (!list)
 		return 0;
 
-	struct ex_value *v = ex_list_get(list, index);
-	if (!v)
-		return 0;
-	if (v->type != EX_FLOAT) {
-		if (v->type != 0)
-			WARNING("Value is not a float");
-		return 0;
-	}
-
-	*data = v->f;
-	return 1;
+	return ex_value_to_float(ex_list_get(list, index), data);
 }
 
 static bool MainEXFile_AString(int handle, int index, struct string **data)
@@ -515,17 +515,7 @@ static bool MainEXFile_A2Float(int handle, int row, int col, float *data)
 	if (!t)
 		return 0;
 
-	struct ex_value *v = ex_table_get(t, row, col);
-	if (!v)
-		return 0;
-	if (v->type != EX_FLOAT) {
-		if (v->type != 0)
-			WARNING("Value is not a float");
-		return 0;
-	}
-
-	*data = v->f;
-	return 1;
+	return ex_value_to_float(ex_table_get(t, row, col), data);
 }
 
 static bool MainEXFile_A2String(int handle, int row, int col, struct string **data)

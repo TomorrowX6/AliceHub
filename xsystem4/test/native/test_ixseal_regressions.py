@@ -57,6 +57,31 @@ def _ex_tree(name: bytes, children: list[bytes]) -> bytes:
     return bytes(out)
 
 
+def _ex_list(items: list[tuple[int, bytes]]) -> bytes:
+    out = bytearray(struct.pack("<I", len(items)))
+    for val_type, payload in items:
+        out.extend(struct.pack("<II", val_type, len(payload)))
+        out.extend(payload)
+    return bytes(out)
+
+
+def _ex_table(
+    fields: list[tuple[int, bytes, int]],
+    rows: list[list[tuple[int, bytes]]],
+) -> bytes:
+    out = bytearray(struct.pack("<I", len(fields)))
+    for ft, fname, is_index in fields:
+        out.extend(struct.pack("<I", ft))
+        out.extend(_ex_pstr(fname))
+        out.extend(struct.pack("<II", 0, is_index))
+    out.extend(struct.pack("<II", len(fields), len(rows)))
+    for row in rows:
+        for cell_type, payload in row:
+            out.extend(struct.pack("<I", cell_type))
+            out.extend(payload)
+    return bytes(out)
+
+
 def _ex_block(name: bytes, val_type: int, payload: bytes) -> bytes:
     body = _ex_pstr(name) + payload
     return struct.pack("<II", val_type, len(body)) + body
@@ -1187,6 +1212,7 @@ int main(void)
         harness = r"""
 #include <assert.h>
 
+#include "parts.h"
 #include "parts_internal.h"
 #include "xsystem4.h"
 
@@ -1305,6 +1331,319 @@ int main(void) {{
 """
         out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
+
+    def test_mainex_v12_and_legacy_float_widens_ex_int(self):
+        # Ixseal stores whole-number skill multipliers like 无消费攻击.攻击力 = 1 as EX_INT,
+        # then queries them via MainEXFile.Float / AFloat / A2Float (and ref out_float).
+        no_cost_attack = _gbk("无消费攻击")
+        attack_power = _gbk("攻击力")
+        main_ex = build_extf([
+            _ex_block(
+                no_cost_attack,
+                6,
+                _ex_tree(no_cost_attack, [
+                    _ex_leaf(attack_power, 1, struct.pack("<i", 1)),
+                ]),
+            ),
+            _ex_block(
+                b"Skill",
+                6,
+                _ex_tree(b"Skill", [
+                    _ex_leaf(b"IntPow", 1, struct.pack("<i", 1)),
+                    _ex_leaf(b"FltPow", 2, struct.pack("<f", 1.5)),
+                    _ex_leaf(b"StrPow", 3, _ex_pstr(b"not_num")),
+                ]),
+            ),
+            _ex_block(
+                b"ListVals",
+                5,
+                _ex_list([
+                    (1, struct.pack("<i", 1)),
+                    (1, struct.pack("<i", 40)),
+                    (2, struct.pack("<f", -2.5)),
+                    (3, _ex_pstr(b"nope")),
+                ]),
+            ),
+            _ex_block(
+                b"SkillTable",
+                4,
+                _ex_table(
+                    [
+                        (1, b"ID", 1),
+                        (3, b"Name", 1),
+                        (1, b"PowerInt", 0),
+                        (2, b"PowerFlt", 0),
+                        (3, b"Note", 0),
+                    ],
+                    [
+                        [
+                            (1, struct.pack("<i", 10)),
+                            (3, _ex_pstr(b"Weak")),
+                            (1, struct.pack("<i", 1)),
+                            (2, struct.pack("<f", 1.25)),
+                            (3, _ex_pstr(b"str0")),
+                        ],
+                        [
+                            (1, struct.pack("<i", 20)),
+                            (3, _ex_pstr(b"Strong")),
+                            (1, struct.pack("<i", 3)),
+                            (2, struct.pack("<f", -0.5)),
+                            (3, _ex_pstr(b"str1")),
+                        ],
+                    ],
+                ),
+            ),
+            _ex_block(
+                b"StrSkillTable",
+                4,
+                _ex_table(
+                    [
+                        (3, b"Name", 1),
+                        (1, b"PowerInt", 0),
+                    ],
+                    [
+                        [
+                            (3, _ex_pstr(b"Weak")),
+                            (1, struct.pack("<i", 1)),
+                        ],
+                    ],
+                ),
+            ),
+        ])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ex_path = Path(tmpdir) / "IxsealSkills.ex"
+            ex_path.write_bytes(main_ex)
+            harness = r"""
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "xsystem4.h"
+#include "hll/hll.h"
+#include "mainex_v12.h"
+#include "reign.h"
+#include "system4/ain.h"
+#include "system4/archive.h"
+#include "system4/ex.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "vm/heap.h"
+#include "vm/page.h"
+#include "vm/v12.h"
+
+struct config config;
+struct ain *ain = NULL;
+struct vm_pointer *heap = NULL;
+size_t heap_size = 0;
+bool game_evenicle2 = false;
+bool game_okusama = false;
+bool game_haharanman = false;
+
+extern struct static_library lib_MainEXFile;
+void mainex_v12_prelink(struct static_library *library);
+
+static void *find_exported(struct static_library *lib, const char *name) {
+    for (int i = 0; lib->functions[i].name; i++) {
+        if (!strcmp(lib->functions[i].name, name))
+            return lib->functions[i].fun;
+    }
+    return NULL;
+}
+
+void static_library_replace(struct static_library *lib, const char *name, void *fun) {
+    for (int i = 0; lib->functions[i].name; i++) {
+        if (!strcmp(lib->functions[i].name, name)) {
+            lib->functions[i].fun = fun;
+            return;
+        }
+    }
+}
+
+struct page *v12_array_new(const struct ain_type *type, int size, bool init) { return NULL; }
+struct page *alloc_array(int rank, union vm_value *dimensions, enum ain_data_type type, int struc, bool init) { return NULL; }
+void delete_page_vars(struct page *p) {}
+void free_page(struct page *p) {}
+char *gamedir_path(const char *p) { return strdup(p); }
+char *gamedir_path_icase(const char *p) { return strdup(p); }
+struct archive *RE_open_3d_archive(void) { return NULL; }
+struct archive_data *RE_archive_find_txtex(struct archive *ar, const char *model_dir) { return NULL; }
+const char *display_utf0(const char *s) { return s ? s : ""; }
+
+static void add_hll_fun(struct ain_library *lib, const char *name, enum ain_data_type ret,
+        int nargs, const enum ain_data_type *args) {
+    lib->functions = xrealloc_array(lib->functions, lib->nr_functions,
+            lib->nr_functions + 1, sizeof(struct ain_hll_function));
+    struct ain_hll_function *f = &lib->functions[lib->nr_functions++];
+    memset(f, 0, sizeof(*f));
+    f->name = strdup(name);
+    f->return_type.data = ret;
+    f->nr_arguments = nargs;
+    if (nargs > 0) {
+        f->arguments = xcalloc(nargs, sizeof(struct ain_hll_argument));
+        for (int i = 0; i < nargs; i++)
+            f->arguments[i].type.data = args[i];
+    }
+}
+
+int main(int argc, char **argv) {
+    assert(argc == 2);
+    config.ex_path = argv[1];
+    sys4_set_text_gbk(true);
+
+    struct string *s_ixseal = make_string("\xce\xde\xcf\xfb\xb7\xd1\xb9\xa5\xbb\xf7.\xb9\xa5\xbb\xf7\xc1\xa6", 17);
+    struct string *s_int = make_string("Skill.IntPow", 12);
+    struct string *s_flt = make_string("Skill.FltPow", 12);
+    struct string *s_str = make_string("Skill.StrPow", 12);
+    struct string *s_list = make_string("ListVals", 8);
+    struct string *s_tbl = make_string("SkillTable", 10);
+    struct string *s_stbl = make_string("StrSkillTable", 13);
+    struct string *s_col_int = make_string("PowerInt", 8);
+    struct string *s_col_flt = make_string("PowerFlt", 8);
+    struct string *s_col_note = make_string("Note", 4);
+    struct string *s_key_weak = make_string("Weak", 4);
+
+    // 1. Legacy handle-based MainEXFile.c float getters widen EX_INT -> float.
+    {
+        void (*init_fn)(void) = find_exported(&lib_MainEXFile, "_ModuleInit");
+        void (*fini_fn)(void) = find_exported(&lib_MainEXFile, "_ModuleFini");
+        int (*handle_fn)(struct string *) = find_exported(&lib_MainEXFile, "Handle");
+        bool (*flt_fn)(int, float *) = find_exported(&lib_MainEXFile, "Float");
+        bool (*aflt_fn)(int, int, float *) = find_exported(&lib_MainEXFile, "AFloat");
+        bool (*a2flt_fn)(int, int, int, float *) = find_exported(&lib_MainEXFile, "A2Float");
+        bool (*ia2flt_fn)(int, int, struct string *, float *) = find_exported(&lib_MainEXFile, "IA2Float");
+        bool (*sa2flt_fn)(int, struct string *, struct string *, float *) = find_exported(&lib_MainEXFile, "SA2Float");
+        bool (*ra2flt_fn)(int, int, struct string *, float *) = find_exported(&lib_MainEXFile, "RA2Float");
+        assert(init_fn && fini_fn && handle_fn && flt_fn && aflt_fn && a2flt_fn && ia2flt_fn && sa2flt_fn && ra2flt_fn);
+
+        init_fn();
+        float out = -99.0f;
+        assert(flt_fn(handle_fn(s_ixseal), &out) && out == 1.0f);
+        assert(flt_fn(handle_fn(s_flt), &out) && out == 1.5f);
+        assert(!flt_fn(handle_fn(s_str), &out));
+
+        int h_list = handle_fn(s_list);
+        assert(aflt_fn(h_list, 0, &out) && out == 1.0f);
+        assert(aflt_fn(h_list, 1, &out) && out == 40.0f);
+        assert(aflt_fn(h_list, 2, &out) && out == -2.5f);
+        assert(!aflt_fn(h_list, 3, &out));
+
+        int h_tbl = handle_fn(s_tbl);
+        int h_stbl = handle_fn(s_stbl);
+        assert(a2flt_fn(h_tbl, 0, 2, &out) && out == 1.0f);
+        assert(a2flt_fn(h_tbl, 1, 2, &out) && out == 3.0f);
+        assert(a2flt_fn(h_tbl, 0, 3, &out) && out == 1.25f);
+        assert(!a2flt_fn(h_tbl, 0, 4, &out));
+        assert(ia2flt_fn(h_tbl, 10, s_col_int, &out) && out == 1.0f);
+        assert(sa2flt_fn(h_stbl, s_key_weak, s_col_int, &out) && out == 1.0f);
+        assert(ra2flt_fn(h_tbl, 1, s_col_int, &out) && out == 3.0f);
+        assert(!ra2flt_fn(h_tbl, 0, s_col_note, &out));
+        fini_fn();
+    }
+
+    // 2. MainEXFile_v12 value-returning getters (Ixseal / Rance 10 / Evenicle 2) with all game flags false.
+    {
+        ain = ain_new(11, 0);
+        ain->libraries = xcalloc(1, sizeof(struct ain_library));
+        ain->nr_libraries = 1;
+        ain->libraries[0].name = strdup("MainEXFile");
+        enum ain_data_type int_args[] = { AIN_STRING, AIN_INT, AIN_INT };
+        add_hll_fun(&ain->libraries[0], "Int", AIN_INT, 3, int_args);
+
+        mainex_v12_prelink(&lib_MainEXFile);
+        void (*init_fn)(void) = find_exported(&lib_MainEXFile, "_ModuleInit");
+        void (*fini_fn)(void) = find_exported(&lib_MainEXFile, "_ModuleFini");
+        float (*flt_fn)(struct string *, float, int) = find_exported(&lib_MainEXFile, "Float");
+        float (*aflt_fn)(struct string *, int, float, int) = find_exported(&lib_MainEXFile, "AFloat");
+        float (*a2flt_fn)(struct string *, int, int, float, int) = find_exported(&lib_MainEXFile, "A2Float");
+        assert(init_fn && fini_fn && flt_fn && aflt_fn && a2flt_fn);
+
+        init_fn();
+        assert(flt_fn(s_ixseal, 0.0f, 0) == 1.0f);
+        assert(flt_fn(s_int, 0.0f, 0) == 1.0f);
+        assert(flt_fn(s_flt, 0.0f, 0) == 1.5f);
+        assert(flt_fn(s_str, -7.0f, 0) == -7.0f);
+
+        assert(aflt_fn(s_list, 0, 0.0f, 0) == 1.0f);
+        assert(aflt_fn(s_list, 1, 0.0f, 0) == 40.0f);
+        assert(aflt_fn(s_list, 2, 0.0f, 0) == -2.5f);
+        assert(aflt_fn(s_list, 3, -7.0f, 0) == -7.0f);
+
+        assert(a2flt_fn(s_tbl, 0, 2, 0.0f, 0) == 1.0f);
+        assert(a2flt_fn(s_tbl, 1, 2, 0.0f, 0) == 3.0f);
+        assert(a2flt_fn(s_tbl, 0, 3, 0.0f, 0) == 1.25f);
+        assert(a2flt_fn(s_tbl, 0, 4, -7.0f, 0) == -7.0f);
+        fini_fn();
+        ain_free(ain);
+        ain = NULL;
+    }
+
+    // 3. MainEXFile_v12 ref out-parameter getters (out_float).
+    {
+        ain = ain_new(11, 0);
+        ain->libraries = xcalloc(1, sizeof(struct ain_library));
+        ain->nr_libraries = 1;
+        ain->libraries[0].name = strdup("MainEXFile");
+        enum ain_data_type ref_int_args[] = { AIN_STRING, AIN_REF_INT, AIN_INT };
+        add_hll_fun(&ain->libraries[0], "Int", AIN_BOOL, 3, ref_int_args);
+
+        mainex_v12_prelink(&lib_MainEXFile);
+        void (*init_fn)(void) = find_exported(&lib_MainEXFile, "_ModuleInit");
+        void (*fini_fn)(void) = find_exported(&lib_MainEXFile, "_ModuleFini");
+        bool (*flt_fn)(struct string *, float *, int) = find_exported(&lib_MainEXFile, "Float");
+        bool (*aflt_fn)(struct string *, int, float *, int) = find_exported(&lib_MainEXFile, "AFloat");
+        bool (*a2flt_fn)(struct string *, int, int, float *, int) = find_exported(&lib_MainEXFile, "A2Float");
+        bool (*ia2flt_fn)(struct string *, int, struct string *, float *, int) = find_exported(&lib_MainEXFile, "IA2Float");
+        bool (*sa2flt_fn)(struct string *, struct string *, struct string *, float *, int) = find_exported(&lib_MainEXFile, "SA2Float");
+        bool (*ra2flt_fn)(struct string *, int, struct string *, float *, int) = find_exported(&lib_MainEXFile, "RA2Float");
+        assert(init_fn && fini_fn && flt_fn && aflt_fn && a2flt_fn && ia2flt_fn && sa2flt_fn && ra2flt_fn);
+
+        init_fn();
+        float out = -99.0f;
+        assert(flt_fn(s_ixseal, &out, 0) && out == 1.0f);
+        assert(flt_fn(s_flt, &out, 0) && out == 1.5f);
+        assert(!flt_fn(s_str, &out, 0));
+
+        assert(aflt_fn(s_list, 0, &out, 0) && out == 1.0f);
+        assert(aflt_fn(s_list, 1, &out, 0) && out == 40.0f);
+        assert(aflt_fn(s_list, 2, &out, 0) && out == -2.5f);
+        assert(!aflt_fn(s_list, 3, &out, 0));
+
+        assert(a2flt_fn(s_tbl, 0, 2, &out, 0) && out == 1.0f);
+        assert(a2flt_fn(s_tbl, 1, 2, &out, 0) && out == 3.0f);
+        assert(a2flt_fn(s_tbl, 0, 3, &out, 0) && out == 1.25f);
+        assert(!a2flt_fn(s_tbl, 0, 4, &out, 0));
+
+        assert(ia2flt_fn(s_tbl, 10, s_col_int, &out, 0) && out == 1.0f);
+        assert(sa2flt_fn(s_stbl, s_key_weak, s_col_int, &out, 0) && out == 1.0f);
+        assert(ra2flt_fn(s_tbl, 1, s_col_int, &out, 0) && out == 3.0f);
+        assert(ra2flt_fn(s_tbl, 1, s_col_flt, &out, 0) && out == -0.5f);
+        assert(!ra2flt_fn(s_tbl, 0, s_col_note, &out, 0));
+        fini_fn();
+        ain_free(ain);
+        ain = NULL;
+    }
+
+    free_string(s_ixseal); free_string(s_int); free_string(s_flt); free_string(s_str);
+    free_string(s_list); free_string(s_tbl); free_string(s_stbl); free_string(s_col_int); free_string(s_col_flt);
+    free_string(s_col_note); free_string(s_key_weak);
+    puts("OK");
+    return 0;
+}
+"""
+            out = compile_and_run(
+                harness,
+                [
+                    ROOT / "src/hll/MainEXFile.c",
+                    ROOT / "src/hll/MainEXFile_v12.c",
+                    *LIBSYS4_CORE,
+                ],
+                ["-lz", "-lm"],
+                [str(ex_path)],
+            )
+            self.assertEqual(out.strip(), "OK")
 
 
 if __name__ == "__main__":
