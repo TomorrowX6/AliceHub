@@ -923,10 +923,10 @@ class SettingsActivity : ThemedActivity() {
             return
         }
 
-        val dlg = trackDialog(
+        trackDialog(
             AlertDialog.Builder(this)
                 .setTitle(R.string.online_disclaimer_title)
-                .setMessage(buildDisclaimerText())
+                .setMessage(buildOnlineDisclaimerText())
                 .setPositiveButton(R.string.online_disclaimer_agree) { _, _ ->
                     AppSettings.setOnlineInstallEnabled(this, true)
                     refreshSettingsUi()
@@ -938,28 +938,32 @@ class SettingsActivity : ThemedActivity() {
                     refreshSettingsUi()
                 }
                 .show()
+                .applyOnlineDisclaimerTypography()
         )
-        dlg.findViewById<TextView>(android.R.id.message)?.apply {
-            textSize = 13.5f
-            setLineSpacing(0f, 1.28f)
+    }
+}
+
+internal fun Context.buildOnlineDisclaimerText(): CharSequence {
+    val raw = getString(R.string.online_disclaimer_msg)
+    val lines = raw.split('\n')
+    val sb = SpannableStringBuilder()
+    val headingColor = getColor(R.color.ui_text_primary)
+    for ((index, line) in lines.withIndex()) {
+        if (index > 0) sb.append('\n')
+        val start = sb.length
+        sb.append(line)
+        val end = sb.length
+        if (line.startsWith("第") || line.startsWith("Article ")) {
+            sb.setSpan(StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(ForegroundColorSpan(headingColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
+    return sb
+}
 
-    private fun buildDisclaimerText(): CharSequence {
-        val raw = getString(R.string.online_disclaimer_msg)
-        val lines = raw.split('\n')
-        val sb = SpannableStringBuilder()
-        val headingColor = getColor(R.color.ui_text_primary)
-        for ((index, line) in lines.withIndex()) {
-            if (index > 0) sb.append('\n')
-            val start = sb.length
-            sb.append(line)
-            val end = sb.length
-            if (line.startsWith("第") || line.startsWith("Article ")) {
-                sb.setSpan(StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                sb.setSpan(ForegroundColorSpan(headingColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-        }
-        return sb
+internal fun AlertDialog.applyOnlineDisclaimerTypography(): AlertDialog = apply {
+    findViewById<TextView>(android.R.id.message)?.apply {
+        textSize = 13.5f
+        setLineSpacing(0f, 1.28f)
     }
 }
