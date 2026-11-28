@@ -1,0 +1,193 @@
+name: Update Self-Hosted Stores
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (leave empty for latest release)'
+        required: false
+        default: ''
+
+concurrency:
+  group: update-self-hosted-stores
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-stores:
+    name: Build & Publish F-Droid / SideStore / HBAS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve target release
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          EVENT_PRERELEASE: ${{ github.event.release.prerelease }}
+          EVENT_DRAFT: ${{ github.event.release.draft }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          LATEST_TAG=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName -q .tagName)
+          if [ "${EVENT_NAME}" = "release" ]; then
+            if [ "${EVENT_DRAFT}" = "true" ] || [ "${EVENT_PRERELEASE}" = "true" ]; then
+              echo "Skipping draft/prerelease ${EVENT_TAG}"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "${EVENT_TAG}" != "${LATEST_TAG}" ]; then
+              echo "Skipping non-latest release ${EVENT_TAG} (latest is ${LATEST_TAG})"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            TARGET_TAG="${EVENT_TAG}"
+          elif [ -n "${INPUT_TAG}" ]; then
+            TARGET_TAG="${INPUT_TAG}"
+          else
+            TARGET_TAG="${LATEST_TAG}"
+          fi
+
+          REL_JSON="${RUNNER_TEMP}/release.json"
+          gh release view "${TARGET_TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --json tagName,publishedAt,body,assets > "${REL_JSON}"
+
+          PUB=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["publishedAt"])' "${REL_JSON}")
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "tag=${TARGET_TAG}" >> "$GITHUB_OUTPUT"
+          echo "published=${PUB}" >> "$GITHUB_OUTPUT"
+          echo "Target release: ${TARGET_TAG} (${PUB})"
+
+      - name: Set up JDK 17
+        if: steps.rel.outputs.skip != 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Prepare build tools (Android build-tools, Pillow, fonts)
+        if: steps.rel.outputs.skip != 'true'
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          BT_DIR=$(ls -d "${SDK_ROOT}"/build-tools/* 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "${BT_DIR}" ] || [ ! -x "${BT_DIR}/apksigner" ] || [ ! -x "${BT_DIR}/aapt2" ]; then
+            echo "::error::Android build-tools (aapt2 + apksigner) not found under ${SDK_ROOT}"
+            exit 1
+          fi
+          echo "${BT_DIR}" >> "$GITHUB_PATH"
+          echo "Using Android build-tools: ${BT_DIR}"
+
+          if ! python3 -c "import PIL" 2>/dev/null; then
+            python3 -m pip install --quiet pillow
+          fi
+          if [ ! -f /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq fonts-dejavu-core
+          fi
+
+      - name: Download release assets
+        if: steps.rel.outputs.skip != 'true'
+        id: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          DL_DIR="${RUNNER_TEMP}/release_assets"
+          mkdir -p "${DL_DIR}"
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern '*.apk' \
+            --pattern '*.ipa' \
+            --pattern '*switch*.zip' \
+            --dir "${DL_DIR}"
+
+          APK=$(ls -1 "${DL_DIR}"/*.apk 2>/dev/null | head -n 1 || true)
+          IPA=$(ls -1 "${DL_DIR}"/*.ipa 2>/dev/null | head -n 1 || true)
+          SWZIP=$(ls -1 "${DL_DIR}"/*switch*.zip 2>/dev/null | head -n 1 || true)
+          if [ -z "${APK}" ] || [ -z "${IPA}" ] || [ -z "${SWZIP}" ]; then
+            echo "::error::Missing one or more required assets (.apk, .ipa, *switch*.zip) in release ${TAG}"
+            ls -la "${DL_DIR}"
+            exit 1
+          fi
+          echo "apk=${APK}" >> "$GITHUB_OUTPUT"
+          echo "ipa=${IPA}" >> "$GITHUB_OUTPUT"
+          echo "switch_zip=${SWZIP}" >> "$GITHUB_OUTPUT"
+
+      - name: Build F-Droid, SideStore, and HBAS repositories
+        if: steps.rel.outputs.skip != 'true'
+        env:
+          FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
+          FDROID_KEYSTORE_PASSWORD: ${{ secrets.FDROID_KEYSTORE_PASSWORD }}
+          FDROID_KEY_ALIAS: ${{ secrets.FDROID_KEY_ALIAS }}
+          FDROID_KEY_PASSWORD: ${{ secrets.FDROID_KEY_PASSWORD }}
+          TAG: ${{ steps.rel.outputs.tag }}
+          PUBLISHED: ${{ steps.rel.outputs.published }}
+          APK_PATH: ${{ steps.assets.outputs.apk }}
+          IPA_PATH: ${{ steps.assets.outputs.ipa }}
+          SWITCH_ZIP_PATH: ${{ steps.assets.outputs.switch_zip }}
+        run: |
+          KS_PATH="${RUNNER_TEMP}/fdroid-repo-keystore.p12"
+          printf '%s' "${FDROID_KEYSTORE_BASE64}" | base64 -d > "${KS_PATH}"
+          chmod 600 "${KS_PATH}"
+
+          NOTES=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("body") or "")' "${RUNNER_TEMP}/release.json")
+          python3 scripts/build_stores.py \
+            --tag "${TAG}" \
+            --published "${PUBLISHED}" \
+            --release-notes "${NOTES}" \
+            --apk "${APK_PATH}" \
+            --ipa "${IPA_PATH}" \
+            --switch-zip "${SWITCH_ZIP_PATH}" \
+            --fdroid-keystore "${KS_PATH}" \
+            --out "${RUNNER_TEMP}/store_out"
+
+          rm -f "${KS_PATH}"
+
+      - name: Upload self-hosted stores to Cloudflare R2
+        if: steps.rel.outputs.skip != 'true'
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          python3 scripts/upload_stores_r2.py \
+            --dir "${RUNNER_TEMP}/store_out" \
+            --bucket alicehub-store \
+            --skip-summary
+
+      - name: Verify live store endpoints
+        if: steps.rel.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          python3 - << 'PY'
+          import json, os, time, urllib.request
+
+          base = "https://store.000.moe"
+          tag = os.environ["TAG"]
+          cb = int(time.time())
+
+          def get(path):
+              req = urllib.request.Request(f"{base}{path}?cb={cb}", headers={"User-Agent": "AliceHub-CI/1.0"})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  assert r.status == 200, f"{path} -> {r.status}"
+                  return r.read()
+
+          get("/")
+          get("/fdroid/repo/entry.jar")
+          idx2 = json.loads(get("/fdroid/repo/index-v2.json"))
+          assert "io.github.alicehub" in idx2["packages"]
+
+          alt = json.loads(get("/altstore/source.json"))
+          assert alt["apps"][0]["bundleIdentifier"] == "io.github.alicehub"
+
+          hb = json.loads(get("/hbas/repo.json"))
+          assert hb["packages"][0]["version"] == tag, f"Expected HBAS version {tag}, got {hb['packages'][0]['version']}"
+          print(f"Verified live https://store.000.moe for release {tag}")
+          PY
