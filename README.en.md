@@ -8,7 +8,7 @@
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Android arm64-v8a" /></a>
     <a href="https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_shield"><img src="https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=shield" alt="FOSSA Status" /></a>
     <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-iOS%2015%2B-007AFF.svg" alt="iOS 15+" /></a>
-    <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://img.shields.io/badge/Platform-Nintendo%20Switch-E60012.svg" alt="Nintendo Switch homebrew" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Nintendo%20Switch-E60012.svg" alt="Nintendo Switch homebrew" /></a>
     <img src="https://img.shields.io/badge/Engine-System%201%E2%80%934-FF7043.svg" alt="Engine: System 1–4" />
   </p>
   <p><a href="README.md"><strong>简体中文</strong></a> | <strong>English</strong> | <a href="README.ja.md"><strong>日本語</strong></a></p>
@@ -20,19 +20,21 @@
 
 ## Download and quick start
 
-Get the Android or iOS package from the [**latest release**](https://github.com/TomorrowX6/AliceHub/releases/latest), or get the Nintendo Switch build from GitHub Actions:
+Get Android, iOS, and Nintendo Switch packages from the [**latest release**](https://github.com/TomorrowX6/AliceHub/releases/latest):
 
 | Platform | Requirements | Package |
 | :--- | :--- | :--- |
 | **Android** | Android 8.0 (API 26) or later, `arm64-v8a`, OpenGL ES 3.0 | `AliceHub-<version>-arm64-v8a.apk`, ready to install |
 | **iOS / iPadOS** | 15.0 or later, arm64 | `AliceHub-<version>-ios-unsigned.ipa`, **unsigned**; sign and sideload it |
-| **Nintendo Switch** | Homebrew Menu with NRO support; application mode recommended | `AliceHub-switch` GitHub Actions artifact (launcher and three engines) |
+| **Nintendo Switch** | Homebrew Menu with NRO support; application mode recommended | `AliceHub-<version>-switch.zip`; extract all 4 NROs to `/switch/` on the SD card |
 
-You can also download `AliceHub-arm64-v8a` or `AliceHub-ios-unsigned` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run and unzip the artifact to get the APK or IPA. GitHub sign-in is required for artifacts.
+You can also download `AliceHub-arm64-v8a`, `AliceHub-ios-unsigned`, or `AliceHub-switch` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run for the latest commit builds. GitHub sign-in is required for artifacts.
 
 ### Android
 
 Install the APK and open **AliceHub**. Select a game entry, or choose **Import Other Game** from the top-right menu. Import a folder, a `.zip` / `.rar` / `.7z` archive, or an `.iso` / `.mdf` disc image containing the complete game files. Tap **Start Game** after import.
+
+After upgrading, you can keep using app-private storage during setup so existing games, saves, and backups stay where they are. If you choose shared storage and grant access, AliceHub migrates only eligible saves and backups into `saves` and `save_backups` under **Internal Storage → AliceHub**. Already-installed games stay in place and continue to launch normally, while newly downloaded or imported games are stored in `AliceHub/games`. Items that cannot be migrated remain in their original location. Switching back to app-private storage in Settings does not move migrated files back. Older builds do not read the shared directory automatically; if you need to downgrade, keep the original location before migrating or back up and re-import shared games and saves in the older build. Do not uninstall the app to downgrade, as uninstalling deletes app-private data.
 
 ### iOS / iPadOS
 
@@ -44,7 +46,7 @@ Install the APK and open **AliceHub**. Select a game entry, or choose **Import O
 
 ### Nintendo Switch (homebrew)
 
-1. Download and unzip `AliceHub-switch` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run (GitHub sign-in required). Copy `AliceHub.nro`, `system3.nro`, `xsystem35.nro`, and `xsystem4.nro` together to `/switch/` on the SD card.
+1. Download and extract `AliceHub-<version>-switch.zip` from the [**latest release**](https://github.com/TomorrowX6/AliceHub/releases/latest) (or `AliceHub-switch` from [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml)). Copy `AliceHub.nro`, `system3.nro`, `xsystem35.nro`, and `xsystem4.nro` together to `/switch/` on the SD card.
 2. Open **AliceHub** from the Homebrew Menu in application mode. In the library, press **X** to search, **Y** for settings, or **A** to open a game's details and select **Start game**. Use **Settings → Import local game** to import a folder, `.zip`, `.iso`, or `.mdf` from the SD card, or put extracted games in the following locations, one folder per game:
 
 | Engine | Example game folder |
@@ -57,8 +59,8 @@ Saves are stored separately under the corresponding engine's `saves/<game>/`. If
 
 #### Switch features
 
-- **Library and downloads:** Search, sort by name or engine, and copy or delete games in one library across all three engines. After reviewing and accepting the terms, enable **Online access** to install catalog games from **Online Download**. Downloads can be resumed.
-- **Patches and saves:** Install or remove mods, translations, and standalone uncensored patches for compatible games. The save manager can import, export, back up, restore, and sync saves between folders on the SD card. Rance 10 supports offline save editing.
+- **Library and downloads:** Search, sort by name or engine, copy or delete games, select a per-game System 4 **Launch entry**, and check for updates in one library across all three engines. After reviewing and accepting the terms, enable **Online access** to install catalog games from **Online Download**. Downloads can be resumed.
+- **Patches and saves:** Install or remove mods, translations, and standalone uncensored patches online or from `.zip` / `.rar` / `.7z` archives on the SD card. The save manager can import, export (including **PC-compatible saves** to `PC_SaveData`), back up, restore, and sync saves between folders on the SD card. Rance 10 supports offline save editing.
 - **Controls and in-game menu:** Configure global or per-game controller profiles and virtual touch buttons. Press **L + R** in-game (**SL + SR** on a sideways Joy-Con, or **F1** on a keyboard) to open the menu for screenshots and skip controls. Some games offer live modifiers, and System 4 PartsEngine screens support text and scrollbar scaling.
 
 ## System 1–4 compatibility and features
@@ -69,21 +71,14 @@ The Android and iOS launchers and the Switch local importer identify the engine 
 | :--- | :--- | :--- |
 | **Early System 1–3** | `system3-sdl2` | `ADISK.DAT`, `ACG.DAT`, etc. |
 | **System 3.5–3.9** | `xsystem35` | `System39.ini`, `System39.ain`, `*SA.ALD`, `ADISK.ALD` |
-| **System 4.x** | `xsystem4` | `AliceStart.ini`, `System40.ini`, `*.ain` (except `System39.ain`) |
+| **System 4.x** | `xsystem4` | `AliceStart.ini`, `AliceStart.CHS`, `System40.ini`, `*.ain` (except `System39.ain`) |
 
 ### Android and iOS features at a glance
 
-- **Library and imports:** Search, sort, and identify Chinese-translated and original-language entries. Import games outside the built-in catalog, including multi-disc sets and bundled patches. Manage mods for compatible games. Rance X can create and switch between game folders, keeping saves and mods separate for each version.
-- **Saves and tools:** Import, export, and back up saves. Supported titles offer save editing, in-game modifiers, streamer mode, or display scaling. On iOS, you can sync saves with a folder selected in Files, such as one in iCloud Drive.
+- **Library and imports:** Search, sort, and identify Chinese-translated and original-language entries. Import games outside the built-in catalog, including multi-disc sets and bundled patches. Select per-game System 4 **Launch entries**, check for app updates, and manage mods for compatible games. Rance X can create and switch between game folders, keeping saves and mods separate for each version.
+- **Saves and tools:** Import, export (including automatic conversion to Windows PC-compatible save formats), and back up or restore saves. Supported titles offer save editing, in-game modifiers, streamer mode, or display scaling. On iOS, you can sync saves with a folder selected in Files, such as one in iCloud Drive.
 - **Controls and audio:** System 3.5–3.9 and System 4.x support editable virtual controls and physical controller mappings. Early DAT-based games use native touch controls. Both platforms play `xsystem35` MIDI music.
 - **Background installs:** Android uses a foreground service. iOS 26 and later can continue via a system task; older iOS versions have limited background time and pause when it runs out. Return to the app to continue.
-
-### Recent game compatibility fixes
-
-- Rance VI loads original-engine dungeon walk data and also recovers walk data written incorrectly by older builds.
-- Fixed garbled chest skill notices, load confirmations, and bonus skill text in the Chinese translation of Evenicle Rance, and the skip button and startup credit in the Chinese translation of Sengoku Rance.
-- Fixed background voice volume in Tsumamigui 3 and Escalayer Reboot, and refreshed the affected HUD values after using built-in modifiers in Rance 02, Sengoku Rance, Rance 08, and Rance 09.
-- Fixed a scene selection crash in Heartful Maman, cyan text fragments in Heartful Maman and Beat Valkyrie Ixseal, and duplicated character sprites and displaced dialogue-box button labels in Okusama no Kaifuku Jutsu.
 
 ## Android features in detail
 
@@ -93,20 +88,22 @@ The Android and iOS launchers and the Switch local importer identify the engine 
   - Supports System 3.5 – 3.9 scenario bytecode and extension modules (`ShGraph`, `ShSound`, `ShString`, `SACT`, `eDemo`, etc.), `ALD` / `ALK` / `DRI` archives, `PMS` / `QNT` / `VSP` / `JPEG` / `WebP` graphics, and the `System 3.9` (`System39.ain`) save format.
   - Native **Shift-JIS / GBK / Unicode** text rendering, `SDL2_mixer` virtual CD audio playback (MP3 / Ogg tracks via `playlist.txt`), and an Android-native MIDI synthesizer, fully integrated with the in-game floating overlay, virtual/physical gamepad bridge, and live state modifiers.
 - **System 4.x Native Engine (`xsystem4`)**:
-  - Backward and forward compatibility across early System 4.0 (`AIN v0 – v11`, `SACT2`, `StoatSpriteEngine`, `DrawDungeon` / `ReignEngine` 3D dungeon & skinned rendering, `ALD` archives) and modern titles (`AIN v12 – v14.1` opcodes, `PartsEngine`, `SealEngine` 3D UBO bone transforms, `ELNA` / `FLAT v15` skeletal & particle animations, `APEG` / `PMPEG` video streaming, `SaveData v26/v27`, and multi-archive `.afa` / `.ex` priority resolution).
+  - Backward and forward compatibility across early System 4.0 (`AIN v0 – v11`, `SACT2`, `StoatSpriteEngine`, `DrawDungeon` / `ReignEngine` 3D dungeon & skinned rendering, `ALD` archives) and modern titles (`AIN v12 – v14.1` opcodes, `PartsEngine`, `SealEngine` 3D UBO bone transforms, `ELNA` / `FLAT v15` skeletal & particle animations, `APEG` / `PMPEG` video streaming, `Ogg Vorbis / Opus` voices, `SaveData v26/v27`, `<memory>` virtual save snapshots, and multi-archive `.afa` / `.ex` priority resolution).
+  - Full support for `GBK`, `Shift-JIS`, and custom remapped localization tables (`CHS.TBL` / `UIF` / `word.mai`), including mixed-CJK system dialog decoding.
 - **Graphics Resilience, Frame Pacing & Power Efficiency**:
   - Automatic reconstruction of textures, offscreen FBOs, filters, and 3D dungeon resources after background `EGLContext` loss, with immediate frame re-presentation on window restore.
   - High-priority display (`-8`) and audio (`-16`) thread scheduling, Android 12+ **ADPF (`APerformanceHintManager`)** dynamic CPU boost, 60fps VSync pacing, 16 KB page alignment (`max-page-size=16384`, Android 15+ ready), and automatic audio/MIDI suspension when backgrounded.
 
 ### 2. Unified Home, Dedicated Hubs & Global Settings
 - **Library & Custom Import**: Shows built-in and imported entries with installation status and extracts icons from PE executables.
-- **Dedicated Entry Hubs**: Each entry provides a tailored management view with base package installation, multi-instance directory switching, non-destructive MOD / localization patch management, isolated save management, modifier tools, and background asynchronous uninstallation.
+- **Dedicated Entry Hubs**: Each entry provides a tailored management view with base package installation, multi-instance directory switching, per-game System 4 **Launch entry** selection, non-destructive MOD / localization patch management, isolated save management, modifier tools, and background asynchronous uninstallation.
 - **Global Settings** (top-right gear icon):
+  - **Storage Location**: Switch between app-private storage and shared storage (`Internal Storage → AliceHub`) with guided save migration.
   - **Theme**: Instant switching across **Auto**, **Light**, and **Dark** modes.
   - **Language**: Instant localization across **System**, **简体中文**, **日本語**, and **English** (covering UI, notifications, gamepad editor, and in-game overlays).
   - **Online Install Toggle**: Disabled by default; enabling presents formal Terms & Disclaimer and displays package file sizes across online installation options.
   - **Gamepad**: Centralized configuration for global default and per-entry virtual gamepad layouts and physical controller mappings.
-  - **Clear Cache & About**: Distinguishes routine temporary cache from resumable download chunks for safe cleanup; includes **Open Source Licenses** and **GitHub** links.
+  - **Clear Cache & About**: Distinguishes routine temporary cache from resumable download chunks for safe cleanup; includes in-app **Update Check**, **Open Source Licenses**, and **GitHub** links.
 
 ### 3. Multi-Format Asset Import, Foreground Service & Non-Destructive MODs
 - **Archive & Disc Image Local Import**:
@@ -125,7 +122,7 @@ The Android and iOS launchers and the Switch local importer identify the engine 
 ### 5. Bidirectional Desktop Save Compatibility, Floating Tools & Diagnostics
 - **Scoped Save Manager & Desktop Format Conversion**:
   - Keeps saves separate for each game folder. Import or export archives, folders, or individual files; existing saves are backed up before overwrite and can be restored.
-  - Automatically converts mobile `X4SS` structured saves back into native Windows PC `GD\x01\x01` format upon export for seamless PC ↔ Android interoperability.
+  - Exporting **PC-compatible saves** automatically converts mobile `X4SS` structured saves and repairs `GD\x01\x01` / `.gsave` / `.rsm` files (using the game's `.ain` schema when available) for seamless PC ↔ mobile interoperability.
 - **Offline & In-Game Floating Tools**:
   - **Mobile Enhancements**: Draggable in-game floating button, latched **`⏩ Ctrl`** fast-forward pill, one-tap screenshot capture, live **Font Size (`75%–160%`)** scaling, and live **Scrollbar (`100%–300%`)** enlargement (PartsEngine).
   - **Save & Live Modifiers**: Supported games offer offline save editing, full-unlock save import and restore, and in-game value adjustments and locks.
