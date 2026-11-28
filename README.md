@@ -8,6 +8,10 @@
     <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
     <img src="https://img.shields.io/badge/QQ%20%E4%BA%A4%E6%B5%81%E7%BE%A4-383917628-12B7F5.svg" alt="QQ 交流群: 383917628" />
+    <br />
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Android%20%28arm64--v8a%29-3DDC84.svg" alt="Android arm64-v8a" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-iOS%2015%2B-007AFF.svg" alt="iOS 15+" /></a>
+    <a href="https://github.com/TomorrowX6/AliceHub/releases"><img src="https://img.shields.io/badge/Platform-Nintendo%20Switch-E60012.svg" alt="Nintendo Switch homebrew" /></a>
   </p>
   <p><strong>简体中文</strong> | <a href="README.en.md"><strong>English</strong></a> | <a href="README.ja.md"><strong>日本語</strong></a></p>
 </div>
