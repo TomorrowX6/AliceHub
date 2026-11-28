@@ -6,6 +6,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -258,5 +259,37 @@ public class FukeiPc98FloppyTest {
         assertTrue(new File(gameDir, "FONT.bmp").isFile());
         assertTrue(GameCatalog.hasLocalChineseMarkers(gameDir));
         assertEquals(GameCatalog.ID_FUKEI, GameCatalog.INSTANCE.classifyDirectory(gameDir, "FUKEI", null, "FUKEI"));
+    }
+
+    @Test
+    public void pc98FloppyExtractorRejectsTruncatedChainAndZeroStartClusterForNonEmptyFile() throws Exception {
+        byte[] adisk = make256BytesWithCrc32(0x026de326L);
+        byte[] acg = "GL3_STUB_DATA".getBytes(StandardCharsets.US_ASCII);
+
+        // Case 1: Declared size exceeds FAT cluster chain (2048 bytes declared, single 1024-byte cluster allocated)
+        byte[] shortChainFdi = buildSyntheticFukeiFdi(adisk, acg);
+        int fukeiDirOff = 4096 + (11 + (3 - 2)) * 1024;
+        // ACG.DAT is the 2nd directory entry (+32); size field is at +28
+        ByteBuffer.wrap(shortChainFdi).order(ByteOrder.LITTLE_ENDIAN).putInt(fukeiDirOff + 32 + 28, 2048);
+        File shortFile = tmp.newFile("short_chain.fdi");
+        Files.write(shortFile.toPath(), shortChainFdi);
+        try {
+            Pc98FloppyExtractor.INSTANCE.extractFileToDirectory(shortFile, tmp.newFolder("out_short"), rel -> false, false, null, null, null);
+            fail("Expected IOException for truncated FAT chain");
+        } catch (java.io.IOException expected) {
+            assertTrue(expected.getMessage().contains("Truncated FAT"));
+        }
+
+        // Case 2: Non-empty file with startCluster == 0
+        byte[] zeroClusterFdi = buildSyntheticFukeiFdi(adisk, acg);
+        ByteBuffer.wrap(zeroClusterFdi).order(ByteOrder.LITTLE_ENDIAN).putShort(fukeiDirOff + 32 + 26, (short) 0);
+        File zeroFile = tmp.newFile("zero_cluster.fdi");
+        Files.write(zeroFile.toPath(), zeroClusterFdi);
+        try {
+            Pc98FloppyExtractor.INSTANCE.extractFileToDirectory(zeroFile, tmp.newFolder("out_zero"), rel -> false, false, null, null, null);
+            fail("Expected IOException for invalid start cluster 0");
+        } catch (java.io.IOException expected) {
+            assertTrue(expected.getMessage().contains("Invalid starting cluster"));
+        }
     }
 }

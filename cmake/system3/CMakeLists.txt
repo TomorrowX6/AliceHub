@@ -1158,12 +1158,12 @@ alicehub_patch_replace(patched_nact_cpp
   [=[extern SDL_Window* g_window;]=]
   [=[extern SDL_Window* g_window;
 void system3_reset_input_state();
-bool ags_pc98_font_is_gb2312();]=]
+bool ags_pc98_font_is_gb2312_for_encoding(const char* encoding);]=]
   "NACT input state reset decl")
 alicehub_patch_replace(patched_nact_cpp
   [=[	ags = new AGS(config, game_id);]=]
   [=[	ags = new AGS(config, game_id);
-	if (ags_pc98_font_is_gb2312() && game_id.language != ENGLISH) {
+	if (ags_pc98_font_is_gb2312_for_encoding(game_id.encoding) && game_id.language != ENGLISH) {
 		if (strings.back == encoding->fromUtf8(u8"戻る"))
 			strings.back = "\x8c\x54\x8e\x77";
 		if (strings.next_page == encoding->fromUtf8(u8"次のページ"))
@@ -1509,6 +1509,7 @@ alicehub_patch_replace(patched_ags_text
 		const int half_size = std::max(1, size / 2);
 		const int base_y = ctx.pos.y;
 		while (!string.empty()) {
+			const char* ch_start = string.data();
 			uint8_t b1 = static_cast<uint8_t>(string[0]);
 			bool is_space = (b1 == ' ');
 			if (((b1 >= 0x81 && b1 <= 0x9f) || (b1 >= 0xe0 && b1 <= 0xfc)) && string.size() >= 2) {
@@ -1524,6 +1525,12 @@ alicehub_patch_replace(patched_ags_text
 					if (gaiji_idx >= 0 && gaiji_idx < 188 && gaiji_has_bitmap(gaiji[gaiji_idx])) {
 						draw_gaiji(screen, dest_x, base_y, gaiji[gaiji_idx], size, ctx.font_color);
 					} else {
+						if (!draw_menu) {
+							std::string_view ch_sv(ch_start, 2);
+							int code = g_nact->encoding->next_codepoint(ch_sv);
+							if (code > 0)
+								texthook_character(g_nact->get_scenario_page(), draw_hankaku ? convert_to_hankaku(code) : convert_to_zenkaku(code));
+						}
 						int j1 = (b1 - (b1 <= 0x9f ? 0x81 : 0xc1)) * 2 + 0x21;
 						int j2;
 						if (b2 >= 0x9f) {
@@ -1547,6 +1554,12 @@ alicehub_patch_replace(patched_ags_text
 				}
 			}
 			string.remove_prefix(1);
+			if (!draw_menu) {
+				std::string_view ch_sv(ch_start, 1);
+				int code = g_nact->encoding->next_codepoint(ch_sv);
+				if (code > 0)
+					texthook_character(g_nact->get_scenario_page(), draw_hankaku ? convert_to_hankaku(code) : convert_to_zenkaku(code));
+			}
 			int j1 = 0, j2 = 0;
 			if (!draw_hankaku && ank_to_zenkaku_jis(b1, g_pc98_font.is_gb2312, j1, j2)) {
 				draw_pc98_glyph(vram[screen], dest_x, base_y, (j1 - 0x20) * 16, j2 * 16, 16, 16, size, size, ctx.font_color);
@@ -1596,6 +1609,11 @@ void EMSCRIPTEN_KEEPALIVE ags_setAntialiasedStringMode(int on) {
 bool ags_pc98_font_is_gb2312()
 {
 	return g_pc98_font.loaded && g_pc98_font.is_gb2312;
+}
+
+bool ags_pc98_font_is_gb2312_for_encoding(const char* encoding)
+{
+	return g_pc98_font.loaded && g_pc98_font.is_gb2312 && !is_utf8_encoding_name(encoding);
 }
 
 void ags_pc98_font_load()

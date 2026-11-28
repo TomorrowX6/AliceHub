@@ -514,6 +514,8 @@ static bool compatible(const Markers *primary, Markers *other)
     if (primary->engine == HUB_XSYSTEM4)
         return !*other->scenario && !other->dat &&
                (!*other->code || !strcasecmp(primary->code, other->code));
+    if (primary->engine == HUB_SYSTEM3)
+        return other->engine == HUB_ENGINE_COUNT && !other->ini && !*other->code && !*other->scenario;
     if (other->ini || *other->code || other->dat) return false;
     if (!*other->scenario) return true;
     char wanted[HUB_NAME_SIZE];
@@ -529,6 +531,8 @@ static bool disc_asset(const Markers *primary, const char *name)
         const char *dot = strrchr(primary->code, '.');
         return dot && import_suffix(name, ".afa") && !strncasecmp(primary->code, name, dot - primary->code);
     }
+    if (primary->engine == HUB_SYSTEM3)
+        return import_suffix(name, ".dat") || import_suffix(name, ".bmp") || import_suffix(name, ".ini");
     static const char *const extensions[] = {".ald", ".bgi", ".wai", ".alk", ".s3l", ".ini", ".ain", ".gr", ".tbl"};
     for (size_t i = 0; i < sizeof(extensions) / sizeof(*extensions); ++i)
         if (import_suffix(name, extensions[i])) return true;
@@ -599,7 +603,6 @@ static bool merge_disc(const char *dir, const char *dest, const Markers *main, b
 static bool merge_discs(const char *parent, const char *member, const char *key, const GameRoot *main,
                         const char *dest, bool move, const ImportCallbacks *cb)
 {
-    if (main->markers.engine == HUB_SYSTEM3) return true;
     DIR *d = opendir(parent);
     if (!d) return false;
     bool ok = true;
@@ -625,10 +628,10 @@ static bool merge_discs(const char *parent, const char *member, const char *key,
     return ok;
 }
 
-static bool copy_companion_pc98_font(const char *dir, const char *dest, unsigned depth,
+static bool copy_companion_pc98_font(const char *dir, const char *dest, unsigned depth, unsigned max_depth,
                                      const ImportCallbacks *cb)
 {
-    if (depth > 4) return true;
+    if (depth > max_depth) return true;
     bool exists = false;
     if (!already_present(dest, "FONT.bmp", &exists) || exists)
         return true;
@@ -642,8 +645,8 @@ static bool copy_companion_pc98_font(const char *dir, const char *dest, unsigned
         struct stat st;
         if (!import_path(path, dir, name) || lstat(path, &st)) continue;
         if (S_ISDIR(st.st_mode)) {
-            if (strcmp(path, dest) != 0)
-                copy_companion_pc98_font(path, dest, depth + 1, cb);
+            if (depth < max_depth && strcmp(path, dest) != 0)
+                copy_companion_pc98_font(path, dest, depth + 1, max_depth, cb);
             if (already_present(dest, "FONT.bmp", &exists) && exists)
                 copied = true;
         } else if (S_ISREG(st.st_mode) && !strcasecmp(name, "FONT.bmp") && st.st_size >= 62 + 256 * 2048) {
@@ -694,7 +697,7 @@ bool hub_local_import(const char *root, const char *source, const ImportCallback
     char set[HUB_NAME_SIZE], image_parent[HUB_PATH_SIZE];
     unsigned number;
     bool direct_set = false;
-    if (!folder && (import_suffix(source, ".iso") || import_suffix(source, ".mdf")) &&
+    if (!folder && (import_suffix(source, ".iso") || import_suffix(source, ".mdf") || import_suffix(source, ".fdi")) &&
         import_leaf(leaf(source))) {
         const char *base = leaf(source);
         char stem[HUB_NAME_SIZE];
@@ -770,7 +773,15 @@ bool hub_local_import(const char *root, const char *source, const ImportCallback
     if (disc && !merge_discs(parent, member, key, &primary, payload, move, cb))
         goto done;
     if (primary.markers.engine == HUB_SYSTEM3) {
-        copy_companion_pc98_font(folder ? source : work, payload, 0, cb);
+        copy_companion_pc98_font(folder ? source : work, payload, 0, 4, cb);
+        if (!folder && import_suffix(source, ".fdi")) {
+            const char *base = leaf(source);
+            char source_parent[HUB_PATH_SIZE];
+            int n = base == source ? snprintf(source_parent, sizeof(source_parent), ".")
+                                   : snprintf(source_parent, sizeof(source_parent), "%.*s", (int)(base - source), source);
+            if (n > 0 && n < (int)sizeof(source_parent))
+                copy_companion_pc98_font(source_parent, payload, 0, 0, cb);
+        }
     }
     why = "Could not publish the game to the library.";
     if (!import_update(cb, "Adding game to the library", 1, 1) ||

@@ -435,10 +435,19 @@ object Pc98FloppyExtractor {
         for (task in tasks) {
             checkCancelled?.invoke()
             task.target.parentFile?.mkdirs()
-            val data = if (task.entry.size == 0L || task.entry.startCluster < 2) {
+            val data = if (task.entry.size == 0L) {
                 ByteArray(0)
             } else {
-                readClusterChain(ch, vol, task.entry.startCluster, task.entry.size, checkCancelled)
+                if (task.entry.startCluster < 2) {
+                    throw IOException("Invalid starting cluster for FDI file: ${task.relPath}")
+                }
+                val bytes = readClusterChain(ch, vol, task.entry.startCluster, task.entry.size, checkCancelled)
+                if (bytes.size.toLong() != task.entry.size) {
+                    throw IOException(
+                        "Truncated FAT cluster chain for FDI file: ${task.relPath} (${bytes.size}/${task.entry.size})"
+                    )
+                }
+                bytes
             }
             try {
                 task.target.writeBytes(data)

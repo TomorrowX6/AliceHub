@@ -1414,6 +1414,34 @@ class GameList(activity: Activity) {
     ): File? = findGameRootDirInternal(root, expectedAinName, targetGameId)
 
     /** Merges multi-disc System 3.x sibling directories (e.g. Disc1/GAMEDATA .. Disc3/GAMEDATA). */
+    private fun mergeSiblingFloppyAssets(
+        siblingExtractDir: File,
+        primaryGameDir: File,
+        checkCancelled: () -> Unit
+    ) {
+        val allowedExts = setOf("dat", "bmp", "ini")
+        val existingLower = primaryGameDir.listFiles()
+            ?.map { it.name.lowercase() }
+            ?.toMutableSet()
+            ?: mutableSetOf()
+        siblingExtractDir.walkTopDown()
+            .filter { it.isDirectory }
+            .forEach { dir ->
+                checkCancelled()
+                val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+                if (files.any { it.name.equals("ADISK.DAT", ignoreCase = true) }) return@forEach
+                for (f in files) {
+                    checkCancelled()
+                    val ext = f.extension.lowercase()
+                    if (ext !in allowedExts) continue
+                    val key = f.name.lowercase()
+                    if (key in existingLower) continue
+                    f.copyTo(File(primaryGameDir, f.name), overwrite = false)
+                    existingLower.add(key)
+                }
+            }
+    }
+
     private fun mergeSiblingMultiDiscDirs(
         searchRoot: File,
         primaryDir: File,
@@ -1514,6 +1542,7 @@ class GameList(activity: Activity) {
 
             var srcDir: File? = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName, targetGameId))
             var stage = 1
+            var sawWrongGameFdi = false
             while (srcDir == null && stage <= 3) {
                 checkCancelled()
                 val discs = currentStageDir.walkTopDown()
@@ -1589,7 +1618,7 @@ class GameList(activity: Activity) {
                     null
                 }
                 if (chosenFdi == null && fdis.any { Pc98FloppyExtractor.containsGameRoot(it, null, null, checkCancelled) }) {
-                    throw InstallFailureException(R.string.import_wrong_game)
+                    sawWrongGameFdi = true
                 }
                 if (chosenFdi != null) {
                     val nextDir = File(tempDir, "stage$stage")
@@ -1611,9 +1640,37 @@ class GameList(activity: Activity) {
                             )
                         }
                     )
+                    srcDir = preferCnRootOverInstallData(findGameRootDir(nextDir, expectedAinName, targetGameId))
+                    if (srcDir != null) {
+                        val siblingFdis = fdis.filter {
+                            it.parentFile?.canonicalPath == chosenFdi.parentFile?.canonicalPath &&
+                                it.canonicalPath != chosenFdi.canonicalPath &&
+                                !Pc98FloppyExtractor.containsGameRoot(it, null, null, checkCancelled)
+                        }
+                        for ((sibIdx, sib) in siblingFdis.withIndex()) {
+                            checkCancelled()
+                            val sibOut = File(tempDir, "stage${stage}_fdi_sib$sibIdx")
+                            try {
+                                ArchiveExtractor.extractFileToDirectory(
+                                    archiveFile = sib,
+                                    destDir = sibOut,
+                                    shouldSkip = { rel -> shouldSkipBaseInstallEntry(rel) },
+                                    throwInstallFailureOnNoSpace = true,
+                                    checkCancelled = checkCancelled
+                                )
+                                mergeSiblingFloppyAssets(sibOut, srcDir, checkCancelled)
+                            } catch (e: InstallFailureException) {
+                                throw e
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Throwable) {
+                            } finally {
+                                sibOut.deleteRecursively()
+                            }
+                        }
+                    }
                     for (f in fdis) f.delete()
                     currentStageDir = nextDir
-                    srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName, targetGameId))
                     stage++
                     continue
                 }
@@ -1623,6 +1680,7 @@ class GameList(activity: Activity) {
                         val rel = it.relativeTo(currentStageDir).path.replace('\\', '/')
                         it.isFile &&
                             ArchiveExtractor.isSupportedArchiveName(it.name) &&
+                            !Pc98FloppyExtractor.isFdiName(it.name) &&
                             !shouldSkipBaseInstallEntry(it.name) &&
                             (!isRance02Target || !isBaseInstallBloatRelPath(rel, skipPatchSubdir = true)) &&
                             (!isDaiakujiTarget || !isDaiakujiBloatRelPath(rel, skipDDemo0Backup = false)) &&
@@ -1674,6 +1732,9 @@ class GameList(activity: Activity) {
             }
 
             if (srcDir == null) {
+                if (sawWrongGameFdi) {
+                    throw InstallFailureException(R.string.import_wrong_game)
+                }
                 val hasIni = tempDir.walkTopDown().any {
                     it.isFile && (GameCatalog.isSystem4LaunchIni(it.name) ||
                         it.name.equals("System39.ini", true))

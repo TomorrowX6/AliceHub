@@ -282,7 +282,9 @@ static bool extract_dir(Floppy *f, const unsigned char *dir_bytes, size_t dir_le
                 return false;
             size_t data_len = 0;
             unsigned char *data = NULL;
-            if (size && start >= 2u) {
+            if (size) {
+                if (start < 2u)
+                    return false;
                 data = read_chain(f, start, size, &data_len);
                 if (!data || data_len < size) {
                     free(data);

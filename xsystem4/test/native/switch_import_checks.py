@@ -358,3 +358,47 @@ int main(int argc, char **argv)
         self.assertEqual((installed / "ACG.DAT").read_bytes(), acg)
         self.assertEqual((installed / "FONT.bmp").read_bytes(), bytes(font_bmp))
         self.assertFalse((installed / "IO.SYS").exists())
+
+        # Direct FDI import next to FONT.bmp copies immediate sibling font without recursing elsewhere
+        shutil.rmtree(installed)
+        direct_dir = self.sd / "direct_fukei"
+        direct_dir.mkdir()
+        (direct_dir / "FUKEI.fdi").write_bytes(bytes(fdi))
+        (direct_dir / "FONT.bmp").write_bytes(bytes(font_bmp))
+        self.assertEqual(self.run_import(direct_dir / "FUKEI.fdi"), "local:system3:FUKEI")
+        self.assertEqual((installed / "FONT.bmp").read_bytes(), bytes(font_bmp))
+
+        # Direct numbered multi-floppy FDI set merges companion BDISK.DAT from Disk 2
+        shutil.rmtree(installed)
+        multi_dir = self.sd / "multi_fdi"
+        multi_dir.mkdir()
+        raw2 = bytearray(fdd_size)
+        raw2[0:11] = b"\xeb\x3c\x90NEC  5.0"
+        struct.pack_into("<HBHBHHBH", raw2, 11, bps, 1, 1, 2, 192, tot_secs, 0xFE, 2)
+        off2 = fat_off + (2 * 3) // 2
+        raw2[off2] = 0xFF
+        raw2[off2 + 1] = 0x0F
+        bdisk = b"BDISK_COMPANION_PAYLOAD"
+        raw2[root_off:root_off + 8] = b"BDISK   "
+        raw2[root_off + 8:root_off + 11] = b"DAT"
+        raw2[root_off + 11] = 0x20
+        struct.pack_into("<HI", raw2, root_off + 26, 2, len(bdisk))
+        raw2[data_off:data_off + len(bdisk)] = bdisk
+        fdi2 = bytearray(hdr_size + fdd_size)
+        struct.pack_into("<8I", fdi2, 0, 0, 0x90, hdr_size, fdd_size, bps, 8, 2, 77)
+        fdi2[hdr_size:] = raw2
+        (multi_dir / "Fukei Disk 1.fdi").write_bytes(bytes(fdi))
+        (multi_dir / "Fukei Disk 2.fdi").write_bytes(bytes(fdi2))
+        (multi_dir / "FONT.bmp").write_bytes(bytes(font_bmp))
+        self.assertEqual(self.run_import(multi_dir / "Fukei Disk 1.fdi"), "local:system3:Fukei")
+        multi_installed = self.library / "system3/games/Fukei"
+        self.assertEqual((multi_installed / "ADISK.DAT").read_bytes(), adisk)
+        self.assertEqual((multi_installed / "BDISK.DAT").read_bytes(), bdisk)
+        self.assertEqual((multi_installed / "FONT.bmp").read_bytes(), bytes(font_bmp))
+
+        # Corrupt non-empty file with start_cluster == 0 must fail cleanly (no null fwrite)
+        corrupt = bytearray(fdi)
+        struct.pack_into("<H", corrupt, hdr_size + fukei_dir + 32 + 26, 0)
+        corrupt_path = self.sd / "corrupt_zero_cluster.fdi"
+        corrupt_path.write_bytes(bytes(corrupt))
+        self.run_import(corrupt_path, result=1)

@@ -312,6 +312,37 @@ enum Pc98FloppyExtractor {
         return openVolume(file) != nil
     }
 
+    static func containsGameRoot(_ source: URL) -> Bool {
+        guard let file = try? FileHandle(forReadingFrom: source) else { return false }
+        defer { try? file.close() }
+        guard let vol = openVolume(file),
+              let rootBytes = readExact(file, offset: vol.rootOffset, count: vol.rootBytes) else { return false }
+        var queue: [(Data, Int)] = [(rootBytes, 0)]
+        var visited = Set<Int>()
+        var idx = 0
+        while idx < queue.count {
+            let (dirBytes, depth) = queue[idx]
+            idx += 1
+            let entries = parseDirectory(dirBytes)
+            let names = entries.filter { !$0.isDir }.map { $0.name.lowercased() }
+            if names.contains("adisk.dat") && names.contains(where: { $0.hasPrefix("acg") && $0.hasSuffix(".dat") }) {
+                return true
+            }
+            if names.contains(where: GameLibrary.isSystem35Scenario) {
+                return true
+            }
+            if depth < maxDepth {
+                for e in entries where e.isDir && e.startCluster >= 2 {
+                    if visited.insert(e.startCluster).inserted,
+                       let sub = try? readChain(file, vol, start: e.startCluster, limit: nil, checkCancelled: {}) {
+                        queue.append((sub, depth + 1))
+                    }
+                }
+            }
+        }
+        return false
+    }
+
     static func isValidPc98FontBmp(_ url: URL) -> Bool {
         guard let file = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? file.close() }
@@ -500,10 +531,12 @@ enum Pc98FloppyExtractor {
         for (name, path, entry) in tasks {
             try checkCancelled()
             let payload: Data
-            if entry.size == 0 || entry.startCluster < 2 {
+            if entry.size == 0 {
                 payload = Data()
             } else {
+                guard entry.startCluster >= 2 else { throw ArchiveError.invalidImage }
                 payload = try readChain(file, vol, start: entry.startCluster, limit: entry.size, checkCancelled: checkCancelled)
+                guard Int64(payload.count) == entry.size else { throw ArchiveError.invalidImage }
             }
             try payload.write(to: path, options: .atomic)
             done += Int64(payload.count)
