@@ -117,9 +117,6 @@ const I18N = {
     'dl.ios': 'iOS 15+ · 自签侧载',
     'dl.switch': 'Homebrew · 解压至 /switch/',
     'dl.qq': 'QQ 交流群',
-    'dl.releases': '历史版本 ↗',
-    'dl.ci': '构建记录 ↗',
-    'dl.license': 'GNU GPL-2.0 · 纯开源启动器，不含游戏本体',
     'toast.qq': '已复制 QQ 群号：383917628',
   },
   en: {
@@ -134,9 +131,6 @@ const I18N = {
     'dl.ios': 'iOS 15+ · Sideload IPA',
     'dl.switch': 'Homebrew · Extract to /switch/',
     'dl.qq': 'QQ Group',
-    'dl.releases': 'All Releases ↗',
-    'dl.ci': 'CI Builds ↗',
-    'dl.license': 'GNU GPL-2.0 · Open-source launcher, no games included',
     'toast.qq': 'Copied QQ Group: 383917628',
   },
   ja: {
@@ -151,9 +145,6 @@ const I18N = {
     'dl.ios': 'iOS 15+ · 署名して導入',
     'dl.switch': 'Homebrew · /switch/ へ展開',
     'dl.qq': 'QQ グループ',
-    'dl.releases': 'リリース一覧 ↗',
-    'dl.ci': 'ビルド履歴 ↗',
-    'dl.license': 'GNU GPL-2.0 · オープンソース（ゲーム本体非同梱）',
     'toast.qq': 'QQ 番号をコピーしました：383917628',
   },
 };
