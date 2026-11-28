@@ -369,7 +369,7 @@ internal object ErrorReportKit {
                 }
             }
         }
-        val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(activity), R.style.Theme_Launcher)
+        val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(activity), AppSettings.resolveThemeRes(activity))
         val closeSpec = ErrorDialogButtonSpec(
             id = 0,
             label = uiCtx.getString(R.string.error_report_btn_close),
@@ -405,7 +405,7 @@ internal object ErrorReportKit {
             onDismissed()
             return null
         }
-        val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(activity), R.style.Theme_Launcher)
+        val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(activity), AppSettings.resolveThemeRes(activity))
         val specs = decisionSpecs.ifEmpty {
             listOf(
                 ErrorDialogButtonSpec(
@@ -592,7 +592,7 @@ internal object ErrorReportKit {
         val dangerColor = uiCtx.getColor(R.color.tone_danger_fg)
         val cardSurface = GradientDrawable().apply {
             cornerRadius = cardRadius
-            setColor(uiCtx.getColor(R.color.ui_surface_dialog))
+            setColor(UiKit.surfaceDialogColor(uiCtx))
             setStroke(dp(1), uiCtx.getColor(R.color.ui_outline))
         }
         val topWashAlpha = if (UiKit.isNight(uiCtx)) 0x26 else 0x16
@@ -742,7 +742,7 @@ internal object ErrorReportKit {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 cornerRadius = UiKit.dp(uiCtx, 14f)
-                setColor(uiCtx.getColor(R.color.ui_bg))
+                setColor(UiKit.bgColor(uiCtx))
                 setStroke(dp(1), uiCtx.getColor(R.color.ui_outline))
             }
             clipToOutline = true
@@ -871,15 +871,15 @@ internal object ErrorReportKit {
             iconRes = R.drawable.ic_export,
             labelRes = R.string.error_report_btn_export,
             fgColor = uiCtx.getColor(R.color.ui_text_primary),
-            bgColor = uiCtx.getColor(R.color.ui_surface_variant),
+            bgColor = UiKit.surfaceVariantColor(uiCtx),
             onClick = { startExport(activity, report) }
         )
 
         val shareBtn = buildUtilityButton(
             iconRes = R.drawable.ic_share,
             labelRes = R.string.error_report_btn_share,
-            fgColor = uiCtx.getColor(R.color.tone_primary_fg),
-            bgColor = uiCtx.getColor(R.color.tone_primary_bg),
+            fgColor = UiKit.primaryToneFgColor(uiCtx),
+            bgColor = UiKit.primaryToneBgColor(uiCtx),
             onClick = { shareReport(activity, report) }
         )
 
@@ -904,7 +904,7 @@ internal object ErrorReportKit {
                         setTextColor(uiCtx.getColor(R.color.tone_danger_fg))
                     } else {
                         background = uiCtx.getDrawable(R.drawable.bg_btn_filled)?.mutate()
-                        setTextColor(uiCtx.getColor(R.color.ui_on_primary))
+                        setTextColor(UiKit.onPrimaryColor(uiCtx))
                     }
                 } else {
                     background = uiCtx.getDrawable(R.drawable.bg_btn_tonal)?.mutate()

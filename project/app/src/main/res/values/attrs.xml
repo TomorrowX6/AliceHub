@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="uiBg" format="color" />
+    <attr name="uiSurface" format="color" />
+    <attr name="uiSurfaceVariant" format="color" />
+    <attr name="uiSurfaceDialog" format="color" />
+    <attr name="uiPrimary" format="color" />
+    <attr name="uiOnPrimary" format="color" />
+    <attr name="uiBtnTonal" format="color" />
+    <attr name="tonePrimaryBg" format="color" />
+    <attr name="tonePrimaryFg" format="color" />
+</resources>

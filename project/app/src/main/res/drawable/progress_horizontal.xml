@@ -6,7 +6,7 @@
         <shape android:shape="rectangle">
             <size android:height="6dp" />
             <corners android:radius="3dp" />
-            <solid android:color="@color/ui_surface_variant" />
+            <solid android:color="?attr/uiSurfaceVariant" />
         </shape>
     </item>
     <item
@@ -16,7 +16,7 @@
             <shape android:shape="rectangle">
                 <size android:height="6dp" />
                 <corners android:radius="3dp" />
-                <solid android:color="@color/ui_primary" />
+                <solid android:color="?attr/uiPrimary" />
             </shape>
         </scale>
     </item>

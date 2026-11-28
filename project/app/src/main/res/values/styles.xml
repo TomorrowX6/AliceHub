@@ -15,13 +15,22 @@
     <style name="Platform.Theme.Launcher.AlertDialog" parent="android:Theme.Material.Light.Dialog.Alert" />
 
     <style name="Base.Theme.Launcher" parent="Platform.Theme.Launcher">
-        <item name="android:colorPrimary">@color/ui_bg</item>
-        <item name="android:colorPrimaryDark">@color/ui_bg</item>
-        <item name="android:colorAccent">@color/ui_primary</item>
+        <item name="uiBg">@color/ui_bg</item>
+        <item name="uiSurface">@color/ui_surface</item>
+        <item name="uiSurfaceVariant">@color/ui_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/ui_surface_dialog</item>
+        <item name="uiPrimary">@color/ui_primary</item>
+        <item name="uiOnPrimary">@color/ui_on_primary</item>
+        <item name="uiBtnTonal">@color/ui_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/tone_primary_fg</item>
+        <item name="android:colorPrimary">?attr/uiBg</item>
+        <item name="android:colorPrimaryDark">?attr/uiBg</item>
+        <item name="android:colorAccent">?attr/uiPrimary</item>
         <item name="android:colorControlHighlight">@color/ui_ripple</item>
         <item name="android:colorEdgeEffect">@color/ui_text_tertiary</item>
-        <item name="android:windowBackground">@color/ui_bg</item>
-        <item name="android:statusBarColor">@color/ui_bg</item>
+        <item name="android:windowBackground">?attr/uiBg</item>
+        <item name="android:statusBarColor">?attr/uiBg</item>
         <item name="android:windowLightStatusBar">@bool/ui_light_system_bars</item>
         <item name="android:actionBarStyle">@style/Widget.Launcher.ActionBar</item>
         <item name="android:popupMenuStyle">@style/Widget.Launcher.PopupMenu</item>
@@ -35,7 +44,16 @@
     <style name="Theme.Launcher" parent="Base.Theme.Launcher" />
 
     <style name="Theme.Launcher.Dialog" parent="Platform.Theme.Launcher.Dialog">
-        <item name="android:colorAccent">@color/ui_primary</item>
+        <item name="uiBg">@color/ui_bg</item>
+        <item name="uiSurface">@color/ui_surface</item>
+        <item name="uiSurfaceVariant">@color/ui_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/ui_surface_dialog</item>
+        <item name="uiPrimary">@color/ui_primary</item>
+        <item name="uiOnPrimary">@color/ui_on_primary</item>
+        <item name="uiBtnTonal">@color/ui_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/tone_primary_fg</item>
+        <item name="android:colorAccent">?attr/uiPrimary</item>
         <item name="android:colorControlHighlight">@color/ui_ripple</item>
         <item name="android:windowBackground">@drawable/bg_dialog</item>
         <item name="android:windowClipToOutline">true</item>
@@ -45,7 +63,16 @@
     </style>
 
     <style name="Theme.Launcher.AlertDialog" parent="Platform.Theme.Launcher.AlertDialog">
-        <item name="android:colorAccent">@color/ui_primary</item>
+        <item name="uiBg">@color/ui_bg</item>
+        <item name="uiSurface">@color/ui_surface</item>
+        <item name="uiSurfaceVariant">@color/ui_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/ui_surface_dialog</item>
+        <item name="uiPrimary">@color/ui_primary</item>
+        <item name="uiOnPrimary">@color/ui_on_primary</item>
+        <item name="uiBtnTonal">@color/ui_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/tone_primary_fg</item>
+        <item name="android:colorAccent">?attr/uiPrimary</item>
         <item name="android:colorControlHighlight">@color/ui_ripple</item>
         <item name="android:windowBackground">@drawable/bg_dialog</item>
         <item name="android:windowClipToOutline">true</item>
@@ -56,7 +83,7 @@
 
     <!-- Action bar: flat, same color as the page, bold title. -->
     <style name="Widget.Launcher.ActionBar" parent="android:Widget.Material.ActionBar.Solid">
-        <item name="android:background">@color/ui_bg</item>
+        <item name="android:background">?attr/uiBg</item>
         <item name="android:elevation">0dp</item>
         <item name="android:titleTextStyle">@style/TextAppearance.Launcher.ActionBarTitle</item>
     </style>

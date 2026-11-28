@@ -31,7 +31,7 @@ import kotlinx.coroutines.withContext
 private const val HUB_INSTALL_ARCHIVE_REQ = 21
 private const val HUB_INSTALL_DIR_REQ = 22
 
-class GameHubActivity : ThemedActivity(), GameListObserver {
+class GameHubActivity : ThemedActivity(), GameListObserver, GameAccentHost {
     companion object {
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
@@ -82,7 +82,13 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         renderUncensoredInstallState(st)
     }
 
+    override fun activeGameAccentColor(): Int? =
+        if (::descriptor.isInitialized) descriptor.accentColor else null
+
     private fun <T : Dialog> trackDialog(dlg: T): T {
+        if (dlg is AlertDialog && ::descriptor.isInitialized) {
+            UiKit.tintAlertDialog(dlg, descriptor.accentColor)
+        }
         trackedDialogs.removeAll { !it.isShowing }
         trackedDialogs.add(dlg)
         return dlg
@@ -785,8 +791,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
                 }
             }
         }
-        trackDialog(dialog)
         dialog.show()
+        trackDialog(dialog)
     }
 
     private fun onPrimaryPlayClicked() {
@@ -1539,6 +1545,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
             .setView(row)
             .setCancelable(false)
             .show()
+            .also { dlg -> activeGameAccentColor()?.let { UiKit.tintAlertDialog(dlg, it) } }
     }
 
     private fun dismissUninstallDialog() {

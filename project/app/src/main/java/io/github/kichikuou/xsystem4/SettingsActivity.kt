@@ -4,16 +4,20 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.Gravity
@@ -86,12 +90,16 @@ class SettingsActivity : ThemedActivity() {
         setContentView(R.layout.activity_settings)
         actionBar?.setDisplayHomeAsUpEnabled(true)
 
-        findViewById<View>(R.id.settings_general_card).clipToOutline = true
+        findViewById<View>(R.id.settings_appearance_card).clipToOutline = true
+        findViewById<View>(R.id.settings_storage_card).clipToOutline = true
+        findViewById<View>(R.id.settings_controls_card).clipToOutline = true
         findViewById<View>(R.id.settings_about_card).clipToOutline = true
 
-        val accent = getColor(R.color.ui_primary)
+        val accent = UiKit.primaryColor(this)
         findViewById<ImageView>(R.id.icon_settings_theme)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_theme, accent))
+        findViewById<ImageView>(R.id.icon_settings_palette)
+            .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_palette, accent))
         findViewById<ImageView>(R.id.icon_settings_language)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_language, accent))
         findViewById<ImageView>(R.id.icon_settings_game_sort)
@@ -109,6 +117,9 @@ class SettingsActivity : ThemedActivity() {
         findViewById<ImageView>(R.id.icon_settings_storage)
             .setImageDrawable(UiKit.tonalIcon(this, R.drawable.ic_folder_open, accent))
 
+        UiKit.tintSwitch(findViewById(R.id.switch_online_install), accent)
+        UiKit.tintSwitch(findViewById(R.id.switch_updates), accent)
+
         val btnQqGroup = findViewById<Button>(R.id.btn_settings_qq_group)
         val btnLicenses = findViewById<Button>(R.id.btn_settings_licenses)
         val btnGithub = findViewById<Button>(R.id.btn_settings_github)
@@ -116,8 +127,14 @@ class SettingsActivity : ThemedActivity() {
         UiKit.styleActionRow(btnLicenses, R.drawable.ic_licenses, accent)
         UiKit.styleActionRow(btnGithub, R.drawable.ic_github, accent)
 
+        findViewById<TextView>(R.id.text_settings_version)?.text =
+            "AliceHub · ${BuildConfig.VERSION_NAME}"
+
         findViewById<View>(R.id.row_settings_theme).setOnClickListener {
             showThemeDialog()
+        }
+        findViewById<View>(R.id.row_settings_palette).setOnClickListener {
+            showColorPaletteDialog()
         }
         findViewById<View>(R.id.row_settings_language).setOnClickListener {
             showLanguageDialog()
@@ -239,6 +256,12 @@ class SettingsActivity : ThemedActivity() {
             AppSettings.THEME_DARK -> getString(R.string.theme_dark)
             else -> getString(R.string.theme_auto)
         }
+        val activePalette = AppSettings.getColorPalette(this)
+        findViewById<TextView>(R.id.value_settings_palette)?.let { badge ->
+            badge.text = colorPaletteLabel(activePalette)
+            UiKit.styleChip(badge, UiKit.Tone.PRIMARY)
+        }
+        rebuildPaletteStrip(activePalette)
         val sortLabel = gameSortSummaryLabel(AppSettings.getGameSortMode(this))
         findViewById<TextView>(R.id.value_settings_game_sort).text = sortLabel
         findViewById<View>(R.id.row_settings_game_sort).contentDescription =
@@ -592,7 +615,7 @@ class SettingsActivity : ThemedActivity() {
                     0f, 0f,
                     0f, 0f
                 )
-                setColor(getColor(R.color.ui_surface_dialog))
+                setColor(UiKit.surfaceDialogColor(this@SettingsActivity))
             }
             isClickable = true
 
@@ -714,7 +737,7 @@ class SettingsActivity : ThemedActivity() {
             setWindowAnimations(0)
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             setGravity(Gravity.BOTTOM)
-            navigationBarColor = getColor(R.color.ui_surface_dialog)
+            navigationBarColor = UiKit.surfaceDialogColor(this@SettingsActivity)
         }
 
         sheet.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
@@ -768,6 +791,190 @@ class SettingsActivity : ThemedActivity() {
         )
     }
 
+    private data class PalettePreview(
+        val primary: Int,
+        val onPrimary: Int,
+        val tonalBg: Int,
+        val canvasBg: Int
+    )
+
+    private fun colorPaletteLabel(palette: String): String = getString(when (palette) {
+        AppSettings.PALETTE_MONET -> R.string.palette_monet
+        AppSettings.PALETTE_SAKURA -> R.string.palette_sakura
+        AppSettings.PALETTE_OCEAN -> R.string.palette_ocean
+        AppSettings.PALETTE_FOREST -> R.string.palette_forest
+        AppSettings.PALETTE_AMBER -> R.string.palette_amber
+        AppSettings.PALETTE_VIOLET -> R.string.palette_violet
+        else -> R.string.palette_indigo
+    })
+
+    private fun colorPaletteShortLabel(palette: String): String = getString(when (palette) {
+        AppSettings.PALETTE_MONET -> R.string.palette_monet_short
+        AppSettings.PALETTE_SAKURA -> R.string.palette_sakura_short
+        AppSettings.PALETTE_OCEAN -> R.string.palette_ocean_short
+        AppSettings.PALETTE_FOREST -> R.string.palette_forest_short
+        AppSettings.PALETTE_AMBER -> R.string.palette_amber_short
+        AppSettings.PALETTE_VIOLET -> R.string.palette_violet_short
+        else -> R.string.palette_indigo_short
+    })
+
+    private fun palettePreviewColors(palette: String): PalettePreview = when (palette) {
+        AppSettings.PALETTE_MONET -> PalettePreview(
+            primary = getColor(R.color.monet_primary),
+            onPrimary = getColor(R.color.monet_on_primary),
+            tonalBg = getColor(R.color.monet_tone_primary_bg),
+            canvasBg = getColor(R.color.monet_bg)
+        )
+        AppSettings.PALETTE_SAKURA -> PalettePreview(
+            primary = getColor(R.color.sakura_primary),
+            onPrimary = getColor(R.color.sakura_on_primary),
+            tonalBg = getColor(R.color.sakura_tone_primary_bg),
+            canvasBg = getColor(R.color.sakura_bg)
+        )
+        AppSettings.PALETTE_OCEAN -> PalettePreview(
+            primary = getColor(R.color.ocean_primary),
+            onPrimary = getColor(R.color.ocean_on_primary),
+            tonalBg = getColor(R.color.ocean_tone_primary_bg),
+            canvasBg = getColor(R.color.ocean_bg)
+        )
+        AppSettings.PALETTE_FOREST -> PalettePreview(
+            primary = getColor(R.color.forest_primary),
+            onPrimary = getColor(R.color.forest_on_primary),
+            tonalBg = getColor(R.color.forest_tone_primary_bg),
+            canvasBg = getColor(R.color.forest_bg)
+        )
+        AppSettings.PALETTE_AMBER -> PalettePreview(
+            primary = getColor(R.color.amber_primary),
+            onPrimary = getColor(R.color.amber_on_primary),
+            tonalBg = getColor(R.color.amber_tone_primary_bg),
+            canvasBg = getColor(R.color.amber_bg)
+        )
+        AppSettings.PALETTE_VIOLET -> PalettePreview(
+            primary = getColor(R.color.violet_primary),
+            onPrimary = getColor(R.color.violet_on_primary),
+            tonalBg = getColor(R.color.violet_tone_primary_bg),
+            canvasBg = getColor(R.color.violet_bg)
+        )
+        else -> PalettePreview(
+            primary = getColor(R.color.ui_primary),
+            onPrimary = getColor(R.color.ui_on_primary),
+            tonalBg = getColor(R.color.tone_primary_bg),
+            canvasBg = getColor(R.color.ui_bg)
+        )
+    }
+
+    private fun rebuildPaletteStrip(activePalette: String) {
+        val strip = findViewById<LinearLayout>(R.id.settings_palette_strip) ?: return
+        strip.removeAllViews()
+        val swatchSize = UiKit.dpInt(this, 48)
+        val itemWidth = UiKit.dpInt(this, 62)
+        val itemGap = UiKit.dpInt(this, 4)
+        val rippleColor = ColorStateList.valueOf(getColor(R.color.ui_ripple))
+        val itemCorner = UiKit.dp(this, 14f)
+        val accent = UiKit.primaryColor(this)
+        val secondaryText = getColor(R.color.ui_text_secondary)
+
+        val palettes = AppSettings.availableColorPalettes()
+        palettes.forEachIndexed { idx, palette ->
+            val selected = palette == activePalette
+            val colors = palettePreviewColors(palette)
+            val fullName = colorPaletteLabel(palette)
+            val shortName = colorPaletteShortLabel(palette)
+
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                isClickable = true
+                isFocusable = true
+                isSelected = selected
+                tag = palette
+                contentDescription = fullName
+                setPadding(UiKit.dpInt(this@SettingsActivity, 4), UiKit.dpInt(this@SettingsActivity, 6), UiKit.dpInt(this@SettingsActivity, 4), UiKit.dpInt(this@SettingsActivity, 6))
+                val mask = GradientDrawable().apply {
+                    cornerRadius = itemCorner
+                    setColor(Color.WHITE)
+                }
+                background = RippleDrawable(rippleColor, null, mask)
+                setOnClickListener {
+                    if (palette != AppSettings.getColorPalette(this@SettingsActivity)) {
+                        AppSettings.setColorPalette(this@SettingsActivity, palette)
+                        recreateWithFade()
+                    }
+                }
+            }
+
+            val disc = ImageView(this).apply {
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                setImageDrawable(
+                    UiKit.paletteSwatchDrawable(
+                        context = this@SettingsActivity,
+                        primary = colors.primary,
+                        onPrimary = colors.onPrimary,
+                        tonalBg = colors.tonalBg,
+                        canvasBg = colors.canvasBg,
+                        selected = selected
+                    )
+                )
+            }
+            tile.addView(disc, LinearLayout.LayoutParams(swatchSize, swatchSize))
+
+            val label = TextView(this).apply {
+                text = shortName
+                textSize = 11.5f
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (selected) accent else secondaryText)
+            }
+            tile.addView(
+                label,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = UiKit.dpInt(this@SettingsActivity, 5) }
+            )
+
+            strip.addView(
+                tile,
+                LinearLayout.LayoutParams(itemWidth, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    if (idx < palettes.lastIndex) marginEnd = itemGap
+                }
+            )
+        }
+    }
+
+    private fun showColorPaletteDialog() {
+        val palettes = AppSettings.availableColorPalettes()
+        val labels = palettes.map { colorPaletteLabel(it) }.toTypedArray()
+        val currentPalette = AppSettings.getColorPalette(this)
+        val checkedIdx = palettes.indexOf(currentPalette).coerceAtLeast(0)
+
+        trackDialog(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.settings_color_palette)
+                .setSingleChoiceItems(labels, checkedIdx) { dlg, which ->
+                    val nextPalette = palettes.getOrElse(which) { currentPalette }
+                    dlg.dismiss()
+                    if (nextPalette != currentPalette) {
+                        AppSettings.setColorPalette(this, nextPalette)
+                        recreateWithFade()
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun recreateWithFade() {
+        recreate()
+        if (Build.VERSION.SDK_INT < 34) {
+            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        }
+    }
+
     private fun showThemeDialog() {
         val modes = intArrayOf(
             AppSettings.THEME_AUTO,
@@ -790,7 +997,7 @@ class SettingsActivity : ThemedActivity() {
                     dlg.dismiss()
                     if (nextMode != currentMode) {
                         AppSettings.setThemeMode(this, nextMode)
-                        recreate()
+                        recreateWithFade()
                     }
                 }
                 .setNegativeButton(R.string.cancel, null)
@@ -855,6 +1062,7 @@ class SettingsActivity : ThemedActivity() {
         val seekBar = SeekBar(this).apply {
             max = maxVal - minVal
             progress = selected - minVal
+            UiKit.tintSeekBar(this, UiKit.primaryColor(this@SettingsActivity))
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                     selected = AppSettings.normalizeDownloadConcurrency(minVal + progress)

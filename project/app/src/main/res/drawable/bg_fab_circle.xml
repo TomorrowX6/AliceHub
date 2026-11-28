@@ -3,7 +3,7 @@
     android:color="@color/ui_ripple_on_color">
     <item>
         <shape android:shape="oval">
-            <solid android:color="@color/ui_primary" />
+            <solid android:color="?attr/uiPrimary" />
         </shape>
     </item>
 </ripple>

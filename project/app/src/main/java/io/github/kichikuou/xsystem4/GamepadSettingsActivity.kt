@@ -18,7 +18,7 @@ import android.widget.Toast
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 
-class GamepadSettingsActivity : ThemedActivity() {
+class GamepadSettingsActivity : ThemedActivity(), GameAccentHost {
 
     companion object {
         const val EXTRA_PROFILE_KEY = "EXTRA_PROFILE_KEY"
@@ -31,12 +31,18 @@ class GamepadSettingsActivity : ThemedActivity() {
     private var profileKey: String? = null
     private var gameId: String? = null
     private var gameTitle: String? = null
+    private var activeGameAccent: Int? = null
     private var statusTv: TextView? = null
     private var saveBtn: Button? = null
     private var backInvokedCallback: Any? = null
     private val trackedDialogs = mutableListOf<android.app.Dialog>()
 
+    override fun activeGameAccentColor(): Int? = activeGameAccent
+
     private fun trackDialog(dlg: android.app.Dialog) {
+        if (dlg is AlertDialog) {
+            activeGameAccent?.let { UiKit.tintAlertDialog(dlg, it) }
+        }
         trackedDialogs.removeAll { !it.isShowing }
         trackedDialogs.add(dlg)
     }
@@ -73,7 +79,8 @@ class GamepadSettingsActivity : ThemedActivity() {
         title = if (!gameTitle.isNullOrBlank()) "$gameTitle · $pageLabel" else pageLabel
 
         val rawGameAccent = rawGameId?.let { GameCatalog.descriptorFor(this, it).accentColor }
-        val accentColor = rawGameAccent?.let { UiKit.accentOnSurface(this, it) } ?: getColor(R.color.ui_primary)
+        activeGameAccent = rawGameAccent
+        val accentColor = rawGameAccent?.let { UiKit.accentOnSurface(this, it) } ?: UiKit.primaryColor(this)
 
         controller = GamepadConfigController(
             context = this,
@@ -89,7 +96,7 @@ class GamepadSettingsActivity : ThemedActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(getColor(R.color.ui_bg))
+            setBackgroundColor(UiKit.bgColor(this@GamepadSettingsActivity))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -117,7 +124,7 @@ class GamepadSettingsActivity : ThemedActivity() {
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(getColor(R.color.ui_surface))
+            setBackgroundColor(UiKit.surfaceColor(this@GamepadSettingsActivity))
             setPadding(dp(16), dp(10), dp(16), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -145,7 +152,7 @@ class GamepadSettingsActivity : ThemedActivity() {
             } else {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
-                    setColor(getColor(R.color.ui_btn_tonal))
+                    setColor(UiKit.btnTonalColor(this@GamepadSettingsActivity))
                     setStroke(dp(1).coerceAtLeast(1), getColor(R.color.ui_outline))
                 }
             }
@@ -173,7 +180,7 @@ class GamepadSettingsActivity : ThemedActivity() {
         val onAccentColor = if (rawGameAccent != null) {
             UiKit.contrastOn(saveBgColor)
         } else {
-            getColor(R.color.ui_on_primary)
+            UiKit.onPrimaryColor(this)
         }
 
         val primarySaveBtn = Button(this).apply {

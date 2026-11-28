@@ -14,6 +14,7 @@ import java.util.Locale
 object AppSettings {
     private const val PREFS_NAME = "alicehub_settings"
     private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_COLOR_PALETTE = "color_palette"
     private const val KEY_LANGUAGE = "app_language"
     private const val KEY_GAME_SORT = "game_sort"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
@@ -23,10 +24,19 @@ object AppSettings {
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
     private const val LANG_FILE_NAME = ".app_lang"
     private const val THEME_FILE_NAME = ".app_theme"
+    private const val PALETTE_FILE_NAME = ".app_palette"
 
     const val THEME_AUTO = 0
     const val THEME_LIGHT = 1
     const val THEME_DARK = 2
+
+    const val PALETTE_MONET = "monet"
+    const val PALETTE_INDIGO = "indigo"
+    const val PALETTE_SAKURA = "sakura"
+    const val PALETTE_OCEAN = "ocean"
+    const val PALETTE_FOREST = "forest"
+    const val PALETTE_AMBER = "amber"
+    const val PALETTE_VIOLET = "violet"
 
     const val LANG_AUTO = ""
     const val LANG_ZH = "zh"
@@ -243,6 +253,62 @@ object AppSettings {
         }
         applyPlatformNightMode(context, valid)
     }
+
+    fun isMonetSupported(): Boolean = Build.VERSION.SDK_INT >= 31
+
+    fun defaultColorPalette(): String = if (isMonetSupported()) PALETTE_MONET else PALETTE_INDIGO
+
+    fun availableColorPalettes(): List<String> = buildList {
+        if (isMonetSupported()) add(PALETTE_MONET)
+        add(PALETTE_INDIGO)
+        add(PALETTE_SAKURA)
+        add(PALETTE_OCEAN)
+        add(PALETTE_FOREST)
+        add(PALETTE_AMBER)
+        add(PALETTE_VIOLET)
+    }
+
+    private fun normalizeColorPalette(raw: String?): String = when (raw?.trim()?.lowercase(Locale.ROOT)) {
+        PALETTE_MONET -> if (isMonetSupported()) PALETTE_MONET else PALETTE_INDIGO
+        PALETTE_INDIGO -> PALETTE_INDIGO
+        PALETTE_SAKURA -> PALETTE_SAKURA
+        PALETTE_OCEAN -> PALETTE_OCEAN
+        PALETTE_FOREST -> PALETTE_FOREST
+        PALETTE_AMBER -> PALETTE_AMBER
+        PALETTE_VIOLET -> PALETTE_VIOLET
+        else -> defaultColorPalette()
+    }
+
+    fun getColorPalette(context: Context): String {
+        try {
+            val f = File(context.filesDir, PALETTE_FILE_NAME)
+            if (f.isFile) {
+                return normalizeColorPalette(f.readText(Charsets.UTF_8))
+            }
+        } catch (_: Throwable) {
+        }
+        return normalizeColorPalette(prefs(context).getString(KEY_COLOR_PALETTE, null))
+    }
+
+    fun setColorPalette(context: Context, palette: String) {
+        val valid = normalizeColorPalette(palette)
+        prefs(context).edit().putString(KEY_COLOR_PALETTE, valid).apply()
+        try {
+            File(context.filesDir, PALETTE_FILE_NAME).writeText(valid, Charsets.UTF_8)
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun resolveThemeRes(context: Context, palette: String = getColorPalette(context)): Int =
+        when (normalizeColorPalette(palette)) {
+            PALETTE_MONET -> R.style.Theme_Launcher_Palette_Monet
+            PALETTE_SAKURA -> R.style.Theme_Launcher_Palette_Sakura
+            PALETTE_OCEAN -> R.style.Theme_Launcher_Palette_Ocean
+            PALETTE_FOREST -> R.style.Theme_Launcher_Palette_Forest
+            PALETTE_AMBER -> R.style.Theme_Launcher_Palette_Amber
+            PALETTE_VIOLET -> R.style.Theme_Launcher_Palette_Violet
+            else -> R.style.Theme_Launcher
+        }
 
     fun applyPlatformNightMode(context: Context, mode: Int = getThemeMode(context)) {
         if (Build.VERSION.SDK_INT >= 31) {
@@ -634,6 +700,7 @@ object AppSettings {
 open class ThemedActivity : Activity() {
     private var appliedThemeMode: Int = AppSettings.THEME_AUTO
     private var appliedNightBits: Int = Configuration.UI_MODE_NIGHT_UNDEFINED
+    private var appliedColorPalette: String = AppSettings.PALETTE_INDIGO
     private var appliedLanguageMode: String = AppSettings.LANG_AUTO
     private var appliedEffectiveLang: String = ""
 
@@ -645,8 +712,10 @@ open class ThemedActivity : Activity() {
         ErrorReportKit.installUncaughtExceptionHandler(this)
         appliedThemeMode = AppSettings.getThemeMode(this)
         appliedNightBits = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        appliedColorPalette = AppSettings.getColorPalette(this)
         appliedLanguageMode = AppSettings.getLanguageMode(this)
         appliedEffectiveLang = AppSettings.resolveLocale(this).toLanguageTag()
+        setTheme(AppSettings.resolveThemeRes(this, appliedColorPalette))
         super.onCreate(savedInstanceState)
         try {
             val info = packageManager.getActivityInfo(componentName, 0)
@@ -670,11 +739,13 @@ open class ThemedActivity : Activity() {
             AppSettings.THEME_DARK -> Configuration.UI_MODE_NIGHT_YES
             else -> AppSettings.systemNightBits()
         }
+        val currentPalette = AppSettings.getColorPalette(this)
         val currentLangMode = AppSettings.getLanguageMode(this)
         val currentEffectiveLang = AppSettings.resolveLocale(this).toLanguageTag()
 
         if (currentMode != appliedThemeMode ||
             (expectedBits != Configuration.UI_MODE_NIGHT_UNDEFINED && expectedBits != appliedNightBits) ||
+            currentPalette != appliedColorPalette ||
             currentLangMode != appliedLanguageMode ||
             currentEffectiveLang != appliedEffectiveLang
         ) {

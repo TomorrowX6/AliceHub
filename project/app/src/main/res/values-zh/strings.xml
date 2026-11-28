@@ -534,4 +534,23 @@
     <string name="storage_location_private">应用专属</string>
     <string name="storage_location_pending">待授权</string>
     <string name="onboarding_online_intro">直接在 AliceHub 中下载游戏与更新，之后可在设置中开启或关闭。</string>
+    <string name="settings_section_appearance">外观与显示</string>
+    <string name="settings_section_storage">下载与储存</string>
+    <string name="settings_section_controls">操控</string>
+    <string name="settings_section_about">关于</string>
+    <string name="settings_color_palette">主题配色</string>
+    <string name="palette_monet">莫奈取色</string>
+    <string name="palette_monet_short">莫奈</string>
+    <string name="palette_indigo">经典靛蓝</string>
+    <string name="palette_indigo_short">靛蓝</string>
+    <string name="palette_sakura">樱花粉</string>
+    <string name="palette_sakura_short">樱粉</string>
+    <string name="palette_ocean">晴海蓝</string>
+    <string name="palette_ocean_short">晴海</string>
+    <string name="palette_forest">森屿绿</string>
+    <string name="palette_forest_short">森绿</string>
+    <string name="palette_amber">琥珀金</string>
+    <string name="palette_amber_short">琥珀</string>
+    <string name="palette_violet">丁香紫</string>
+    <string name="palette_violet_short">丁香</string>
 </resources>
