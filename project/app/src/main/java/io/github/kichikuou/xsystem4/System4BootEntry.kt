@@ -18,7 +18,7 @@ object System4BootEntry {
         "system40.ini"
     )
 
-    private val CODE_NAME_REGEX = Regex("""(?m)^[\t ]*CodeName[\t ]*=[\t ]*"([^"\r\n]+)"""")
+    private val CODE_NAME_REGEX = Regex("""(?im)^[\t ]*CodeName[\t ]*=[\t ]*(?:"([^"\r\n]+)"|([^\s;#\r\n]+))""")
 
     data class BootConfiguration(val ini: File, val script: File)
 
@@ -111,7 +111,7 @@ object System4BootEntry {
         for (decoded in candidates) {
             val text = decoded.removePrefix("\uFEFF")
             val match = CODE_NAME_REGEX.find(text) ?: continue
-            val code = match.groupValues[1]
+            val code = match.groupValues[1].ifEmpty { match.groupValues[2] }
             if (code.isNotBlank()) {
                 result.add(code)
             }

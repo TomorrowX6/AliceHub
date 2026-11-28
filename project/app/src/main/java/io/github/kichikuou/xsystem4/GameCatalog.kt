@@ -255,7 +255,12 @@ object GameCatalog {
                 lower.endsWith("chs2.afa") ||
                 lower.endsWith("_cn.afa") ||
                 lower.endsWith("_cn.ain") ||
-                lower.endsWith("_cn.ald")
+                lower.endsWith("_cn.ald") ||
+                lower.endsWith("_cht.afa") ||
+                lower.endsWith("_cht.ain") ||
+                lower.endsWith("_cht.ald") ||
+                lower.endsWith("_tc.ain") ||
+                lower.endsWith("_tc.afa")
             ) {
                 return@any true
             }
@@ -265,16 +270,23 @@ object GameCatalog {
             }
             lower.startsWith("sourcehansanscn") ||
                 lower.contains("_cn_") ||
+                lower.contains("_cht_") ||
+                lower.contains("_tc_") ||
                 lower.contains("汉化") ||
-                lower.contains("中文")
+                lower.contains("漢化") ||
+                lower.contains("中文") ||
+                lower.contains("繁體") ||
+                lower.contains("繁体")
         }
     }
 
     @JvmStatic
     fun hasLocalChineseMarkers(dir: File?): Boolean {
         if (dir == null || !dir.isDirectory) return false
-        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
-        return hasLocalChineseMarkers(files.map { it.name }) || files.any(::isHarukaChineseScript)
+        val children = dir.listFiles().orEmpty()
+        val files = children.filter { it.isFile }
+        val hasCnAssetDir = children.any { it.isDirectory && it.name.equals("NSPic", ignoreCase = true) }
+        return hasCnAssetDir || hasLocalChineseMarkers(files.map { it.name }) || files.any(::isHarukaChineseScript)
     }
 
     private fun isHarukaChineseScript(file: File): Boolean {
@@ -287,14 +299,64 @@ object GameCatalog {
         }.getOrDefault(false)
     }
 
+    private val LEGACY_SYSTEM3_ENGLISH_ADISK_CRC32S = setOf(
+        0xc39ca9e6L, // Rance 4.1 (English)
+        0x07e46c85L, // Rance 4.2 (English)
+        0x61985a7fL, // Little Vampire (English)
+        0x6ba8c102L  // Gakuen Senki (English)
+    )
+
+    private val EXPLICIT_ENGLISH_SYS4_TITLES = listOf(
+        "the collapse of zeth",
+        "the quest for hikari",
+        "the rebellious maidens",
+        "helmanian revolution",
+        "sengoku rance",
+        "rance quest",
+        "beat blades haruka",
+        "beat angel escalayer",
+        "beat valkyrie ixseal",
+        "let's do bad things together",
+        "english edition",
+        "(en)",
+        "[en]"
+    )
+
     @JvmStatic
     fun hasExplicitNonChineseEdition(dir: File?): Boolean {
         if (dir == null || !dir.isDirectory) return false
-        val ini = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals("system3.ini", true) }
-            ?: return false
-        if (ini.length() > 256L * 1024L) return false
-        val legacyId = runCatching { legacySystem3GameId(ini.readBytes()) }.getOrNull() ?: return false
-        return legacyId.endsWith("_eng")
+        val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
+        val sys3Ini = files.firstOrNull { it.name.equals("system3.ini", true) }
+        if (sys3Ini != null && sys3Ini.length() <= 256L * 1024L) {
+            val rawId = runCatching { rawLegacySystem3GameId(sys3Ini.readBytes()) }.getOrNull()
+            if (rawId != null && rawId.endsWith("_eng")) return true
+        }
+        val adisk = files.firstOrNull { it.name.equals("ADISK.DAT", true) }
+        if (adisk != null && isLegacySystem3GameFiles(files.map { it.name })) {
+            val crc = legacyAdiskCrc32(readFilePrefix(adisk, 256))
+            if (crc != null && crc in LEGACY_SYSTEM3_ENGLISH_ADISK_CRC32S) return true
+        }
+        if (files.any {
+                val lower = it.name.lowercase()
+                lower.endsWith("_en.ain") || lower.endsWith("_eng.ain") || lower.endsWith("_en_us.ain")
+            }
+        ) {
+            return true
+        }
+        for (iniName in listOf("AliceStart.ini", "System40.ini")) {
+            val iniFile = files.firstOrNull { it.name.equals(iniName, true) } ?: continue
+            if (iniFile.length() > 256L * 1024L) continue
+            val title = runCatching { System40Ini.parse(iniFile).gameName }.getOrNull()?.trim().orEmpty()
+            if (title.isEmpty()) continue
+            val hasCjk = title.any { ch -> ch in '\u4E00'..'\u9FFF' || ch in '\u3040'..'\u30FF' }
+            if (!hasCjk) {
+                val lower = title.lowercase()
+                if (EXPLICIT_ENGLISH_SYS4_TITLES.any { lower.contains(it) }) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     @JvmStatic
@@ -394,8 +456,11 @@ object GameCatalog {
     }
 
     private fun hasLegacySystem3Data(fileNames: Collection<String>): Boolean =
-        fileNames.any { it.equals("ADISK.DAT", true) } &&
-            fileNames.any { it.equals("ACG.DAT", true) || it.equals("ACG0.DAT", true) || it.equals("ACG3.DAT", true) }
+        fileNames.any {
+            it.equals("ADISK.DAT", true) || it.equals("GDISK.DAT", true) || it.equals("AGAME.DAT", true)
+        } && fileNames.any {
+            it.equals("ACG.DAT", true) || it.equals("ACG0.DAT", true) || it.equals("ACG3.DAT", true)
+        }
 
     fun isLegacySystem3GameFiles(fileNames: Collection<String>): Boolean =
         hasLegacySystem3Data(fileNames) && !hasSystem4Markers(fileNames) && !hasSystem35Markers(fileNames)
@@ -406,17 +471,36 @@ object GameCatalog {
     fun isSystem3xGameFiles(fileNames: Collection<String>): Boolean =
         !hasSystem4Markers(fileNames) && (hasSystem35Markers(fileNames) || hasLegacySystem3Data(fileNames))
 
+    private fun decodeLegacySystem3Ini(ini: ByteArray?): String? =
+        ini?.let { ArchiveExtractor.decodeBestCjkText(it, preferGbkOnTie = false).removePrefix("\uFEFF") }
+
     internal fun legacySystem3Title(ini: ByteArray?): String? =
-        ini?.toString(Charsets.UTF_8)?.lineSequence()?.firstNotNullOfOrNull { line ->
+        decodeLegacySystem3Ini(ini)?.lineSequence()?.firstNotNullOfOrNull { rawLine ->
+            val line = rawLine.trim()
+            if (line.isEmpty() || line.startsWith(";") || line.startsWith("#")) return@firstNotNullOfOrNull null
             val key = line.substringBefore('=').trim()
             if (key.equals("title", true)) line.substringAfter('=', "").trim().ifEmpty { null } else null
         }
 
-    internal fun legacySystem3GameId(ini: ByteArray?): String? =
-        ini?.toString(Charsets.UTF_8)?.lineSequence()?.firstNotNullOfOrNull { line ->
+    internal fun rawLegacySystem3GameId(ini: ByteArray?): String? =
+        decodeLegacySystem3Ini(ini)?.lineSequence()?.firstNotNullOfOrNull { rawLine ->
+            val line = rawLine.trim()
+            if (line.isEmpty() || line.startsWith(";") || line.startsWith("#")) return@firstNotNullOfOrNull null
             val key = line.substringBefore('=').trim()
-            if (key.equals("game", true)) line.substringAfter('=', "").trim().lowercase().ifEmpty { null } else null
+            if (key.equals("game", true)) {
+                val value = line.substringAfter('=', "")
+                    .substringBefore(';')
+                    .substringBefore('#')
+                    .trim()
+                    .lowercase()
+                value.ifEmpty { null }
+            } else {
+                null
+            }
         }
+
+    internal fun legacySystem3GameId(ini: ByteArray?): String? =
+        rawLegacySystem3GameId(ini)?.removeSuffix("_eng")
 
     internal fun legacySystem3Title(dir: File): String? {
         val ini = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals("system3.ini", true) }
@@ -649,10 +733,42 @@ object GameCatalog {
         getFileSize: ((String) -> Long?)? = null
     ): String? {
         val ainNames = fileNames.filter { it.endsWith(".ain", ignoreCase = true) }
-        if (ainNames.any { it.equals("Rance10.ain", ignoreCase = true) }) {
+        val sys4IniTitleLower: String by lazy {
+            if (readSmallFile == null || isSystem3xGameFiles(fileNames)) {
+                ""
+            } else {
+                val iniName = fileNames.firstOrNull { isSystem4LaunchIni(it) }
+                val raw = iniName?.let { runCatching { readSmallFile(it) }.getOrNull() }
+                raw?.let { runCatching { System40Ini.parse(it).gameName }.getOrNull() }
+                    ?.trim()?.lowercase().orEmpty()
+            }
+        }
+        val hasNonSys39Code = ainNames.any { !it.equals("System39.ain", ignoreCase = true) } ||
+            fileNames.any { it.endsWith(".chs", ignoreCase = true) && !it.equals("AliceStart.CHS", ignoreCase = true) }
+        if (ainNames.any {
+                it.equals("Rance10.ain", ignoreCase = true) ||
+                    it.equals("Rance10_EN.ain", ignoreCase = true) ||
+                    it.equals("RanceX.ain", ignoreCase = true)
+            } || (hasNonSys39Code && (
+                sys4IniTitleLower.contains("rance 10") ||
+                    sys4IniTitleLower.contains("rance10") ||
+                    sys4IniTitleLower.contains("rance x") ||
+                    sys4IniTitleLower.contains("ランス10") ||
+                    sys4IniTitleLower.contains("兰斯10")
+                ))
+        ) {
             return ID_RANCE10
         }
-        if (ainNames.any { it.equals("dohnadohna.ain", ignoreCase = true) }) {
+        if (ainNames.any {
+                it.equals("dohnadohna.ain", ignoreCase = true) ||
+                    it.equals("dohnadohna_en.ain", ignoreCase = true)
+            } || (hasNonSys39Code && (
+                sys4IniTitleLower.contains("dohna dohna") ||
+                    sys4IniTitleLower.contains("dohnadohna") ||
+                    sys4IniTitleLower.contains("ドーナドーナ") ||
+                    sys4IniTitleLower.contains("多娜多娜")
+                ))
+        ) {
             return ID_DOHNA_DOHNA
         }
         if (isEvenicle2RanceGameFiles(fileNames, readSmallFile)) {
@@ -664,10 +780,18 @@ object GameCatalog {
         if (isEvenicleGaidenGameFiles(fileNames, readSmallFile)) {
             return ID_EVENICLEGAIDEN
         }
-        if (ainNames.any { it.equals("Evenicle2.ain", ignoreCase = true) }) {
+        if (ainNames.any {
+                it.equals("Evenicle2.ain", ignoreCase = true) ||
+                    it.equals("Evenicle2_EN.ain", ignoreCase = true)
+            }
+        ) {
             return ID_EVENICLE2
         }
-        if (ainNames.any { it.equals("Evenicle.ain", ignoreCase = true) }) {
+        if (ainNames.any {
+                it.equals("Evenicle.ain", ignoreCase = true) ||
+                    it.equals("Evenicle_EN.ain", ignoreCase = true)
+            }
+        ) {
             return ID_EVENICLE
         }
         if (ainNames.any {
@@ -678,21 +802,31 @@ object GameCatalog {
                     it.equals("エスカレイヤーリブート.ain", ignoreCase = true) ||
                     repaired.equals("エスカレイヤー・リブート.ain", ignoreCase = true) ||
                     repaired.equals("エスカレイヤーリブート.ain", ignoreCase = true)
-            }
+            } || (hasNonSys39Code && sys4IniTitleLower.isNotEmpty() && isEscalayerRebootAlias(sys4IniTitleLower))
         ) {
             return ID_ESCALAYER_REBOOT
         }
         if (isRance1DigestGameFiles(fileNames, readSmallFile)) {
             return ID_RANCE1DIGEST
         }
-        if (ainNames.any { it.equals("Rance01.ain", ignoreCase = true) } ||
-            fileNames.any { it.startsWith("Rance01", ignoreCase = true) && it.endsWith(".ald", ignoreCase = true) }
+        if (ainNames.any {
+                it.equals("Rance01.ain", ignoreCase = true) ||
+                    it.equals("Rance01_EN.ain", ignoreCase = true)
+            } || fileNames.any {
+                it.equals("Rance01.chs", ignoreCase = true) ||
+                    (it.startsWith("Rance01", ignoreCase = true) && it.endsWith(".ald", ignoreCase = true))
+            } || (hasNonSys39Code && (
+                sys4IniTitleLower.contains("rance 01") ||
+                    sys4IniTitleLower.contains("rance01") ||
+                    sys4IniTitleLower.contains("quest for hikari")
+                ))
         ) {
             return ID_RANCE01
         }
         if (ainNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("Rance02.ain", ignoreCase = true) ||
+                    it.equals("Rance02_EN.ain", ignoreCase = true) ||
                     it.equals("ランス０２.ain", ignoreCase = true) ||
                     it.equals("ランス02.ain", ignoreCase = true) ||
                     repaired.equals("ランス０２.ain", ignoreCase = true) ||
@@ -702,11 +836,22 @@ object GameCatalog {
                 it.endsWith(".ald", ignoreCase = true) &&
                     (it.startsWith("ランス０２") || it.startsWith("ランス02") ||
                         repaired.startsWith("ランス０２") || repaired.startsWith("ランス02"))
-            }
+            } || (hasNonSys39Code && (
+                sys4IniTitleLower.contains("rance 02") ||
+                    sys4IniTitleLower.contains("rance02") ||
+                    sys4IniTitleLower.contains("rebellious maidens")
+                ))
         ) {
             return ID_RANCE02
         }
-        if (ainNames.any { it.equals("Rance03.ain", ignoreCase = true) }) {
+        if (ainNames.any {
+                it.equals("Rance03.ain", ignoreCase = true) ||
+                    it.equals("Rance03_EN.ain", ignoreCase = true)
+            } || (hasNonSys39Code && (
+                sys4IniTitleLower.contains("rance 03") ||
+                    sys4IniTitleLower.contains("rance03")
+                ))
+        ) {
             return ID_RANCE03
         }
         if (isRance04GameFiles(fileNames)) {
@@ -752,8 +897,16 @@ object GameCatalog {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("Rance09.ain", ignoreCase = true) ||
                     it.equals("Rance9.ain", ignoreCase = true) ||
+                    it.equals("RanceIX.ain", ignoreCase = true) ||
+                    it.equals("Rance09_EN.ain", ignoreCase = true) ||
+                    it.equals("Rance9_EN.ain", ignoreCase = true) ||
                     repaired.equals("Rance9.ain", ignoreCase = true)
-            }
+            } || (hasNonSys39Code && (
+                sys4IniTitleLower.contains("rance 9") ||
+                    sys4IniTitleLower.contains("rance 09") ||
+                    sys4IniTitleLower.contains("rance ix") ||
+                    sys4IniTitleLower.contains("helmanian")
+                ))
         ) {
             return ID_RANCE09
         }
@@ -761,11 +914,20 @@ object GameCatalog {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("Rance08.ain", ignoreCase = true) ||
                     it.equals("Rance8.ain", ignoreCase = true) ||
+                    it.equals("RanceVIII.ain", ignoreCase = true) ||
+                    it.equals("Rance08_EN.ain", ignoreCase = true) ||
+                    it.equals("Rance8_EN.ain", ignoreCase = true) ||
                     it.equals("RanceQuest.ain", ignoreCase = true) ||
+                    it.equals("RanceQuestMagnum.ain", ignoreCase = true) ||
                     it.contains("ランス・クエスト") ||
                     it.contains("儔儞僗丒僋僄僗僩") ||
                     repaired.contains("ランス・クエスト")
-            }
+            } || (hasNonSys39Code && (
+                sys4IniTitleLower.contains("rance quest") ||
+                    sys4IniTitleLower.contains("rance 08") ||
+                    sys4IniTitleLower.contains("rance 8") ||
+                    sys4IniTitleLower.contains("rance viii")
+                ))
         ) {
             return ID_RANCE08
         }
@@ -775,7 +937,6 @@ object GameCatalog {
         if (ainNames.any {
                 val repaired = ArchiveExtractor.repairSjisAsGbkMojibake(it)
                 it.equals("SengokuRance.ain", ignoreCase = true) ||
-                    it.equals("AliceCN.ain", ignoreCase = true) ||
                     it.equals("DaiSengoku.ain", ignoreCase = true) ||
                     it.contains("愴崙儔儞僗") ||
                     it.contains("戦国ランス") ||
@@ -785,7 +946,7 @@ object GameCatalog {
                 it.endsWith("GA.ald", ignoreCase = true) &&
                     (it.equals("DaiSengokuGA.ald", ignoreCase = true) ||
                         it.contains("愴崙") || it.contains("戦国") || repaired.contains("戦国"))
-            }
+            } || (hasNonSys39Code && sys4IniTitleLower.contains("sengoku rance"))
         ) {
             return ID_SENGOKU_RANCE
         }
@@ -1212,6 +1373,9 @@ object GameCatalog {
         if (isDaiakujiGameFiles(fileNames, bgmFileNames, readSmallFile)) {
             return ID_DAIAKUJI
         }
+        if (ainNames.any { it.equals("AliceCN.ain", ignoreCase = true) }) {
+            return ID_SENGOKU_RANCE
+        }
         return null
     }
 
@@ -1236,7 +1400,8 @@ object GameCatalog {
                 val f = files.firstOrNull { it.name.equals(name, true) }
                 when {
                     f == null -> null
-                    name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) -> readFilePrefix(f, 256)
+                    name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) ||
+                        name.equals("GDISK.DAT", true) || name.equals("AGAME.DAT", true) -> readFilePrefix(f, 256)
                     f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
                     else -> null
                 }
@@ -1275,6 +1440,9 @@ object GameCatalog {
         targetGameId: String?
     ): Boolean {
         if (gameDir == null || !gameDir.isDirectory) return false
+        if (!targetGameId.isNullOrBlank() && !targetGameId.startsWith(PREFIX_CUSTOM)) {
+            return matchesTargetGame(targetGameId, gameDir)
+        }
         if (!expectedAinName.isNullOrBlank()) {
             val hasExpected = gameDir.listFiles()?.any {
                 it.isFile && (
@@ -1287,7 +1455,7 @@ object GameCatalog {
             }
             if (!hasExpected) return false
         }
-        return matchesTargetGame(targetGameId, gameDir)
+        return true
     }
 
     private const val RUNNING_GAME_FILE = ".running_game_root"
@@ -1558,7 +1726,11 @@ object GameCatalog {
     }
 
     fun isRance04GameFiles(fileNames: Collection<String>): Boolean =
-        isSystem3xGameFiles(fileNames) && fileNames.any { it.equals("RANCE4SA.ALD", true) }
+        isSystem3xGameFiles(fileNames) && fileNames.any {
+            it.equals("RANCE4SA.ALD", true) ||
+                it.equals("RANCE4SA_CHS.ALD", true) ||
+                it.equals("RANCE4_SA.ALD", true)
+        }
 
     fun isRance04GameDir(dir: File?): Boolean =
         dir?.isDirectory == true && isRance04GameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty())
@@ -2555,8 +2727,9 @@ object GameCatalog {
             dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
         ) { readSmallRootFile(dir, it) }
 
-    private val YAKATA2_ADISK_CRC32S = setOf(0x45951cabL)
+    private val YAKATA2_ADISK_CRC32S = setOf(0x45951cabL, 0x2df591ffL)
     private val SDPSMARIA_ADISK_CRC32S = setOf(0x9418eef5L)
+    private val SDPSMARIA_BDISK_CRC32S = setOf(0x80d4eacaL)
 
     fun isYakata2Alias(raw: String): Boolean {
         if (raw.isBlank()) return false
@@ -2648,8 +2821,13 @@ object GameCatalog {
         }
         val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
         if (adiskName != null && readSmallFile != null) {
-            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
-            if (crc != null && crc in SDPSMARIA_ADISK_CRC32S) return true
+            val acrc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (acrc != null && acrc in SDPSMARIA_ADISK_CRC32S) return true
+            val bdiskName = fileNames.firstOrNull { it.equals("BDISK.DAT", true) }
+            if (acrc != null && acrc in SDPS_BASE_ADISK_CRC32S && bdiskName != null) {
+                val bcrc = legacyAdiskCrc32(runCatching { readSmallFile(bdiskName) }.getOrNull())
+                if (bcrc != null && bcrc in SDPSMARIA_BDISK_CRC32S) return true
+            }
         }
         return false
     }
@@ -2661,7 +2839,8 @@ object GameCatalog {
             val f = files.firstOrNull { it.name.equals(name, true) }
             when {
                 f == null -> null
-                name.equals("ADISK.DAT", true) -> readFilePrefix(f, 256)
+                name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) ||
+                name.equals("GDISK.DAT", true) || name.equals("AGAME.DAT", true) -> readFilePrefix(f, 256)
                 f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
                 else -> null
             }
@@ -3161,7 +3340,8 @@ object GameCatalog {
     private val AYUMILIVE_ADISK_CRC32S = setOf(0x00d15a2bL, 0x5f66ff1dL)
     private val AYUMIHINT_ADISK_CRC32S = setOf(0xf6bd963aL)
     private val YAKATA1_ADISK_CRC32S = setOf(0x8cef6fa6L, 0xd8f84e34L)
-    private val LITTLEVAMPIRE_ADISK_CRC32S = setOf(0x957bcfbfL)
+    private val LITTLEVAMPIRE_ADISK_CRC32S = setOf(0x957bcfbfL, 0x61985a7fL)
+    private val DRSTOP_ADISK_CRC32S = setOf(0x73fa86c4L)
     private val INTRUDER_ADISK_CRC32S = setOf(0xa7520fb2L)
     private val CRESCENT_ADISK_CRC32S = setOf(0x42351f2cL)
     private val TENGU_ADISK_CRC32S = setOf(0xc942ff58L)
@@ -3898,6 +4078,22 @@ object GameCatalog {
         if (fileNames.any { it.equals("DS_SA.ALD", true) } &&
             fileNames.any { it.equals("DS_GA.ALD", true) || it.equals("DS_MA.ALD", true) }
         ) return true
+        if (isLegacySystem3GameFiles(fileNames) && readSmallFile != null) {
+            val sys3IniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+            if (sys3IniName != null) {
+                val raw = runCatching { readSmallFile(sys3IniName) }.getOrNull()
+                val game = legacySystem3GameId(raw)
+                if (game == "drstop" || game == "dr_stop") return true
+                if (game != null) return false
+                val title = legacySystem3Title(raw)
+                if (!title.isNullOrBlank() && isDrStopAlias(title)) return true
+            }
+            val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+            if (adiskName != null) {
+                val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+                if (crc != null && crc in DRSTOP_ADISK_CRC32S) return true
+            }
+        }
         val iniName = fileNames.firstOrNull { it.equals("System39.ini", true) }
         if (iniName != null && readSmallFile != null) {
             val title = runCatching { readSmallFile(iniName)?.let { System40Ini.parse(it).gameName } }.getOrNull().orEmpty()
@@ -3909,7 +4105,7 @@ object GameCatalog {
     fun isDrStopGameDir(dir: File?): Boolean =
         dir?.isDirectory == true && isDrStopGameFiles(
             dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
-        ) { readSmallRootFile(dir, it) }
+        ) { readLegacyDiskPrefix(dir, it) }
 
     fun isKoreDpsAlias(raw: String): Boolean {
         if (raw.isBlank()) return false
@@ -6226,7 +6422,8 @@ object GameCatalog {
     private fun readLegacyDiskPrefix(dir: File, name: String): ByteArray? {
         val f = dir.listFiles()?.firstOrNull { it.isFile && it.name.equals(name, true) } ?: return null
         return when {
-            name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) -> readFilePrefix(f, 256)
+            name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) ||
+                name.equals("GDISK.DAT", true) || name.equals("AGAME.DAT", true) -> readFilePrefix(f, 256)
             f.length() <= 256L * 1024L -> runCatching { f.readBytes() }.getOrNull()
             else -> null
         }

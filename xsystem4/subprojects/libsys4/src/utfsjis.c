@@ -1065,21 +1065,57 @@ bool sys4_bytes_look_utf8(const uint8_t *s, size_t len)
 {
 	if (len >= 3 && s[0] == 0xef && s[1] == 0xbb && s[2] == 0xbf)
 		return true;
-	bool multibyte = false;
+	bool has_3plus = false;
+	size_t two_byte_non_gb2312 = 0;
+	size_t two_byte_cyrillic_greek = 0;
+	size_t two_byte_latin_common = 0;
+	size_t ascii_alpha = 0;
 	for (size_t i = 0; i < len;) {
 		uint8_t b = s[i];
-		size_t n = b < 0x80 ? 1 : (b & 0xe0) == 0xc0 ? 2 : (b & 0xf0) == 0xe0 ? 3 : (b & 0xf8) == 0xf0 ? 4 : 0;
+		if (b < 0x80) {
+			if ((b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z'))
+				ascii_alpha++;
+			i++;
+			continue;
+		}
+		size_t n = (b >= 0xc2 && b <= 0xdf) ? 2 : (b >= 0xe0 && b <= 0xef) ? 3 : (b >= 0xf0 && b <= 0xf4) ? 4 : 0;
 		if (!n || i + n > len)
 			return false;
 		for (size_t j = 1; j < n; j++) {
 			if ((s[i + j] & 0xc0) != 0x80)
 				return false;
 		}
-		if (n >= 3)
-			multibyte = true;
+		if (n == 3) {
+			if ((b == 0xe0 && s[i + 1] < 0xa0) || (b == 0xed && s[i + 1] >= 0xa0))
+				return false;
+			has_3plus = true;
+		} else if (n == 4) {
+			if ((b == 0xf0 && s[i + 1] < 0x90) || (b == 0xf4 && s[i + 1] > 0x8f))
+				return false;
+			has_3plus = true;
+		} else {
+			uint32_t cp = ((uint32_t)(b & 0x1f) << 6) | (uint32_t)(s[i + 1] & 0x3f);
+			if (s[i + 1] <= 0xa0 && ((cp >= 0x00c0 && cp <= 0x024f) || (cp >= 0x0370 && cp <= 0x04ff)))
+				two_byte_non_gb2312++;
+			if (cp >= 0x0370 && cp <= 0x04ff)
+				two_byte_cyrillic_greek++;
+			else if ((cp >= 0x00c0 && cp <= 0x00ff && cp != 0x00d7 && cp != 0x00f7)
+					|| (cp >= 0x0100 && cp <= 0x017f))
+				two_byte_latin_common++;
+		}
 		i += n;
 	}
-	return multibyte;
+	if (has_3plus)
+		return true;
+	if (two_byte_non_gb2312 > 0)
+		return true;
+	if (two_byte_cyrillic_greek >= 2)
+		return true;
+	if (two_byte_latin_common >= 2 && ascii_alpha >= 2)
+		return true;
+	if (two_byte_latin_common == 1 && ascii_alpha >= 2)
+		return true;
+	return false;
 }
 
 // Convert a character-index to a byte-index for a given SJIS string.

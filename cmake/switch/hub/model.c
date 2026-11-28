@@ -244,7 +244,7 @@ bool hub_system4_configured_script(const char *dir, const char *ini, char script
     char path[HUB_PATH_SIZE];
     if (!boot_leaf(ini) || !config_name(ini) || !boot_path(path, dir, ini))
         return false;
-    char *code = ini_value(path, "CodeName", true);
+    char *code = ini_value(path, "CodeName", false);
     bool found = code && decoded_path(dir, code, script);
     free(code);
     return found;

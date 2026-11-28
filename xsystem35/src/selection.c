@@ -265,7 +265,7 @@ void sel_addRetValue(int val) {
 void sel_fixElement() {
 	if (regnum >= ELEMENT_MAX)
 		return;
-	maxElementLength = max(maxElementLength, cjk_display_width(elm[regnum], nact->encoding) / 2);
+	maxElementLength = max(maxElementLength, (cjk_display_width(elm[regnum], nact->encoding) + 1) / 2);
 	regnum++;
 }
 

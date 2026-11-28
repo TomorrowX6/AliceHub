@@ -22,9 +22,13 @@ object ArchiveExtractor {
     private const val TAG = "ArchiveExtractor"
     private const val MIN_FREE_HEADROOM_BYTES = 32L * 1024L * 1024L
     private val GBK_CHARSET: Charset by lazy { Charset.forName("GBK") }
+    private val BIG5_CHARSET: Charset by lazy { Charset.forName("Big5") }
     private val SJIS_CHARSET: Charset by lazy { Charset.forName("Shift_JIS") }
     private val CP932_CHARSET: Charset by lazy {
         runCatching { Charset.forName("windows-31j") }.getOrElse { SJIS_CHARSET }
+    }
+    private val CP1252_CHARSET: Charset by lazy {
+        runCatching { Charset.forName("windows-1252") }.getOrElse { Charsets.ISO_8859_1 }
     }
 
     @Volatile
@@ -69,8 +73,13 @@ object ArchiveExtractor {
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
             return decoder.decode(ByteBuffer.wrap(rawBytes)).toString()
         } catch (_: CharacterCodingException) {
-            val sjis = decodeStrict(rawBytes, SJIS_CHARSET) ?: String(rawBytes, SJIS_CHARSET)
-            val gbk = decodeStrict(rawBytes, GBK_CHARSET) ?: String(rawBytes, GBK_CHARSET)
+            val sjisStrict = decodeStrict(rawBytes, SJIS_CHARSET)
+            val gbkStrict = decodeStrict(rawBytes, GBK_CHARSET)
+            if (looksLikeCp1252(rawBytes, sjisStrict, gbkStrict)) {
+                return String(rawBytes, CP1252_CHARSET)
+            }
+            val sjis = sjisStrict ?: String(rawBytes, SJIS_CHARSET)
+            val gbk = gbkStrict ?: String(rawBytes, GBK_CHARSET)
             val sjisScore = scoreCjkString(sjis) + gb2312TrailPenaltyForSjis(rawBytes)
             val gbkScore = scoreCjkString(gbk) + gb2312Bonus(rawBytes)
             return when {
@@ -80,6 +89,60 @@ object ArchiveExtractor {
                 else -> sjis
             }
         }
+    }
+
+    private fun isAsciiLetter(b: Int): Boolean = b in 'A'.code..'Z'.code || b in 'a'.code..'z'.code
+
+    private fun isCp1252PunctOrAccented(b: Int): Boolean =
+        b == 0x85 || b in 0x91..0x94 || b == 0x96 || b == 0x97 || b == 0x99 ||
+            b == 0xA9 || b == 0xAE || b == 0xB0 ||
+            (b in 0xC0..0xFF && b != 0xD7 && b != 0xF7)
+
+    internal fun looksLikeCp1252(rawBytes: ByteArray, sjisStrict: String? = decodeStrict(rawBytes, SJIS_CHARSET), gbkStrict: String? = decodeStrict(rawBytes, GBK_CHARSET)): Boolean {
+        var highCount = 0
+        var hasAdjacentHigh = false
+        var asciiLetters = 0
+        var allCp1252Isolated = true
+        var flankedByLatinContext = false
+        for (i in rawBytes.indices) {
+            val b = rawBytes[i].toInt() and 0xFF
+            if (b < 0x80) {
+                if (isAsciiLetter(b)) asciiLetters++
+                continue
+            }
+            highCount++
+            val prev = if (i > 0) rawBytes[i - 1].toInt() and 0xFF else -1
+            val next = if (i + 1 < rawBytes.size) rawBytes[i + 1].toInt() and 0xFF else -1
+            if (prev >= 0x80 || next >= 0x80) {
+                hasAdjacentHigh = true
+                allCp1252Isolated = false
+            }
+            if (!isCp1252PunctOrAccented(b)) {
+                allCp1252Isolated = false
+            }
+            if (prev >= 0 && isAsciiLetter(prev) && (next < 0 || next < 0x80)) {
+                if (b in 0xC0..0xFF) {
+                    if (next < 0 || next in 'a'.code..'z'.code || next == ' '.code || next == '.'.code || next == '-'.code || next == '_'.code || next == '/'.code || next == '\\'.code) {
+                        flankedByLatinContext = true
+                    }
+                } else {
+                    flankedByLatinContext = true
+                }
+            } else if (next >= 0 && next in 'a'.code..'z'.code && (prev < 0 || prev == ' '.code || prev == '/'.code || prev == '\\'.code || prev == '-'.code || prev == '_'.code)) {
+                flankedByLatinContext = true
+            }
+        }
+        if (highCount == 0) return false
+        if (sjisStrict == null && gbkStrict == null) {
+            // Invalid in both Shift-JIS and GBK: CP1252 cleanly preserves European filenames/punctuation (Café, Rance IX – Patch, Rance™)
+            return allCp1252Isolated || (asciiLetters >= 2 && !hasAdjacentHigh)
+        }
+        if (!hasAdjacentHigh && allCp1252Isolated && flankedByLatinContext && asciiLetters >= 2) {
+            val sjisCandidate = sjisStrict ?: return true
+            val hasKana = sjisCandidate.any { it in '\u3041'..'\u309F' || it in '\u30A1'..'\u30FF' }
+            if (!hasKana) return true
+        }
+        return false
     }
 
     private fun decodeStrict(rawBytes: ByteArray, cs: Charset): String? {
@@ -190,11 +253,19 @@ object ArchiveExtractor {
         if (encoded.size != 2) return Cp932CharClass.EXT
         val sjis = ((encoded[0].toInt() and 0xFF) shl 8) or (encoded[1].toInt() and 0xFF)
         return when (sjis) {
-            in 0x8140..0x84BE -> Cp932CharClass.KANA_SYM
-            in 0x889F..0x9872 -> Cp932CharClass.JIS1
+            in 0x8140..0x81AC, in 0x824F..0x8258, in 0x829F..0x82F1, in 0x8340..0x8396 -> Cp932CharClass.KANA_SYM
+            in 0x8260..0x8279, in 0x889F..0x9872 -> Cp932CharClass.JIS1
             in 0x989F..0xEAA4 -> Cp932CharClass.JIS2
             else -> Cp932CharClass.EXT
         }
+    }
+
+    private fun isCommonBig5Char(ch: Char): Boolean {
+        val enc = encodeStrict(ch.toString(), BIG5_CHARSET) ?: return false
+        if (enc.size != 2) return false
+        val code = ((enc[0].toInt() and 0xFF) shl 8) or (enc[1].toInt() and 0xFF)
+        // Big5 punctuation (0xA140..0xA3BF) and Level-1 frequently-used Traditional Chinese (0xA440..0xC67E)
+        return code in 0xA140..0xA3BF || code in 0xA440..0xC67E
     }
 
     private fun scoreJapanesePlausibility(text: String): Int {
@@ -258,14 +329,32 @@ object ArchiveExtractor {
         if (origAllJis1OrKana) return seg
 
         // Reject repairs that introduce PUA, halfwidth katakana, or non-JIS X 0208 characters.
+        var decodedHasKana = false
         for (ch in decoded) {
             if (ch.code < 0x80) continue
+            if (ch in '\u3041'..'\u309F' || ch in '\u30A1'..'\u30FF') {
+                decodedHasKana = true
+            }
             val cls = classifyCp932Char(ch)
             if (cls == Cp932CharClass.PUA || cls == Cp932CharClass.NON_CP932 ||
                 cls == Cp932CharClass.EXT || cls == Cp932CharClass.HALFWIDTH
             ) {
                 return seg
             }
+        }
+
+        // Preserve valid Traditional Chinese (Big5 Level-1) filenames when reinterpretation
+        // produces zero hiragana/katakana (e.g. "媽媽.ain", "對戰.ini", "實戰.ini", "搖桿.txt").
+        if (!decodedHasKana) {
+            var allOrigCommonBig5 = true
+            for (ch in seg) {
+                if (ch.code < 0x80) continue
+                if (!isCommonBig5Char(ch)) {
+                    allOrigCommonBig5 = false
+                    break
+                }
+            }
+            if (allOrigCommonBig5) return seg
         }
 
         val origScore = scoreJapanesePlausibility(seg)

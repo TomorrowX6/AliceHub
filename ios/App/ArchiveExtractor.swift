@@ -20,10 +20,70 @@ enum ArchiveExtractor {
     static let sjis = String.Encoding.shiftJIS.rawValue
     private static let gb18030 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
     private static let cp932 = CFStringConvertEncodingToNSStringEncoding(CFStringConvertWindowsCodepageToEncoding(932))
+    private static let big5 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.big5.rawValue))
 
     static func isSupportedArchiveName(_ name: String) -> Bool {
         [".zip", ".rar", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".iso", ".mdf"]
             .contains { name.lowercased().hasSuffix($0) }
+    }
+
+    private static func isAsciiLetter(_ b: UInt8) -> Bool {
+        (0x41...0x5A).contains(b) || (0x61...0x7A).contains(b)
+    }
+
+    private static func isCp1252PunctOrAccented(_ b: UInt8) -> Bool {
+        b == 0x85 || (0x91...0x94).contains(b) || b == 0x96 || b == 0x97 || b == 0x99 ||
+            b == 0xA9 || b == 0xAE || b == 0xB0 ||
+            ((0xC0...0xFF).contains(b) && b != 0xD7 && b != 0xF7)
+    }
+
+    static func looksLikeCp1252(_ rawBytes: [UInt8], sjisStrict: String?, gbkStrict: String?) -> Bool {
+        var highCount = 0
+        var hasAdjacentHigh = false
+        var asciiLetters = 0
+        var allCp1252Isolated = true
+        var flankedByLatinContext = false
+        for i in rawBytes.indices {
+            let b = rawBytes[i]
+            if b < 0x80 {
+                if isAsciiLetter(b) { asciiLetters += 1 }
+                continue
+            }
+            highCount += 1
+            let prev: Int = i > 0 ? Int(rawBytes[i - 1]) : -1
+            let next: Int = i + 1 < rawBytes.count ? Int(rawBytes[i + 1]) : -1
+            if prev >= 0x80 || next >= 0x80 {
+                hasAdjacentHigh = true
+                allCp1252Isolated = false
+            }
+            if !isCp1252PunctOrAccented(b) {
+                allCp1252Isolated = false
+            }
+            if prev >= 0 && isAsciiLetter(UInt8(prev)) && (next < 0 || next < 0x80) {
+                if (0xC0...0xFF).contains(b) {
+                    if next < 0 || (0x61...0x7A).contains(next) || next == 0x20 || next == 0x2E || next == 0x2D || next == 0x5F || next == 0x2F || next == 0x5C {
+                        flankedByLatinContext = true
+                    }
+                } else {
+                    flankedByLatinContext = true
+                }
+            } else if next >= 0 && (0x61...0x7A).contains(next) &&
+                (prev < 0 || prev == 0x20 || prev == 0x2F || prev == 0x5C || prev == 0x2D || prev == 0x5F) {
+                flankedByLatinContext = true
+            }
+        }
+        if highCount == 0 { return false }
+        if sjisStrict == nil && gbkStrict == nil {
+            return allCp1252Isolated || (asciiLetters >= 2 && !hasAdjacentHigh)
+        }
+        if !hasAdjacentHigh && allCp1252Isolated && flankedByLatinContext && asciiLetters >= 2 {
+            guard let sjisCandidate = sjisStrict else { return true }
+            let hasKana = sjisCandidate.unicodeScalars.contains {
+                (0x3041...0x309F).contains($0.value) || (0x30A1...0x30FF).contains($0.value)
+            }
+            if !hasKana { return true }
+        }
+        return false
     }
 
     static func decodeBestCjkText(_ data: Data, preferGbkOnTie: Bool = true) -> String {
@@ -36,8 +96,15 @@ enum ArchiveExtractor {
                 return String(cString: decoded)
             }
         }
-        let japanese = String(data: data, encoding: String.Encoding(rawValue: sjis)) ?? legacy("SHIFT_JIS")
-        let chinese = String(data: data, encoding: String.Encoding(rawValue: gbk)) ?? legacy("GBK")
+        let bytes = Array(data)
+        let sjisStrict = String(data: data, encoding: String.Encoding(rawValue: sjis))
+        let gbkStrict = String(data: data, encoding: String.Encoding(rawValue: gbk))
+        if looksLikeCp1252(bytes, sjisStrict: sjisStrict, gbkStrict: gbkStrict),
+           let cp1252 = String(data: data, encoding: .windowsCP1252) {
+            return cp1252
+        }
+        let japanese = sjisStrict ?? legacy("SHIFT_JIS")
+        let chinese = gbkStrict ?? legacy("GBK")
         func score(_ text: String) -> Int {
             text.unicodeScalars.reduce(0) { value, scalar in
                 switch scalar.value {
@@ -50,7 +117,6 @@ enum ArchiveExtractor {
                 }
             }
         }
-        let bytes = Array(data)
         var bonus = 0, penalty = 0, i = 0
         while i < bytes.count {
             let a = bytes[i]
@@ -88,11 +154,18 @@ enum ArchiveExtractor {
         guard encoded.count == 2 else { return .ext }
         let code = (UInt16(encoded[0]) << 8) | UInt16(encoded[1])
         switch code {
-        case 0x8140...0x84BE: return .kanaSym
-        case 0x889F...0x9872: return .jis1
+        case 0x8140...0x81AC, 0x824F...0x8258, 0x829F...0x82F1, 0x8340...0x8396: return .kanaSym
+        case 0x8260...0x8279, 0x8281...0x829A, 0x889F...0x9872: return .jis1
         case 0x989F...0xEAA4: return .jis2
         default: return .ext
         }
+    }
+
+    private static func isCommonBig5Scalar(_ scalar: UnicodeScalar) -> Bool {
+        guard let encoded = String(scalar).data(using: String.Encoding(rawValue: big5), allowLossyConversion: false),
+              encoded.count == 2 else { return false }
+        let code = (UInt16(encoded[0]) << 8) | UInt16(encoded[1])
+        return (0xA140...0xA3BF).contains(code) || (0xA440...0xC67E).contains(code)
     }
 
     private static func scoreJapanesePlausibility(_ text: String) -> Int {
@@ -136,6 +209,13 @@ enum ArchiveExtractor {
             if origNonAscii.allSatisfy({ $0 == .kanaSym || $0 == .jis1 }) { return segment }
             let decNonAscii = repaired.unicodeScalars.filter { $0.value >= 0x80 }.map(classifyCp932Scalar)
             if decNonAscii.contains(where: { $0 == .pua || $0 == .nonCp932 || $0 == .ext || $0 == .halfwidth }) { return segment }
+            let decodedHasKana = repaired.unicodeScalars.contains {
+                (0x3041...0x309F).contains($0.value) || (0x30A1...0x30FF).contains($0.value)
+            }
+            if !decodedHasKana {
+                let origScalars = segment.unicodeScalars.filter { $0.value >= 0x80 }
+                if !origScalars.isEmpty && origScalars.allSatisfy(isCommonBig5Scalar) { return segment }
+            }
             let origScore = scoreJapanesePlausibility(segment)
             let decScore = scoreJapanesePlausibility(repaired)
             guard decScore > origScore && decScore > 0 else { return segment }

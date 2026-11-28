@@ -181,6 +181,47 @@ struct OnlineGameChecks {
         let cnRance41 = Game(url: cnRance41Dir)
         precondition(cnRance41.artworkKey == "rance41" && !cnRance41.hasExplicitNonChineseEdition)
         precondition(OnlineGame.hasChinese(for: cnRance41))
+
+        // Multilingual encoding, Traditional Chinese preservation, English catalog & badge checks
+        precondition(ArchiveExtractor.decodeBestCjkText(Data([0x52, 0x61, 0x6E, 0x63, 0x65, 0x92, 0x73, 0x20, 0x51, 0x75, 0x65, 0x73, 0x74, 0x2E, 0x74, 0x78, 0x74])) == "Rance\u{2019}s Quest.txt")
+        precondition(ArchiveExtractor.decodeBestCjkText(Data([0x43, 0x61, 0x66, 0xE9, 0x2E, 0x74, 0x78, 0x74])) == "Caf\u{00E9}.txt")
+        precondition(ArchiveExtractor.decodeBestCjkText(Data([0x47, 0x72, 0x6F, 0xDF, 0x65, 0x20, 0x53, 0x74, 0x72, 0x61, 0xDF, 0x65, 0x2E, 0x74, 0x78, 0x74])) == "Gro\u{00DF}e Stra\u{00DF}e.txt")
+        for tcName in ["媽媽.ain", "對戰.ini", "實戰.ini", "搖桿.txt", "寶劍.ain", "兩張.ain"] {
+            precondition(ArchiveExtractor.repairSjisAsGbkMojibake(tcName) == tcName, "Corrupted TC filename: \(tcName)")
+        }
+        precondition(ArchiveExtractor.repairSjisAsGbkMojibake("愴崙儔儞僗.ain") == "戦国ランス.ain")
+        precondition(!LocalGameImport.skip(".xsys4rc"))
+        precondition(GameLibrary.hasLocalChineseMarkers(fileNames: ["Game_cht.ain"]))
+
+        let mgRance6Dir = root.appendingPathComponent("RanceVI_EN")
+        try files.createDirectory(at: mgRance6Dir, withIntermediateDirectories: true)
+        try Data("codename = RanceVI.ain ; comment\nGameName = \"Rance VI - The Collapse of Zeth\"\n".utf8).write(to: mgRance6Dir.appendingPathComponent("System40.ini"))
+        try Data("stub".utf8).write(to: mgRance6Dir.appendingPathComponent("RanceVI.ain"))
+        let mgRance6 = Game(url: mgRance6Dir)
+        precondition(mgRance6.engine == .system4 && mgRance6.artworkKey == "rance06")
+        precondition(mgRance6.hasExplicitNonChineseEdition && !OnlineGame.hasChinese(for: mgRance6))
+
+        let unrelatedRebootDir = root.appendingPathComponent("MyGameReboot")
+        try files.createDirectory(at: unrelatedRebootDir, withIntermediateDirectories: true)
+        try Data("CodeName = \"MyGame.ain\"\n".utf8).write(to: unrelatedRebootDir.appendingPathComponent("System40.ini"))
+        try Data("stub".utf8).write(to: unrelatedRebootDir.appendingPathComponent("MyGame.ain"))
+        precondition(Game(url: unrelatedRebootDir).artworkKey == nil)
+
+        let vampEngDir = root.appendingPathComponent("LittleVampireEN")
+        try files.createDirectory(at: vampEngDir, withIntermediateDirectories: true)
+        try Data().write(to: vampEngDir.appendingPathComponent("ADISK.DAT"))
+        try Data().write(to: vampEngDir.appendingPathComponent("ACG.DAT"))
+        try Data("\u{FEFF}game = little_vampire_eng ; English patch\n".utf8).write(to: vampEngDir.appendingPathComponent("system3.ini"))
+        let vampEng = Game(url: vampEngDir)
+        precondition(vampEng.engine == .legacySystem3 && vampEng.artworkKey == "littlevampire")
+        precondition(vampEng.hasExplicitNonChineseEdition && !OnlineGame.hasChinese(for: vampEng))
+
+        let ixsealJpDir = root.appendingPathComponent("超昂神騎エクシール")
+        try files.createDirectory(at: ixsealJpDir, withIntermediateDirectories: true)
+        try Data("codename = 超昂神騎エクシール.ain\n".utf8).write(to: ixsealJpDir.appendingPathComponent("CustomLaunch.ini"))
+        try Data("stub".utf8).write(to: ixsealJpDir.appendingPathComponent("超昂神騎エクシール.ain"))
+        let ixsealJp = Game(url: ixsealJpDir)
+        precondition(ixsealJp.engine == .system4 && ixsealJp.artworkKey == "ixseal")
         let installed = [engRance41, cnRance41, Game(url: rawCustomDir)]
         let entries = LibraryEntry.build(games: installed, sort: .catalog, includeOnline: true)
         let localEntries = LibraryEntry.build(games: installed, sort: .catalog, includeOnline: false)

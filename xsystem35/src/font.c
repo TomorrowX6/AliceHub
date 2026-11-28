@@ -323,11 +323,8 @@ static FT_Face get_fallback_face(FontType type) {
 		if (face) {
 			if (env_fallback[0] == '/' && !has_gz_suffix(env_fallback))
 				select_sc_ttc_face(env_fallback, &face);
-			if (FT_Get_Char_Index(face, 0x8fd9) != 0) {
-				this.fallback_face[type][slot] = face;
-				return face;
-			}
-			FT_Done_Face(face);
+			this.fallback_face[type][slot] = face;
+			return face;
 		}
 	}
 
@@ -387,18 +384,29 @@ static FT_Face get_fallback_face(FontType type) {
 		NULL
 	};
 	const char *const *candidates = (type == FONT_MINCHO) ? mincho_candidates : gothic_candidates;
+	FT_Face non_sc_fallback = NULL;
 	for (int i = 0; candidates[i]; i++) {
 		FT_Face face = open_face(candidates[i], 0);
 		if (!face)
 			continue;
 		if (candidates[i][0] == '/')
 			select_sc_ttc_face(candidates[i], &face);
-		// Verify the candidate actually contains Simplified Chinese glyphs (e.g. U+8FD9 "这").
+		// Prefer a candidate containing Simplified Chinese glyphs (e.g. U+8FD9 "这"),
+		// while keeping the first valid face as a fallback for Latin/European/other scripts.
 		if (FT_Get_Char_Index(face, 0x8fd9) != 0) {
+			if (non_sc_fallback)
+				FT_Done_Face(non_sc_fallback);
 			this.fallback_face[type][slot] = face;
 			return face;
 		}
-		FT_Done_Face(face);
+		if (!non_sc_fallback)
+			non_sc_fallback = face;
+		else
+			FT_Done_Face(face);
+	}
+	if (non_sc_fallback) {
+		this.fallback_face[type][slot] = non_sc_fallback;
+		return non_sc_fallback;
 	}
 	return NULL;
 }

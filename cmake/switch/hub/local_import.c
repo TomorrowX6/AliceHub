@@ -11,9 +11,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#define IMPORT_MAX_CODES 8
+
 typedef struct {
     HubEngine engine;
     char code[HUB_NAME_SIZE];
+    char codes[IMPORT_MAX_CODES][HUB_NAME_SIZE];
+    size_t code_count;
     char scenario[HUB_NAME_SIZE];
     bool ini, chs_config, dat, graphics;
 } Markers;
@@ -50,7 +54,8 @@ bool import_suffix(const char *name, const char *suffix)
 
 bool import_skip(const char *name, bool directory)
 {
-    if ((*name == '.' && (directory || strcasecmp(name, ".xsys35rc"))) ||
+    if ((*name == '.' && (directory || (strcasecmp(name, ".xsys35rc") && strcasecmp(name, ".xsys4rc")))) ||
+        !strcasecmp(name, "__MACOSX") ||
         !strcasecmp(name, "android-port") || !strcasecmp(name, "savedata") || !strcasecmp(name, "directx"))
         return true;
     static const char *const files[] = {"opensavefolder.exe", "resetconfig.exe", "uninstaller.exe"};
@@ -148,12 +153,18 @@ static void configured_code(const char *path, char code[HUB_NAME_SIZE])
             end = strchr(key, '"');
             if (!end) break;
         } else {
+            for (char *c = key; c < end; ++c) {
+                if (*c == ';' || *c == '#' || (*c == '/' && c + 1 < end && c[1] == '/')) {
+                    end = c;
+                    break;
+                }
+            }
             while (end > key && isspace((unsigned char)end[-1])) --end;
         }
         *end = 0;
         char *base = strrchr(key, '\\');
         key = (char *)leaf(base ? base + 1 : key);
-        if (chs(key) && strlen(key) < HUB_NAME_SIZE)
+        if ((ain(key) || chs(key)) && strlen(key) < HUB_NAME_SIZE)
             strcpy(code, key);
         break;
     }
@@ -164,6 +175,18 @@ static void pick_name(char to[HUB_NAME_SIZE], const char *from)
 {
     if ((!*to || strcasecmp(from, to) < 0) && strlen(from) < HUB_NAME_SIZE)
         strcpy(to, from);
+}
+
+static void add_code(Markers *m, const char *from)
+{
+    if (!from || !*from || strlen(from) >= HUB_NAME_SIZE)
+        return;
+    pick_name(m->code, from);
+    for (size_t i = 0; i < m->code_count; ++i)
+        if (!strcasecmp(m->codes[i], from))
+            return;
+    if (m->code_count < IMPORT_MAX_CODES)
+        strcpy(m->codes[m->code_count++], from);
 }
 
 static bool markers(const char *dir, Markers *m)
@@ -191,7 +214,7 @@ static bool markers(const char *dir, Markers *m)
             m->chs_config |= !strcasecmp(name, "alicestart.chs");
             if (!*configured) configured_code(path, configured);
         } else if (ain(name)) {
-            pick_name(m->code, name);
+            add_code(m, name);
         } else if (chs(name)) {
             pick_name(chs_file, name);
         } else if (!strcasecmp(name, "chs.tbl")) {
@@ -211,11 +234,12 @@ static bool markers(const char *dir, Markers *m)
         if (hub_system4_configured_script(dir, name, script) && !lstat(script, &st) && st.st_size) {
             m->ini = true;
             pick_name(configured_script, leaf(script));
+            add_code(m, leaf(script));
         }
     }
     closedir(d);
     if (!*m->code && *configured_script)
-        strcpy(m->code, configured_script);
+        add_code(m, configured_script);
     if (!*m->code && *chs_file) {
         if (*configured) {
             d = opendir(dir);
@@ -225,14 +249,14 @@ static bool markers(const char *dir, Markers *m)
                 struct stat st;
                 if (!strcasecmp(e->d_name, configured) && import_path(path, dir, e->d_name) &&
                     !lstat(path, &st) && S_ISREG(st.st_mode) && st.st_size) {
-                    strcpy(m->code, e->d_name);
+                    add_code(m, e->d_name);
                     break;
                 }
             }
             closedir(d);
         }
         if (!*m->code && m->chs_config)
-            strcpy(m->code, chs_file);
+            add_code(m, chs_file);
     }
     if (m->ini && *m->code)
         m->engine = HUB_XSYSTEM4;
@@ -507,9 +531,15 @@ static bool compatible(const Markers *primary, Markers *other)
 {
     if (other->engine != HUB_ENGINE_COUNT && other->engine != primary->engine)
         return false;
-    if (primary->engine == HUB_XSYSTEM4)
-        return !*other->scenario && !other->dat &&
-               (!*other->code || !strcasecmp(primary->code, other->code));
+    if (primary->engine == HUB_XSYSTEM4) {
+        if (*other->scenario || other->dat) return false;
+        if (!other->code_count || !primary->code_count) return true;
+        for (size_t i = 0; i < primary->code_count; ++i)
+            for (size_t j = 0; j < other->code_count; ++j)
+                if (!strcasecmp(primary->codes[i], other->codes[j]))
+                    return true;
+        return false;
+    }
     if (other->ini || *other->code || other->dat) return false;
     if (!*other->scenario) return true;
     char wanted[HUB_NAME_SIZE];
@@ -522,8 +552,13 @@ static bool compatible(const Markers *primary, Markers *other)
 static bool disc_asset(const Markers *primary, const char *name)
 {
     if (primary->engine == HUB_XSYSTEM4) {
-        const char *dot = strrchr(primary->code, '.');
-        return dot && import_suffix(name, ".afa") && !strncasecmp(primary->code, name, dot - primary->code);
+        if (!import_suffix(name, ".afa")) return false;
+        for (size_t i = 0; i < primary->code_count; ++i) {
+            const char *dot = strrchr(primary->codes[i], '.');
+            if (dot && !strncasecmp(primary->codes[i], name, (size_t)(dot - primary->codes[i])))
+                return true;
+        }
+        return false;
     }
     static const char *const extensions[] = {".ald", ".bgi", ".wai", ".alk", ".s3l", ".ini", ".ain", ".gr", ".tbl"};
     for (size_t i = 0; i < sizeof(extensions) / sizeof(*extensions); ++i)

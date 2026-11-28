@@ -539,6 +539,17 @@ static char *get_save_path(const char *dir_name, const char *utf8_game_name_over
 	return save_dir;
 }
 
+static bool cstr_has_non_ascii(const char *s)
+{
+	if (!s)
+		return false;
+	for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+		if (*p >= 0x80)
+			return true;
+	}
+	return false;
+}
+
 static void config_init_with_utf8_codename(const char *utf8_code_name)
 {
 	bool omitted_game_name = !config.game_name;
@@ -566,11 +577,14 @@ static void config_init_with_utf8_codename(const char *utf8_code_name)
 				|| strstr(config.game_name, "\xbf\xa8\xc0\xad\xb1\xa3\xbb\xa4\xd0\xad\xbb\xe1")))
 			|| (config.ain_filename && strstr(config.ain_filename, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea"))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Rance10.ain")
-				&& (!config.game_name || !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58")))
+				&& cstr_has_non_ascii(config.game_name)
+				&& !strstr(config.game_name, "\x83\x89\x83\x93\x83\x58"))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "dohnadohna.ain")
-				&& (!config.game_name || !strstr(config.game_name, "\x83\x68\x81\x5b\x83\x69")))
+				&& cstr_has_non_ascii(config.game_name)
+				&& !strstr(config.game_name, "\x83\x68\x81\x5b\x83\x69"))
 			|| (config.ain_filename && !strcasecmp(config.ain_filename, "Evenicle.ain")
-				&& (!config.game_name || !strstr(config.game_name, "\x83\x43\x83\x75\x83\x6a\x83\x4e\x83\x8b")))) {
+				&& cstr_has_non_ascii(config.game_name)
+				&& !strstr(config.game_name, "\x83\x43\x83\x75\x83\x6a\x83\x4e\x83\x8b"))) {
 		sys4_set_text_gbk(true);
 	}
 
@@ -1694,7 +1708,8 @@ int main(int argc, char *argv[])
 #endif
 	apply_game_specific_hacks(ain);
 	parts_set_mixed_display_text(
-		game_maman
+		game_has_mixed_gbk_sjis_text
+		|| game_maman
 		|| game_haharanman
 		|| game_escalayer_reboot
 		|| game_pascha3

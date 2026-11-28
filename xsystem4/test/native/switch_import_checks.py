@@ -299,3 +299,67 @@ int main(int argc, char **argv)
         self.assertFalse(work.exists())
         self.assertTrue((games / "Existing").is_dir())
         self.assertTrue((sav / "save.dat").is_file())
+
+    def test_multilang_non_utf8_zip_macosx_xsys4rc_and_multidisc_ains(self):
+        # 1. Non-UTF-8 Shift-JIS ZIP with 0x5C trail bytes ('ソ' = 83 5C, '表' = 95 5C),
+        #    __MACOSX AppleDouble entries, and .xsys4rc preserved.
+        import struct, zlib
+        def make_raw_zip(entries):
+            local_parts = []
+            cd_parts = []
+            offset = 0
+            for raw_name, data, flags in entries:
+                crc = zlib.crc32(data) & 0xffffffff
+                lh = struct.pack("<IHHHHHIIIHH", 0x04034b50, 20, flags, 0, 0, 0, crc, len(data), len(data), len(raw_name), 0)
+                local_parts.append(lh + raw_name + data)
+                ch = struct.pack("<IHHHHHHIIIHHHHHII", 0x02014b50, 20, 20, flags, 0, 0, 0, crc, len(data), len(data), len(raw_name), 0, 0, 0, 0, 0, offset)
+                cd_parts.append(ch + raw_name)
+                offset += len(lh) + len(raw_name) + len(data)
+            cd = b"".join(cd_parts)
+            eocd = struct.pack("<IHHHHIIH", 0x06054b50, 0, 0, len(entries), len(entries), len(cd), offset, 0)
+            return b"".join(local_parts) + cd + eocd
+
+        sjis_zip = self.sd / "sjis_5c.zip"
+        # 'ソ' (83 5C) folder, backslash separator (5C), '表.ain' (95 5C + '.ain')
+        sjis_zip.write_bytes(make_raw_zip([
+            (b"\x83\x5c\\System40.ini", b"codename = \x95\x5c.ain ; unquoted\n", 0),
+            (b"\x83\x5c\\\x95\x5c.ain", b"code", 0),
+            (b"\x83\x5c\\.xsys4rc", b"font=ok", 0),
+            (b"__MACOSX/._weird:name", b"appledouble", 0),
+        ]))
+        self.assertEqual(self.run_import(sjis_zip), "local:xsystem4:ソ")
+        installed = self.library / "xsystem4/games/ソ"
+        self.assertEqual((installed / "表.ain").read_bytes(), b"code")
+        self.assertEqual((installed / ".xsys4rc").read_bytes(), b"font=ok")
+        self.assertFalse((installed / "__MACOSX").exists())
+
+        # 2. Non-UTF-8 CP1252 European ZIP ('Café\Rance’s Guide.txt')
+        cp1252_zip = self.sd / "eu_cp1252.zip"
+        cp1252_zip.write_bytes(make_raw_zip([
+            (b"Caf\xe9\\System40.ini", b"codename = RanceVI.ain\n", 0),
+            (b"Caf\xe9\\RanceVI.ain", b"code", 0),
+            (b"Caf\xe9\\Rance\x92s Guide.txt", b"readme", 0),
+        ]))
+        self.assertEqual(self.run_import(cp1252_zip), "local:xsystem4:Café")
+        installed_eu = self.library / "xsystem4/games/Café"
+        self.assertEqual((installed_eu / "Rance\u2019s Guide.txt").read_bytes(), b"readme")
+
+        # 3. Multi-disc System 4 with both AliceCN.ain and Rance10.ain on Disc 1 merges Rance10Sound.afa from Disc 2
+        images = self.sd / "multidisc_en"
+        images.mkdir()
+        disc1 = iso9660({
+            "System40.ini": b"codename = Rance10.ain\n",
+            "AliceCN.ain": b"cn_patch",
+            "Rance10.ain": b"base_code",
+            "Rance10CG.afa": b"cg",
+        })
+        disc2 = iso9660({
+            "Rance10Sound.afa": b"sound",
+            "Unrelated.afa": b"skip",
+        })
+        (images / "Rance10 Disc 1.iso").write_bytes(disc1)
+        (images / "Rance10 Disc 2.iso").write_bytes(disc2)
+        self.assertEqual(self.run_import(images), "local:xsystem4:Rance10")
+        installed_r10 = self.library / "xsystem4/games/Rance10"
+        self.assertEqual((installed_r10 / "Rance10Sound.afa").read_bytes(), b"sound")
+        self.assertFalse((installed_r10 / "Unrelated.afa").exists())

@@ -14,7 +14,7 @@ enum LocalGameImport {
         guard let leaf = parts.last else { return false }
         if parts.contains(where: { ["android-port", "savedata", "directx"].contains($0) }) ||
             parts.dropLast().contains(where: { $0.hasPrefix(".") }) ||
-            (leaf.hasPrefix(".") && leaf != ".xsys35rc") {
+            (leaf.hasPrefix(".") && leaf != ".xsys35rc" && leaf != ".xsys4rc") {
             return true
         }
         return ["opensavefolder.exe", "resetconfig.exe", "uninstaller.exe"].contains(leaf) ||
@@ -196,7 +196,7 @@ enum LocalGameImport {
             let launch = try? GameLibrary.launchInfo(root)
             let engine = launch?.engine
             if let engine, depth == 0 ||
-                (engine == .system4 && (hasSystem4Root(local) || launch?.target.pathExtension.lowercased() == "ini")) ||
+                (engine == .system4 && (hasSystem4Root(local) || launch?.target.pathExtension.lowercased() == "ini" || !system4Code(local).isEmpty)) ||
                 (engine == .system3 && local.contains(where: GameLibrary.isSystem35Scenario)) ||
                 engine == .legacySystem3 {
                 if primary == nil {
@@ -365,7 +365,7 @@ enum LocalGameImport {
                 })
             }
         }
-        let ain = try names(root).sorted().first { $0.hasSuffix(".ain") }
+        let ains = Set(try names(root).filter { $0.hasSuffix(".ain") && $0 != "system39.ain" })
         let gameDepth = root.resolvingSymlinksInPath().pathComponents.count
         for patch in all where leaf(patch) == "commonfiles" {
             let inGame = contains(patch, in: root)
@@ -373,7 +373,8 @@ enum LocalGameImport {
                 .dropFirst(gameDepth).map { $0.lowercased() }
             if inGame && patchPath != ["updatefiles", "files", "commonfiles"] { continue }
             let local = try names(patch)
-            if let ain, local.contains(where: { $0.hasSuffix(".ain") }), !local.contains(ain) { continue }
+            let patchAins = local.filter { $0.hasSuffix(".ain") && $0 != "system39.ain" }
+            if !ains.isEmpty && !patchAins.isEmpty && ains.isDisjoint(with: patchAins) { continue }
             try merge(patch, into: root, overwrite: true, exclude: { relative, _ in
                 inGame && patchPath.starts(with: relative.lowercased().split(separator: "/").map(String.init))
             })

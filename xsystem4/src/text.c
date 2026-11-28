@@ -889,9 +889,18 @@ void gfx_set_font_name(const char *name)
 	static const char gbk_gothic_name[] = { 0xba, 0xda, 0xcc, 0xe5, 0 };
 	static const char gbk_ms_mincho_name[] = { 0xa3, 0xcd, 0xa3, 0xd3, 0x20, 0xc3, 0xf7, 0xb3, 0xaf, 0 };
 	static const char gbk_ms_gothic_name[] = { 0xa3, 0xcd, 0xa3, 0xd3, 0x20, 0xa5, 0xb4, 0xa5, 0xb7, 0xa5, 0xc3, 0xa5, 0xaf, 0 };
-	if (!strcmp(name, mincho_name) || (sys4_text_is_gbk && (!strcmp(name, gbk_mincho_name) || !strcmp(name, gbk_ms_mincho_name)))) {
+	if (!strcmp(name, mincho_name)
+			|| !strcasecmp(name, "MS Mincho")
+			|| !strcasecmp(name, "MS PMincho")
+			|| (sys4_text_is_gbk && (!strcmp(name, gbk_mincho_name) || !strcmp(name, gbk_ms_mincho_name)))) {
 		font_metrics.face = FONT_MINCHO;
-	} else if (!strcmp(name, gothic_name) || (sys4_text_is_gbk && (!strcmp(name, gbk_gothic_name) || !strcmp(name, gbk_ms_gothic_name)))) {
+	} else if (!strcmp(name, gothic_name)
+			|| !strcasecmp(name, "MS Gothic")
+			|| !strcasecmp(name, "MS PGothic")
+			|| !strcasecmp(name, "MS UI Gothic")
+			|| !strcasecmp(name, "Arial")
+			|| !strcasecmp(name, "Meiryo")
+			|| (sys4_text_is_gbk && (!strcmp(name, gbk_gothic_name) || !strcmp(name, gbk_ms_gothic_name)))) {
 		font_metrics.face = FONT_GOTHIC;
 	} else {
 		WARNING("Unhandled font name: \"%s\"", display_sjis0(name));

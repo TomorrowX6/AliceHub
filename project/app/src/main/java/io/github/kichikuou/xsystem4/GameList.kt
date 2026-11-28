@@ -26,6 +26,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.Charset
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 interface GameListObserver {
@@ -260,7 +261,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
                         (lower.endsWith("gm.ald") && (lower.contains("愴崙") || lower.contains("戦国") || lower.contains("sengoku"))) ||
                         lower == "asratest.ini" ||
                         lower == "作弊码.txt" ||
-                        (lower == "rance10.ain" && f.length() > 8_000_000L)
+                        (lower == "rance10.ain" && f.length() > 12_000_000L)
                     ) {
                         return true
                     }
@@ -412,7 +413,7 @@ data class Item(val name: String, val path: File, val homedir: File, val savedir
 data class System40Ini(val gameName: String?, val SaveFolder: String?, val codeName: String? = null) {
     companion object {
         private val ASSIGNMENT_REGEX =
-            Regex("""^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*"([^"\r\n]*)"\s*(?:(?:;|//).*)?$""")
+            Regex("""^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(?:"([^"\r\n]*)"|([^\s;#/\r\n][^\r\n]*?))\s*(?:(?:;|//).*)?$""")
 
         private fun hasUtf8Bom(raw: ByteArray): Boolean =
             raw.size >= 3 &&
@@ -421,20 +422,36 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?, val codeN
                 raw[2] == 0xBF.toByte()
 
         // Matches native xsystem4 sys4_bytes_look_utf8: strict UTF-8 across the whole file,
-        // with either a UTF-8 BOM or at least one 3- or 4-byte UTF-8 sequence (preventing
-        // 2-byte GBK characters from being misidentified as 2-byte Latin UTF-8).
+        // accepting a UTF-8 BOM, any 3-/4-byte UTF-8 sequence, or genuine 2-byte-only UTF-8
+        // (European accented Latin / Cyrillic / Greek) without misidentifying single-char GB2312 coincidences.
         private fun bytesLookUtf8(raw: ByteArray): Boolean {
             if (hasUtf8Bom(raw)) return true
             var hasThreeOrFourByte = false
+            var twoByteCount = 0
+            var asciiLetterCount = 0
+            var twoByteCyrillicOrGreek = 0
+            var twoByteLatinAccented = 0
             var i = 0
             while (i < raw.size) {
                 val b0 = raw[i].toInt() and 0xFF
                 when {
-                    b0 < 0x80 -> i++
+                    b0 < 0x80 -> {
+                        if (b0 in 'A'.code..'Z'.code || b0 in 'a'.code..'z'.code) {
+                            asciiLetterCount++
+                        }
+                        i++
+                    }
                     b0 in 0xC2..0xDF -> {
                         if (i + 1 >= raw.size) return false
                         val b1 = raw[i + 1].toInt() and 0xFF
                         if ((b1 and 0xC0) != 0x80) return false
+                        val cp = ((b0 and 0x1F) shl 6) or (b1 and 0x3F)
+                        twoByteCount++
+                        if (cp in 0x00C0..0x024F) {
+                            twoByteLatinAccented++
+                        } else if (cp in 0x0370..0x052F) {
+                            twoByteCyrillicOrGreek++
+                        }
                         i += 2
                     }
                     b0 in 0xE0..0xEF -> {
@@ -461,10 +478,17 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?, val codeN
                     else -> return false
                 }
             }
-            return hasThreeOrFourByte
+            if (hasThreeOrFourByte) return true
+            if (twoByteCount == 0) return false
+            if (twoByteCyrillicOrGreek >= 2) return true
+            if (twoByteLatinAccented >= 1 && (twoByteLatinAccented >= 2 || asciiLetterCount >= 2)) return true
+            return twoByteCount >= 2 && asciiLetterCount >= 4
         }
 
         private fun detectLegacyCharset(sampleRaw: ByteArray): Charset {
+            if (ArchiveExtractor.looksLikeCp1252(sampleRaw)) {
+                return runCatching { Charset.forName("windows-1252") }.getOrElse { Charsets.ISO_8859_1 }
+            }
             val decoded = ArchiveExtractor.decodeBestCjkText(sampleRaw, preferGbkOnTie = true)
             val sjis = Charset.forName("Shift_JIS")
             val gbk = Charset.forName("GBK")
@@ -487,33 +511,35 @@ data class System40Ini(val gameName: String?, val SaveFolder: String?, val codeN
                 var otherSample: ByteArray? = null
                 for (line in latin.lines()) {
                     val m = ASSIGNMENT_REGEX.matchEntire(line.trim()) ?: continue
-                    val rawVal = m.groupValues[2].toByteArray(Charsets.ISO_8859_1)
+                    val rawValStr = m.groupValues[2].ifEmpty { m.groupValues[3] }
+                    val rawVal = rawValStr.toByteArray(Charsets.ISO_8859_1)
                     if (rawVal.none { (it.toInt() and 0x80) != 0 }) continue
-                    when (m.groupValues[1]) {
-                        "GameName", "Regist" -> if (titleSample == null) titleSample = rawVal
-                        "CodeName", "SaveFolder" -> if (otherSample == null) otherSample = rawVal
+                    when (m.groupValues[1].lowercase(Locale.ROOT)) {
+                        "gamename", "regist" -> if (titleSample == null) titleSample = rawVal
+                        "codename", "savefolder" -> if (otherSample == null) otherSample = rawVal
                     }
                 }
                 val sample = titleSample ?: otherSample
                 if (sample != null) detectLegacyCharset(sample) else Charset.forName("GBK")
             }
+            val cp1252 = runCatching { Charset.forName("windows-1252") }.getOrNull()
             var gameName: String? = null
             var registName: String? = null
             var SaveFolder: String? = null
             var codeName: String? = null
             for (line in String(body, chosenCharset).lines()) {
                 ASSIGNMENT_REGEX.matchEntire(line.trim())?.let {
-                    val rawValue = it.groupValues[2]
-                    val value = if (chosenCharset == Charsets.UTF_8) {
+                    val rawValue = it.groupValues[2].ifEmpty { it.groupValues[3] }
+                    val value = if (chosenCharset == Charsets.UTF_8 || chosenCharset == cp1252) {
                         rawValue
                     } else {
                         ArchiveExtractor.repairSjisAsGbkMojibake(rawValue)
                     }
-                    when (it.groupValues[1]) {
-                        "GameName" -> gameName = value
-                        "Regist" -> registName = value
-                        "SaveFolder" -> SaveFolder = value
-                        "CodeName" -> codeName = value.trim()
+                    when (it.groupValues[1].lowercase(Locale.ROOT)) {
+                        "gamename" -> gameName = value
+                        "regist" -> registName = value
+                        "savefolder" -> SaveFolder = value
+                        "codename" -> codeName = value.trim()
                     }
                 }
             }
@@ -1391,15 +1417,8 @@ class GameList(activity: Activity) {
         observer?.onInstallFailure(msgId)
     }
 
-    private fun shouldSkipBaseInstallEntry(relPath: String): Boolean {
-        if (NativeGameImport.skip(relPath)) return true
-        val fileName = relPath.substringAfterLast('/').lowercase()
-        val isArchive = fileName.endsWith(".rar") || fileName.endsWith(".zip") || fileName.endsWith(".7z")
-        if (isArchive && (fileName.contains("sound album") || fileName.contains("(flac)") || fileName.contains("ost"))) {
-            return true
-        }
-        return false
-    }
+    private fun shouldSkipBaseInstallEntry(relPath: String): Boolean =
+        shouldSkipBaseInstallEntryInternal(relPath)
 
     private fun isSystem4GameRoot(dir: File): Boolean =
         io.github.kichikuou.xsystem4.isSystem4GameRoot(dir)
@@ -1423,7 +1442,10 @@ class GameList(activity: Activity) {
     }
 
     private fun overlayPatchUpdatesIfPresent(searchRoots: List<File>, destGameDir: File, checkCancelled: () -> Unit) {
-        val ainName = destGameDir.listFiles()?.firstOrNull { it.isFile && it.name.endsWith(".ain", true) }?.name
+        val destAinNames = destGameDir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".ain", true) }
+            ?.map { it.name }
+            .orEmpty()
         val destCanonical = destGameDir.canonicalPath
         val patchDirs = mutableListOf<File>()
         for (root in searchRoots) {
@@ -1440,7 +1462,9 @@ class GameList(activity: Activity) {
         for (pdir in patchDirs) {
             val files = pdir.listFiles()?.filter { it.isFile }.orEmpty()
             val hasAin = files.any { it.name.endsWith(".ain", true) }
-            if (ainName != null && hasAin && files.none { it.name.equals(ainName, true) }) continue
+            if (destAinNames.isNotEmpty() && hasAin &&
+                files.none { f -> destAinNames.any { f.name.equals(it, true) } }
+            ) continue
             pdir.walkTopDown().forEach { f ->
                 checkCancelled()
                 val rel = f.relativeTo(pdir).path.replace('\\', '/')
@@ -1652,12 +1676,6 @@ class GameList(activity: Activity) {
             val legacySystem3 = GameCatalog.isLegacySystem3GameFiles(srcFiles.map { it.name })
             if (ainFile == null && sys3Scenario == null && !legacySystem3) {
                 throw InstallFailureException(R.string.directory_no_game)
-            }
-            if (!expectedAinName.isNullOrBlank() &&
-                srcFiles.none { it.name.equals(expectedAinName, ignoreCase = true) } &&
-                configuredBootScripts.none { it.name.equals(expectedAinName, ignoreCase = true) }
-            ) {
-                throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
             val isRance02 = isRance02Target ||
@@ -3155,6 +3173,23 @@ internal fun isSystem3GameRoot(dir: File): Boolean {
         GameCatalog.isLegacySystem3GameFiles(files.map { it.name })
 }
 
+private val OST_ARCHIVE_TOKEN_REGEX = Regex("(?<![a-z0-9])ost(?![a-z0-9])")
+
+internal fun shouldSkipBaseInstallEntryInternal(relPath: String): Boolean {
+    if (NativeGameImport.skip(relPath)) return true
+    val fileName = relPath.substringAfterLast('/').lowercase(Locale.ROOT)
+    val isArchive = fileName.endsWith(".rar") || fileName.endsWith(".zip") || fileName.endsWith(".7z")
+    if (isArchive && (
+            fileName.contains("sound album") ||
+                fileName.contains("(flac)") ||
+                OST_ARCHIVE_TOKEN_REGEX.containsMatchIn(fileName)
+            )
+    ) {
+        return true
+    }
+    return false
+}
+
 internal fun findGameRootDirInternal(
     root: File,
     expectedAinName: String?,
@@ -3193,14 +3228,19 @@ internal fun findGameRootDirInternal(
             )
         )
         .toList()
-    if (!expectedAinName.isNullOrBlank()) {
-        candidates.firstOrNull { d ->
-            d.listFiles()?.any { it.isFile && it.name.equals(expectedAinName, true) } == true
-        }?.let { return it }
-    }
     if (!targetGameId.isNullOrBlank() && !targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
         candidates.firstOrNull { d ->
             GameCatalog.classifyGameRootDir(d) == targetGameId
+        }?.let { return it }
+    }
+    if (!expectedAinName.isNullOrBlank()) {
+        candidates.firstOrNull { d ->
+            d.listFiles()?.any {
+                it.isFile && (
+                    it.name.equals(expectedAinName, true) ||
+                        ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(expectedAinName, true)
+                    )
+            } == true
         }?.let { return it }
     }
     return candidates.firstOrNull()

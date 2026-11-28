@@ -26,7 +26,9 @@ void NACT::text_dialog()
         UIAlertController *dialog = [UIAlertController alertControllerWithTitle:nil message:nil
             preferredStyle:UIAlertControllerStyleAlert];
         [dialog addTextFieldWithConfigurationHandler:^(UITextField *field) {
-            field.text = @(initial.c_str());
+            field.text = [[NSString alloc] initWithBytes:initial.data()
+                                                  length:initial.size()
+                                                encoding:NSUTF8StringEncoding] ?: @"";
         }];
         __block BOOL done = NO;
         [dialog addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Cancel", nil)

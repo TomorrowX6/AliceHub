@@ -3,10 +3,212 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <zlib.h>
 
+#if defined(__SWITCH__) && (defined(ALICEHUB_SWITCH_HUB) || defined(ALICEHUB_SWITCH_XSYSTEM4))
+#include "system4/utfsjis.h"
+#elif !defined(__SWITCH__)
+#include <iconv.h>
+#endif
+
 #define ZIP_CHUNK 32768
+
+static bool is_valid_utf8_bytes(const unsigned char *s, size_t len)
+{
+    size_t i = 0;
+    while (i < len) {
+        unsigned char c = s[i];
+        if (c < 0x80) {
+            ++i;
+        } else if (c >= 0xc2 && c <= 0xdf && i + 1 < len && (s[i + 1] & 0xc0) == 0x80) {
+            i += 2;
+        } else if (c >= 0xe0 && c <= 0xef && i + 2 < len &&
+                   (s[i + 1] & 0xc0) == 0x80 && (s[i + 2] & 0xc0) == 0x80 &&
+                   !(c == 0xe0 && s[i + 1] < 0xa0) && !(c == 0xed && s[i + 1] >= 0xa0)) {
+            i += 3;
+        } else if (c >= 0xf0 && c <= 0xf4 && i + 3 < len &&
+                   (s[i + 1] & 0xc0) == 0x80 && (s[i + 2] & 0xc0) == 0x80 && (s[i + 3] & 0xc0) == 0x80 &&
+                   !(c == 0xf0 && s[i + 1] < 0x90) && !(c == 0xf4 && s[i + 1] >= 0x90)) {
+            i += 4;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool utf8_has_kana(const char *s);
+
+static bool is_ascii_letter(unsigned char b)
+{
+    return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z');
+}
+
+static bool is_cp1252_punct_or_accented(unsigned char b)
+{
+    return b == 0x85 || (b >= 0x91 && b <= 0x94) || b == 0x96 || b == 0x97 || b == 0x99 ||
+           b == 0xa9 || b == 0xae || b == 0xb0 ||
+           (b >= 0xc0 && b != 0xd7 && b != 0xf7);
+}
+
+static bool looks_like_cp1252(const unsigned char *s, size_t len, const char *sjis, const char *gbk)
+{
+    size_t high = 0, ascii_letters = 0;
+    bool adj_high = false, all_cp1252 = true, flanked = false;
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char b = s[i];
+        if (b < 0x80) {
+            if (is_ascii_letter(b))
+                ++ascii_letters;
+            continue;
+        }
+        ++high;
+        int prev = i > 0 ? (int)s[i - 1] : -1;
+        int next = i + 1 < len ? (int)s[i + 1] : -1;
+        if (prev >= 0x80 || next >= 0x80) {
+            adj_high = true;
+            all_cp1252 = false;
+        }
+        if (!is_cp1252_punct_or_accented(b))
+            all_cp1252 = false;
+        if (prev >= 0 && is_ascii_letter((unsigned char)prev) && (next < 0 || next < 0x80)) {
+            if (b >= 0xc0) {
+                if (next < 0 || (next >= 'a' && next <= 'z') || next == ' ' || next == '.' ||
+                    next == '-' || next == '_' || next == '/' || next == '\\')
+                    flanked = true;
+            } else {
+                flanked = true;
+            }
+        } else if (next >= 0 && next >= 'a' && next <= 'z' &&
+                   (prev < 0 || prev == ' ' || prev == '/' || prev == '\\' || prev == '-' || prev == '_')) {
+            flanked = true;
+        }
+    }
+    if (!high)
+        return false;
+    if (!sjis && !gbk)
+        return all_cp1252 || (ascii_letters >= 2 && !adj_high);
+    if (!adj_high && all_cp1252 && flanked && ascii_letters >= 2)
+        return !sjis || !utf8_has_kana(sjis);
+    return false;
+}
+
+static bool cp1252_to_utf8(const unsigned char *s, size_t len, char out[HUB_PATH_SIZE])
+{
+    static const uint16_t map80[32] = {
+        0x20ac, 0x0081, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
+        0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008d, 0x017d, 0x008f,
+        0x0090, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+        0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x009d, 0x017e, 0x0178,
+    };
+    size_t pos = 0;
+    for (size_t i = 0; i < len; ++i) {
+        uint32_t cp = s[i] < 0x80 ? s[i] : (s[i] < 0xa0 ? map80[s[i] - 0x80] : s[i]);
+        if (cp < 0x80) {
+            if (pos + 1 >= HUB_PATH_SIZE) return false;
+            out[pos++] = (char)cp;
+        } else if (cp < 0x800) {
+            if (pos + 2 >= HUB_PATH_SIZE) return false;
+            out[pos++] = (char)(0xc0 | (cp >> 6));
+            out[pos++] = (char)(0x80 | (cp & 0x3f));
+        } else {
+            if (pos + 3 >= HUB_PATH_SIZE) return false;
+            out[pos++] = (char)(0xe0 | (cp >> 12));
+            out[pos++] = (char)(0x80 | ((cp >> 6) & 0x3f));
+            out[pos++] = (char)(0x80 | (cp & 0x3f));
+        }
+    }
+    out[pos] = '\0';
+    return true;
+}
+
+static bool cjk_to_utf8(const char *raw, size_t len, bool gbk, char out[HUB_PATH_SIZE])
+{
+#if defined(__SWITCH__) && (defined(ALICEHUB_SWITCH_HUB) || defined(ALICEHUB_SWITCH_XSYSTEM4))
+    bool valid = false;
+    char *converted = cjk2utf_strict_buf(raw, len, gbk, out, HUB_PATH_SIZE, &valid);
+    if (converted != out) {
+        valid = valid && strlen(converted) < HUB_PATH_SIZE;
+        if (valid)
+            strcpy(out, converted);
+        free(converted);
+    }
+    return valid;
+#elif !defined(__SWITCH__)
+    iconv_t cvt = iconv_open("UTF-8", gbk ? "GBK" : "CP932");
+    if (cvt == (iconv_t)-1)
+        return false;
+    char *in = (char *)raw;
+    char *dst = out;
+    size_t in_left = len, out_left = HUB_PATH_SIZE - 1;
+    bool ok = iconv(cvt, &in, &in_left, &dst, &out_left) != (size_t)-1 && in_left == 0;
+    *dst = '\0';
+    iconv_close(cvt);
+    return ok;
+#else
+    (void)raw; (void)len; (void)gbk; (void)out;
+    return false;
+#endif
+}
+
+static bool utf8_has_kana(const char *s)
+{
+    for (const unsigned char *p = (const unsigned char *)s; *p; ) {
+        if (p[0] == 0xe3 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
+            uint32_t cp = ((uint32_t)(p[0] & 0x0f) << 12) | ((uint32_t)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+            if ((cp >= 0x3041 && cp <= 0x309f) || (cp >= 0x30a1 && cp <= 0x30ff))
+                return true;
+            p += 3;
+        } else {
+            ++p;
+        }
+    }
+    return false;
+}
+
+static bool decode_zip_name(const char *raw, size_t len, bool utf8_flag, char out[HUB_PATH_SIZE])
+{
+    if (!len || len >= HUB_PATH_SIZE)
+        return false;
+    if (utf8_flag || is_valid_utf8_bytes((const unsigned char *)raw, len)) {
+        memcpy(out, raw, len);
+        out[len] = '\0';
+    } else {
+        char sjis[HUB_PATH_SIZE], gbk[HUB_PATH_SIZE];
+        bool ok_sjis = cjk_to_utf8(raw, len, false, sjis);
+        bool ok_gbk = cjk_to_utf8(raw, len, true, gbk);
+        if (looks_like_cp1252((const unsigned char *)raw, len, ok_sjis ? sjis : NULL, ok_gbk ? gbk : NULL)) {
+            if (!cp1252_to_utf8((const unsigned char *)raw, len, out))
+                return false;
+        } else if (ok_sjis && !ok_gbk) {
+            strcpy(out, sjis);
+        } else if (ok_gbk && !ok_sjis) {
+            strcpy(out, gbk);
+        } else if (ok_sjis && ok_gbk) {
+            size_t gb2312_pairs = 0;
+            for (size_t i = 0; i < len; ) {
+                unsigned char a = (unsigned char)raw[i];
+                if (a < 0x80) { ++i; continue; }
+                if (i + 1 < len) {
+                    unsigned char b = (unsigned char)raw[i + 1];
+                    if (a >= 0xb0 && a <= 0xf7 && b >= 0xa1 && b <= 0xfe)
+                        ++gb2312_pairs;
+                    i += 2;
+                } else {
+                    break;
+                }
+            }
+            strcpy(out, (gb2312_pairs > 0 && !utf8_has_kana(sjis)) ? gbk : sjis);
+        } else if (!cp1252_to_utf8((const unsigned char *)raw, len, out)) {
+            return false;
+        }
+    }
+    for (char *p = out; *p; ++p)
+        if (*p == '\\') *p = '/';
+    return true;
+}
 
 static uint64_t le64(const unsigned char *p)
 {
@@ -106,9 +308,17 @@ static bool zip_path(const char *dest, char *name, bool directory, char path[HUB
         if (slash)
             *slash = 0;
         bool last = !slash || !slash[1];
-        if (++depth > IMPORT_DEPTH || !import_leaf(p))
+        if (!*p || !strcmp(p, "..") || ++depth > IMPORT_DEPTH) {
+            if (slash) *slash = '/';
             return false;
-        *skip |= import_skip(p, !last || directory);
+        }
+        if (!strcasecmp(p, "__MACOSX") || !strcasecmp(p, ".DS_Store") ||
+            import_skip(p, !last || directory)) {
+            *skip = true;
+        } else if (!*skip && !import_leaf(p)) {
+            if (slash) *slash = '/';
+            return false;
+        }
         if (slash) *slash = '/';
         if (last) break;
         p = slash + 1;
@@ -200,7 +410,8 @@ bool import_zip(const char *source, const char *dest, const ImportCallbacks *cb)
     const uint64_t start = pos;
     for (uint64_t i = 0; i < count; ++i) {
         unsigned char h[46], local[30];
-        char name[HUB_PATH_SIZE], path[HUB_PATH_SIZE], local_name[HUB_PATH_SIZE];
+        char raw_name[HUB_PATH_SIZE], name[HUB_PATH_SIZE], path[HUB_PATH_SIZE];
+        char raw_local_name[HUB_PATH_SIZE], local_name[HUB_PATH_SIZE];
         if (!import_update(cb, source, i, count) || end - pos < sizeof(h) ||
             !at(f, pos, h, sizeof(h)) || import_le32(h) != 0x02014b50)
             goto done;
@@ -208,16 +419,15 @@ bool import_zip(const char *source, const char *dest, const ImportCallbacks *cb)
         size_t record = sizeof(h) + n + extra + import_le16(h + 32);
         unsigned flags = import_le16(h + 8), method = import_le16(h + 10);
         uint64_t size = import_le32(h + 24), packed = import_le32(h + 20), offset = import_le32(h + 42);
-        if (!n || n >= sizeof(name) || record > end - pos || import_le16(h + 34) ||
-            fread(name, 1, n, f) != n || memchr(name, 0, n) ||
-            !zip64_entry(f, extra, &size, &packed, &offset))
+        if (!n || n >= sizeof(raw_name) || record > end - pos || import_le16(h + 34) ||
+            fread(raw_name, 1, n, f) != n || memchr(raw_name, 0, n) ||
+            !zip64_entry(f, extra, &size, &packed, &offset) ||
+            !decode_zip_name(raw_name, n, (flags & 0x0800) != 0, name))
             goto done;
         pos += record;
-        name[n] = 0;
-        for (size_t j = 0; j < n; ++j)
-            if (name[j] == '\\') name[j] = '/';
+        size_t name_len = strlen(name);
         unsigned mode = h[5] == 3 ? (import_le32(h + 38) >> 16) & 0170000 : 0;
-        bool directory = name[n - 1] == '/' || mode == 0040000, skip;
+        bool directory = (name_len > 0 && name[name_len - 1] == '/') || mode == 0040000, skip;
         if ((mode && mode != 0100000 && mode != 0040000) ||
             !zip_path(dest, name, directory, path, &skip))
             goto done;
@@ -227,12 +437,11 @@ bool import_zip(const char *source, const char *dest, const ImportCallbacks *cb)
             offset > start || start - offset < sizeof(local) + n ||
             !at(f, offset, local, sizeof(local)) || import_le32(local) != 0x04034b50 ||
             import_le16(local + 6) != flags || import_le16(local + 8) != method ||
-            import_le16(local + 26) != n || fread(local_name, 1, n, f) != n)
+            import_le16(local + 26) != n || fread(raw_local_name, 1, n, f) != n ||
+            !decode_zip_name(raw_local_name, n, (flags & 0x0800) != 0, local_name))
             goto done;
-        for (size_t j = 0; j < n; ++j)
-            if (local_name[j] == '\\') local_name[j] = '/';
         offset += sizeof(local) + n + import_le16(local + 28);
-        if (memcmp(name, local_name, n) || offset > start || packed > start - offset ||
+        if (strcmp(name, local_name) || offset > start || packed > start - offset ||
             !import_seek(f, offset) || !extract(f, path, packed, size, method,
                 import_le32(h + 16), buffer, cb, 0, 0))
             goto done;
