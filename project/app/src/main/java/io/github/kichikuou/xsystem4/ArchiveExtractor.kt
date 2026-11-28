@@ -22,9 +22,13 @@ object ArchiveExtractor {
     private const val TAG = "ArchiveExtractor"
     private const val MIN_FREE_HEADROOM_BYTES = 32L * 1024L * 1024L
     private val GBK_CHARSET: Charset by lazy { Charset.forName("GBK") }
+    private val BIG5_CHARSET: Charset by lazy { Charset.forName("Big5") }
     private val SJIS_CHARSET: Charset by lazy { Charset.forName("Shift_JIS") }
     private val CP932_CHARSET: Charset by lazy {
         runCatching { Charset.forName("windows-31j") }.getOrElse { SJIS_CHARSET }
+    }
+    private val CP1252_CHARSET: Charset by lazy {
+        runCatching { Charset.forName("windows-1252") }.getOrElse { Charsets.ISO_8859_1 }
     }
 
     @Volatile
@@ -69,8 +73,13 @@ object ArchiveExtractor {
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
             return decoder.decode(ByteBuffer.wrap(rawBytes)).toString()
         } catch (_: CharacterCodingException) {
-            val sjis = decodeStrict(rawBytes, SJIS_CHARSET) ?: String(rawBytes, SJIS_CHARSET)
-            val gbk = decodeStrict(rawBytes, GBK_CHARSET) ?: String(rawBytes, GBK_CHARSET)
+            val sjisStrict = decodeStrict(rawBytes, SJIS_CHARSET)
+            val gbkStrict = decodeStrict(rawBytes, GBK_CHARSET)
+            if (looksLikeCp1252(rawBytes, sjisStrict, gbkStrict)) {
+                return String(rawBytes, CP1252_CHARSET)
+            }
+            val sjis = sjisStrict ?: String(rawBytes, SJIS_CHARSET)
+            val gbk = gbkStrict ?: String(rawBytes, GBK_CHARSET)
             val sjisScore = scoreCjkString(sjis) + gb2312TrailPenaltyForSjis(rawBytes)
             val gbkScore = scoreCjkString(gbk) + gb2312Bonus(rawBytes)
             return when {
@@ -80,6 +89,127 @@ object ArchiveExtractor {
                 else -> sjis
             }
         }
+    }
+
+    private fun isAsciiLetter(b: Int): Boolean = b in 'A'.code..'Z'.code || b in 'a'.code..'z'.code
+
+    private fun isCp1252PunctOrAccented(b: Int): Boolean =
+        b == 0x85 || b in 0x91..0x94 || b == 0x96 || b == 0x97 || b == 0x99 ||
+            b == 0xA9 || b == 0xAE || b == 0xB0 ||
+            (b in 0xC0..0xFF && b != 0xD7 && b != 0xF7)
+
+    private fun isEnglishContractionAfterApostrophe(rawBytes: ByteArray, idx: Int): Boolean {
+        if (idx < 1 || !isAsciiLetter(rawBytes[idx - 1].toInt() and 0xFF)) {
+            return false
+        }
+        val prev = rawBytes[idx - 1].toInt() and 0xFF
+        val hasTwoLetters = idx >= 2 && isAsciiLetter(rawBytes[idx - 2].toInt() and 0xFF)
+        val isStandaloneI = prev == 'I'.code && (idx == 1 || !isAsciiLetter(rawBytes[idx - 2].toInt() and 0xFF))
+        if (!hasTwoLetters && !isStandaloneI) return false
+        val n1 = if (idx + 1 < rawBytes.size) (rawBytes[idx + 1].toInt() and 0xFF) else return false
+        val l1 = if (n1 in 'A'.code..'Z'.code) n1 + 32 else n1
+        val n2 = if (idx + 2 < rawBytes.size) (rawBytes[idx + 2].toInt() and 0xFF) else -1
+        val l2 = if (n2 in 'A'.code..'Z'.code) n2 + 32 else n2
+        val n3 = if (idx + 3 < rawBytes.size) (rawBytes[idx + 3].toInt() and 0xFF) else -1
+        val n2NotLetter = n2 < 0 || !isAsciiLetter(n2)
+        val n3NotLetter = n3 < 0 || !isAsciiLetter(n3)
+        if (isStandaloneI) {
+            return when (l1) {
+                'm'.code, 'd'.code -> n2NotLetter
+                'v'.code -> l2 == 'e'.code && n3NotLetter
+                'l'.code -> l2 == 'l'.code && n3NotLetter
+                else -> false
+            }
+        }
+        return when (l1) {
+            's'.code, 't'.code, 'd'.code, 'm'.code -> n2NotLetter
+            'r'.code, 'v'.code -> l2 == 'e'.code && n3NotLetter
+            'l'.code -> l2 == 'l'.code && n3NotLetter
+            else -> false
+        }
+    }
+
+    private fun stemAsciiLettersAround(rawBytes: ByteArray, idx: Int): Int {
+        var segStart = idx
+        while (segStart > 0 && rawBytes[segStart - 1].toInt() != '/'.code && rawBytes[segStart - 1].toInt() != '\\'.code) {
+            segStart--
+        }
+        var segEnd = idx
+        while (segEnd < rawBytes.size && rawBytes[segEnd].toInt() != '/'.code && rawBytes[segEnd].toInt() != '\\'.code) {
+            segEnd++
+        }
+        var lastDot = -1
+        for (k in segStart until segEnd) {
+            if (rawBytes[k].toInt() == '.'.code) lastDot = k
+        }
+        val stemEnd = if (lastDot > segStart) lastDot else segEnd
+        var count = 0
+        for (k in segStart until stemEnd) {
+            if (isAsciiLetter(rawBytes[k].toInt() and 0xFF)) count++
+        }
+        return count
+    }
+
+    internal fun looksLikeCp1252(rawBytes: ByteArray, sjisStrict: String? = decodeStrict(rawBytes, SJIS_CHARSET), gbkStrict: String? = decodeStrict(rawBytes, GBK_CHARSET)): Boolean {
+        var highCount = 0
+        var hasAdjacentHigh = false
+        var asciiLetters = 0
+        var allCp1252Isolated = true
+        var allStrictEvidence = true
+        for (i in rawBytes.indices) {
+            val b = rawBytes[i].toInt() and 0xFF
+            if (b < 0x80) {
+                if (isAsciiLetter(b)) asciiLetters++
+                continue
+            }
+            highCount++
+            val prev = if (i > 0) rawBytes[i - 1].toInt() and 0xFF else -1
+            val next = if (i + 1 < rawBytes.size) rawBytes[i + 1].toInt() and 0xFF else -1
+            if (prev >= 0x80 || next >= 0x80) {
+                hasAdjacentHigh = true
+                allCp1252Isolated = false
+            }
+            if (!isCp1252PunctOrAccented(b)) {
+                allCp1252Isolated = false
+            }
+            val byteOk = when {
+                b in 0x80..0x9F -> {
+                    if (next >= 0x40) {
+                        b == 0x92 && isEnglishContractionAfterApostrophe(rawBytes, i)
+                    } else {
+                        isCp1252PunctOrAccented(b)
+                    }
+                }
+                b in 0xE0..0xEF -> {
+                    val stemLetters = stemAsciiLettersAround(rawBytes, i)
+                    val nextOk = next < 0 || next in 'a'.code..'z'.code || next == ' '.code ||
+                        next == '.'.code || next == '-'.code || next == '_'.code || next == '/'.code || next == '\\'.code
+                    nextOk && stemLetters >= 2 && (
+                        (prev >= 0 && isAsciiLetter(prev)) ||
+                            (next in 'a'.code..'z'.code && i + 2 < rawBytes.size && isAsciiLetter(rawBytes[i + 2].toInt() and 0xFF))
+                        )
+                }
+                else -> {
+                    val stemLetters = stemAsciiLettersAround(rawBytes, i)
+                    isCp1252PunctOrAccented(b) && stemLetters >= 2 && (
+                        (prev >= 0 && isAsciiLetter(prev)) ||
+                            (next in 'a'.code..'z'.code && (prev < 0 || prev == ' '.code || prev == '/'.code || prev == '\\'.code || prev == '-'.code || prev == '_'.code))
+                        )
+                }
+            }
+            if (!byteOk) allStrictEvidence = false
+        }
+        if (highCount == 0) return false
+        if (sjisStrict == null && gbkStrict == null) {
+            // Invalid in both Shift-JIS and GBK: CP1252 cleanly preserves European filenames/punctuation (Café, Rance IX – Patch, Rance™)
+            return allCp1252Isolated || (asciiLetters >= 2 && !hasAdjacentHigh)
+        }
+        if (!hasAdjacentHigh && allCp1252Isolated && allStrictEvidence && asciiLetters >= 2) {
+            val sjisCandidate = sjisStrict ?: return true
+            val hasKana = sjisCandidate.any { it in '\u3041'..'\u309F' || it in '\u30A1'..'\u30FF' }
+            if (!hasKana) return true
+        }
+        return false
     }
 
     private fun decodeStrict(rawBytes: ByteArray, cs: Charset): String? {
@@ -190,11 +320,19 @@ object ArchiveExtractor {
         if (encoded.size != 2) return Cp932CharClass.EXT
         val sjis = ((encoded[0].toInt() and 0xFF) shl 8) or (encoded[1].toInt() and 0xFF)
         return when (sjis) {
-            in 0x8140..0x84BE -> Cp932CharClass.KANA_SYM
-            in 0x889F..0x9872 -> Cp932CharClass.JIS1
+            in 0x8140..0x81AC, in 0x824F..0x8258, in 0x829F..0x82F1, in 0x8340..0x8396 -> Cp932CharClass.KANA_SYM
+            in 0x8260..0x8279, in 0x889F..0x9872 -> Cp932CharClass.JIS1
             in 0x989F..0xEAA4 -> Cp932CharClass.JIS2
             else -> Cp932CharClass.EXT
         }
+    }
+
+    private fun isCommonBig5Char(ch: Char): Boolean {
+        val enc = encodeStrict(ch.toString(), BIG5_CHARSET) ?: return false
+        if (enc.size != 2) return false
+        val code = ((enc[0].toInt() and 0xFF) shl 8) or (enc[1].toInt() and 0xFF)
+        // Big5 punctuation (0xA140..0xA3BF) and Level-1 frequently-used Traditional Chinese (0xA440..0xC67E)
+        return code in 0xA140..0xA3BF || code in 0xA440..0xC67E
     }
 
     private fun scoreJapanesePlausibility(text: String): Int {
@@ -258,14 +396,32 @@ object ArchiveExtractor {
         if (origAllJis1OrKana) return seg
 
         // Reject repairs that introduce PUA, halfwidth katakana, or non-JIS X 0208 characters.
+        var decodedHasKana = false
         for (ch in decoded) {
             if (ch.code < 0x80) continue
+            if (ch in '\u3041'..'\u309F' || ch in '\u30A1'..'\u30FF') {
+                decodedHasKana = true
+            }
             val cls = classifyCp932Char(ch)
             if (cls == Cp932CharClass.PUA || cls == Cp932CharClass.NON_CP932 ||
                 cls == Cp932CharClass.EXT || cls == Cp932CharClass.HALFWIDTH
             ) {
                 return seg
             }
+        }
+
+        // Preserve valid Traditional Chinese (Big5 Level-1) filenames when reinterpretation
+        // produces zero hiragana/katakana (e.g. "媽媽.ain", "對戰.ini", "實戰.ini", "搖桿.txt").
+        if (!decodedHasKana) {
+            var allOrigCommonBig5 = true
+            for (ch in seg) {
+                if (ch.code < 0x80) continue
+                if (!isCommonBig5Char(ch)) {
+                    allOrigCommonBig5 = false
+                    break
+                }
+            }
+            if (allOrigCommonBig5) return seg
         }
 
         val origScore = scoreJapanesePlausibility(seg)

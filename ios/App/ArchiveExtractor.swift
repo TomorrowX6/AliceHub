@@ -20,10 +20,131 @@ enum ArchiveExtractor {
     static let sjis = String.Encoding.shiftJIS.rawValue
     private static let gb18030 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
     private static let cp932 = CFStringConvertEncodingToNSStringEncoding(CFStringConvertWindowsCodepageToEncoding(932))
+    private static let big5 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.big5.rawValue))
 
     static func isSupportedArchiveName(_ name: String) -> Bool {
         [".zip", ".rar", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".iso", ".mdf"]
             .contains { name.lowercased().hasSuffix($0) }
+    }
+
+    private static func isAsciiLetter(_ b: UInt8) -> Bool {
+        (0x41...0x5A).contains(b) || (0x61...0x7A).contains(b)
+    }
+
+    private static func isCp1252PunctOrAccented(_ b: UInt8) -> Bool {
+        b == 0x85 || (0x91...0x94).contains(b) || b == 0x96 || b == 0x97 || b == 0x99 ||
+            b == 0xA9 || b == 0xAE || b == 0xB0 ||
+            ((0xC0...0xFF).contains(b) && b != 0xD7 && b != 0xF7)
+    }
+
+    private static func isEnglishContractionAfterApostrophe(_ rawBytes: [UInt8], at idx: Int) -> Bool {
+        guard idx >= 1, isAsciiLetter(rawBytes[idx - 1]), idx + 1 < rawBytes.count else { return false }
+        let prev = rawBytes[idx - 1]
+        let hasTwoLetters = idx >= 2 && isAsciiLetter(rawBytes[idx - 2])
+        let isStandaloneI = prev == 0x49 && (idx == 1 || !isAsciiLetter(rawBytes[idx - 2]))
+        guard hasTwoLetters || isStandaloneI else { return false }
+        let n1 = rawBytes[idx + 1]
+        let l1 = (0x41...0x5A).contains(n1) ? n1 + 32 : n1
+        let n2: Int = idx + 2 < rawBytes.count ? Int(rawBytes[idx + 2]) : -1
+        let l2 = (0x41...0x5A).contains(n2) ? n2 + 32 : n2
+        let n3: Int = idx + 3 < rawBytes.count ? Int(rawBytes[idx + 3]) : -1
+        let n2NotLetter = n2 < 0 || !isAsciiLetter(UInt8(n2))
+        let n3NotLetter = n3 < 0 || !isAsciiLetter(UInt8(n3))
+        if isStandaloneI {
+            switch l1 {
+            case 0x6D, 0x64: return n2NotLetter // m, d
+            case 0x76: return l2 == 0x65 && n3NotLetter // ve
+            case 0x6C: return l2 == 0x6C && n3NotLetter // ll
+            default: return false
+            }
+        }
+        switch l1 {
+        case 0x73, 0x74, 0x64, 0x6D: return n2NotLetter // s, t, d, m
+        case 0x72, 0x76: return l2 == 0x65 && n3NotLetter // re, ve
+        case 0x6C: return l2 == 0x6C && n3NotLetter // ll
+        default: return false
+        }
+    }
+
+    private static func stemAsciiLettersAround(_ rawBytes: [UInt8], at idx: Int) -> Int {
+        var segStart = idx
+        while segStart > 0 && rawBytes[segStart - 1] != 0x2F && rawBytes[segStart - 1] != 0x5C {
+            segStart -= 1
+        }
+        var segEnd = idx
+        while segEnd < rawBytes.count && rawBytes[segEnd] != 0x2F && rawBytes[segEnd] != 0x5C {
+            segEnd += 1
+        }
+        var lastDot = -1
+        for k in segStart..<segEnd where rawBytes[k] == 0x2E {
+            lastDot = k
+        }
+        let stemEnd = lastDot > segStart ? lastDot : segEnd
+        var count = 0
+        for k in segStart..<stemEnd where isAsciiLetter(rawBytes[k]) {
+            count += 1
+        }
+        return count
+    }
+
+    static func looksLikeCp1252(_ rawBytes: [UInt8], sjisStrict: String?, gbkStrict: String?) -> Bool {
+        var highCount = 0
+        var hasAdjacentHigh = false
+        var asciiLetters = 0
+        var allCp1252Isolated = true
+        var allStrictEvidence = true
+        for i in rawBytes.indices {
+            let b = rawBytes[i]
+            if b < 0x80 {
+                if isAsciiLetter(b) { asciiLetters += 1 }
+                continue
+            }
+            highCount += 1
+            let prev: Int = i > 0 ? Int(rawBytes[i - 1]) : -1
+            let next: Int = i + 1 < rawBytes.count ? Int(rawBytes[i + 1]) : -1
+            if prev >= 0x80 || next >= 0x80 {
+                hasAdjacentHigh = true
+                allCp1252Isolated = false
+            }
+            if !isCp1252PunctOrAccented(b) {
+                allCp1252Isolated = false
+            }
+            let byteOk: Bool
+            if (0x80...0x9F).contains(b) {
+                if next >= 0x40 {
+                    byteOk = b == 0x92 && isEnglishContractionAfterApostrophe(rawBytes, at: i)
+                } else {
+                    byteOk = isCp1252PunctOrAccented(b)
+                }
+            } else if (0xE0...0xEF).contains(b) {
+                let stemLetters = stemAsciiLettersAround(rawBytes, at: i)
+                let nextOk = next < 0 || (0x61...0x7A).contains(next) || next == 0x20 ||
+                    next == 0x2E || next == 0x2D || next == 0x5F || next == 0x2F || next == 0x5C
+                byteOk = nextOk && stemLetters >= 2 && (
+                    (prev >= 0 && isAsciiLetter(UInt8(prev))) ||
+                        ((0x61...0x7A).contains(next) && i + 2 < rawBytes.count && isAsciiLetter(rawBytes[i + 2]))
+                )
+            } else {
+                let stemLetters = stemAsciiLettersAround(rawBytes, at: i)
+                byteOk = isCp1252PunctOrAccented(b) && stemLetters >= 2 && (
+                    (prev >= 0 && isAsciiLetter(UInt8(prev))) ||
+                        ((0x61...0x7A).contains(next) && (prev < 0 || prev == 0x20 || prev == 0x2F || prev == 0x5C || prev == 0x2D || prev == 0x5F))
+                )
+            }
+            if !byteOk { allStrictEvidence = false }
+        }
+        if highCount == 0 { return false }
+        if sjisStrict == nil && gbkStrict == nil {
+            return allCp1252Isolated || (asciiLetters >= 2 && !hasAdjacentHigh)
+        }
+        if !hasAdjacentHigh && allCp1252Isolated && allStrictEvidence && asciiLetters >= 2 {
+            guard let sjisCandidate = sjisStrict else { return true }
+            let hasKana = sjisCandidate.unicodeScalars.contains {
+                (0x3041...0x309F).contains($0.value) || (0x30A1...0x30FF).contains($0.value)
+            }
+            if !hasKana { return true }
+        }
+        return false
     }
 
     static func decodeBestCjkText(_ data: Data, preferGbkOnTie: Bool = true) -> String {
@@ -36,8 +157,15 @@ enum ArchiveExtractor {
                 return String(cString: decoded)
             }
         }
-        let japanese = String(data: data, encoding: String.Encoding(rawValue: sjis)) ?? legacy("SHIFT_JIS")
-        let chinese = String(data: data, encoding: String.Encoding(rawValue: gbk)) ?? legacy("GBK")
+        let bytes = Array(data)
+        let sjisStrict = String(data: data, encoding: String.Encoding(rawValue: sjis))
+        let gbkStrict = String(data: data, encoding: String.Encoding(rawValue: gbk))
+        if looksLikeCp1252(bytes, sjisStrict: sjisStrict, gbkStrict: gbkStrict),
+           let cp1252 = String(data: data, encoding: .windowsCP1252) {
+            return cp1252
+        }
+        let japanese = sjisStrict ?? legacy("SHIFT_JIS")
+        let chinese = gbkStrict ?? legacy("GBK")
         func score(_ text: String) -> Int {
             text.unicodeScalars.reduce(0) { value, scalar in
                 switch scalar.value {
@@ -50,7 +178,6 @@ enum ArchiveExtractor {
                 }
             }
         }
-        let bytes = Array(data)
         var bonus = 0, penalty = 0, i = 0
         while i < bytes.count {
             let a = bytes[i]
@@ -88,11 +215,18 @@ enum ArchiveExtractor {
         guard encoded.count == 2 else { return .ext }
         let code = (UInt16(encoded[0]) << 8) | UInt16(encoded[1])
         switch code {
-        case 0x8140...0x84BE: return .kanaSym
-        case 0x889F...0x9872: return .jis1
+        case 0x8140...0x81AC, 0x824F...0x8258, 0x829F...0x82F1, 0x8340...0x8396: return .kanaSym
+        case 0x8260...0x8279, 0x8281...0x829A, 0x889F...0x9872: return .jis1
         case 0x989F...0xEAA4: return .jis2
         default: return .ext
         }
+    }
+
+    private static func isCommonBig5Scalar(_ scalar: UnicodeScalar) -> Bool {
+        guard let encoded = String(scalar).data(using: String.Encoding(rawValue: big5), allowLossyConversion: false),
+              encoded.count == 2 else { return false }
+        let code = (UInt16(encoded[0]) << 8) | UInt16(encoded[1])
+        return (0xA140...0xA3BF).contains(code) || (0xA440...0xC67E).contains(code)
     }
 
     private static func scoreJapanesePlausibility(_ text: String) -> Int {
@@ -136,6 +270,13 @@ enum ArchiveExtractor {
             if origNonAscii.allSatisfy({ $0 == .kanaSym || $0 == .jis1 }) { return segment }
             let decNonAscii = repaired.unicodeScalars.filter { $0.value >= 0x80 }.map(classifyCp932Scalar)
             if decNonAscii.contains(where: { $0 == .pua || $0 == .nonCp932 || $0 == .ext || $0 == .halfwidth }) { return segment }
+            let decodedHasKana = repaired.unicodeScalars.contains {
+                (0x3041...0x309F).contains($0.value) || (0x30A1...0x30FF).contains($0.value)
+            }
+            if !decodedHasKana {
+                let origScalars = segment.unicodeScalars.filter { $0.value >= 0x80 }
+                if !origScalars.isEmpty && origScalars.allSatisfy(isCommonBig5Scalar) { return segment }
+            }
             let origScore = scoreJapanesePlausibility(segment)
             let decScore = scoreJapanesePlausibility(repaired)
             guard decScore > origScore && decScore > 0 else { return segment }

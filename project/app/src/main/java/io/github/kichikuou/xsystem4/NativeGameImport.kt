@@ -26,8 +26,8 @@ object NativeGameImport {
         val parts = path.replace('\\', '/').split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return false
         val fileName = parts.last()
-        // System 3.x games (e.g. Kichikuou Rance CN) rely on .xsys35rc for playlist/font/encoding config.
-        val isXsys35RcLeaf = fileName.equals(".xsys35rc", true)
+        // System 3.x and System 4 games rely on .xsys35rc / .xsys4rc for playlist/font/encoding config.
+        val isEngineRcLeaf = fileName.equals(".xsys35rc", true) || fileName.equals(".xsys4rc", true)
         if (parts.dropLast(1).any {
                 it.startsWith('.') ||
                     it.equals("android-port", true) ||
@@ -36,7 +36,7 @@ object NativeGameImport {
             }) {
             return true
         }
-        if ((fileName.startsWith('.') && !isXsys35RcLeaf) ||
+        if ((fileName.startsWith('.') && !isEngineRcLeaf) ||
             fileName.equals("android-port", true) ||
             fileName.equals("SaveData", true) ||
             fileName.equals("DirectX", true)
@@ -854,29 +854,6 @@ object NativeGameImport {
         }
 
         val resolvedPrimary = primaryDocs ?: throw GameList.InstallFailureException(R.string.directory_no_game)
-        if (!expectedAinName.isNullOrBlank() &&
-            resolvedPrimary.none { !it.folder && !skip(it.name) && it.name.equals(expectedAinName, ignoreCase = true) }
-        ) {
-            val primaryTreeEntries = resolvedPrimary.map { TreeEntry(it.uri, it.name, it.folder, it) }
-            val hasNestedExpected = primaryTreeEntries.any { entry ->
-                if (entry.folder || skip(entry.name) || !System4BootEntry.isCandidateIniFile(entry.name)) {
-                    return@any false
-                }
-                val doc = entry.payload
-                val limit = boundedPrimaryReadLimitBytes(doc.name, doc.size) ?: return@any false
-                val bytes = readBoundedDocumentBytes(context, doc.uri, limit) ?: return@any false
-                System4BootEntry.extractCodeNames(bytes).any { codeName ->
-                    val leaf = codeName.replace('\\', '/').substringAfterLast('/')
-                    leaf.equals(expectedAinName, ignoreCase = true) &&
-                        hasConfiguredTreeScript(codeName, primaryTreeEntries) { dirUri ->
-                            children(context, tree, dirUri).map { TreeEntry(it.uri, it.name, it.folder, it) }
-                        }
-                }
-            }
-            if (!hasNestedExpected) {
-                throw GameList.InstallFailureException(R.string.import_wrong_game)
-            }
-        }
         val primaryFileNames = resolvedPrimary
             .filter { !it.folder && !skip(it.name) }
             .map { ArchiveExtractor.repairSjisAsGbkMojibake(it.name) }
@@ -913,13 +890,38 @@ object NativeGameImport {
             readSmallFile = readPrimarySmallFile,
             getFileSize = primaryFileSize
         )
-        val matchesTarget = if (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
-            true
-        } else {
-            detectedGameId == targetGameId
-        }
+        val hasBuiltInTarget = !targetGameId.isNullOrBlank() && !targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)
+        val matchesTarget = if (!hasBuiltInTarget) true else detectedGameId == targetGameId
         if (!matchesTarget) {
             throw GameList.InstallFailureException(R.string.import_wrong_game)
+        }
+        if (!hasBuiltInTarget && !expectedAinName.isNullOrBlank() &&
+            resolvedPrimary.none {
+                !it.folder && !skip(it.name) && (
+                    it.name.equals(expectedAinName, ignoreCase = true) ||
+                        ArchiveExtractor.repairSjisAsGbkMojibake(it.name).equals(expectedAinName, ignoreCase = true)
+                    )
+            }
+        ) {
+            val primaryTreeEntries = resolvedPrimary.map { TreeEntry(it.uri, it.name, it.folder, it) }
+            val hasNestedExpected = primaryTreeEntries.any { entry ->
+                if (entry.folder || skip(entry.name) || !System4BootEntry.isCandidateIniFile(entry.name)) {
+                    return@any false
+                }
+                val doc = entry.payload
+                val limit = boundedPrimaryReadLimitBytes(doc.name, doc.size) ?: return@any false
+                val bytes = readBoundedDocumentBytes(context, doc.uri, limit) ?: return@any false
+                System4BootEntry.extractCodeNames(bytes).any { codeName ->
+                    val leaf = codeName.replace('\\', '/').substringAfterLast('/')
+                    leaf.equals(expectedAinName, ignoreCase = true) &&
+                        hasConfiguredTreeScript(codeName, primaryTreeEntries) { dirUri ->
+                            children(context, tree, dirUri).map { TreeEntry(it.uri, it.name, it.folder, it) }
+                        }
+                }
+            }
+            if (!hasNestedExpected) {
+                throw GameList.InstallFailureException(R.string.import_wrong_game)
+            }
         }
         val isEscalayerReboot = targetGameId == GameCatalog.ID_ESCALAYER_REBOOT ||
             detectedGameId == GameCatalog.ID_ESCALAYER_REBOOT

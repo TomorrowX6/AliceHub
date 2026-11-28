@@ -36,6 +36,7 @@ list(REMOVE_ITEM vm_sources
   "${src}/sys/nact_sys3.cpp"
   "${src}/sys/ags.cpp"
   "${src}/sys/ags_text.cpp"
+  "${src}/sys/game_id.cpp"
   "${src}/sys/nact_input.cpp")
 
 function(alicehub_patch_replace var orig repl desc)
@@ -843,11 +844,13 @@ alicehub_patch_replace(patched_encoding_cpp
 		if (s.empty())
 			return 0;
 		int code = (unsigned char)s[0];
-		if (is_2byte(code) && s.size() >= 2) {
+		if (is_2byte(code) && s.size() >= 2 && static_cast<unsigned char>(s[1]) >= 0x40) {
 			code = (code << 8) | (unsigned char)s[1];
 			s.remove_prefix(2);
 		} else {
 			s.remove_prefix(1);
+			if (code >= 0x80 && !(code >= 0xa0 && code <= 0xdf))
+				return '?';
 		}
 		return sjis_to_unicode(code);
 	}]=]
@@ -862,7 +865,11 @@ alicehub_patch_replace(patched_encoding_cpp
 				src += 3;
 			} else {]=]
   [=[			int u;
-			if (*src <= 0xdf) {
+			if (*src < 0xc2) {
+				result += '?';
+				src++;
+				continue;
+			} else if (*src <= 0xdf) {
 				if (src + 2 > end || (src[1] & 0xc0) != 0x80) {
 					result += '?';
 					src++;
@@ -893,10 +900,12 @@ alicehub_patch_replace(patched_encoding_cpp
 				src++;
 			} else if (src + 1 < end && src[1] >= 0x40) {
 				c = s2u[*src - 0x80][*(src+1) - 0x40];
+				if (c == 0)
+					c = '?';
 				src += 2;
 			} else {
 				c = '?';
-				src += (src + 1 < end) ? 2 : 1;
+				src += (src + 1 < end && src[1] < 0x20) ? 2 : 1;
 			}]=]
   "SjisEncoding::toUtf8 trail byte guard")
 alicehub_patch_replace(patched_encoding_cpp
@@ -905,7 +914,8 @@ alicehub_patch_replace(patched_encoding_cpp
 		uint8_t lo = static_cast<uint8_t>(code & 0xff);
 		if (hi < 0x80 || lo < 0x40)
 			return '?';
-		return s2u[hi - 0x80][lo - 0x40];]=]
+		uint16 r = s2u[hi - 0x80][lo - 0x40];
+		return r ? r : '?';]=]
   "SjisEncoding::sjis_to_unicode bounds check")
 alicehub_patch_replace(patched_encoding_cpp
   [=[	int next_codepoint(std::string_view& s) override
@@ -945,7 +955,7 @@ alicehub_patch_replace(patched_encoding_cpp
 			code = '?';
 			s.remove_prefix(1);
 		} else if (c <= 0xdf) {
-			if (s.size() < 2 || (static_cast<unsigned char>(s[1]) & 0xc0) != 0x80) {
+			if (c < 0xc2 || s.size() < 2 || (static_cast<unsigned char>(s[1]) & 0xc0) != 0x80) {
 				code = 0xfffd;
 				s.remove_prefix(1);
 			} else {
@@ -990,14 +1000,222 @@ alicehub_patch_replace(patched_encoding_cpp
 {
 	int len = 0;
 	while (!s.empty()) {
-		size_t n = static_cast<size_t>(mblen((unsigned char)s[0]));
-		s.remove_prefix(n < s.size() ? n : s.size());
+		(void)next_codepoint(s);
 		len++;
 	}
 	return len;
 }]=]
   "Encoding::mbslen bounds check")
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/encoding.cpp" CONTENT "${patched_encoding_cpp}" @ONLY)
+
+# --- Patch config.cpp (case-insensitive system3.ini + UTF-8 BOM + safe trim) ---
+set(orig_config_cpp "${src}/config.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_config_cpp}")
+file(READ "${orig_config_cpp}" patched_config_cpp)
+alicehub_patch_replace(patched_config_cpp
+  [=[#else
+#include <unistd.h>
+#endif]=]
+  [=[#else
+#include <dirent.h>
+#include <unistd.h>
+#endif]=]
+  "config.cpp include <dirent.h>")
+alicehub_patch_replace(patched_config_cpp
+  [=[char *trim(char *s)
+{
+	while (isspace((unsigned char)*s))
+		s++;
+	char *p = s + strlen(s) - 1;
+	while (p > s && isspace((unsigned char)*p))
+		*p-- = '\0';
+	return s;
+}]=]
+  [=[char *trim(char *s)
+{
+	while (isspace((unsigned char)*s))
+		s++;
+	if (!*s)
+		return s;
+	char *p = s + strlen(s) - 1;
+	while (p > s && isspace((unsigned char)*p))
+		*p-- = '\0';
+	return s;
+}
+
+FILE *open_ini_case_insensitive()
+{
+	FILE *fp = fopen(INIFILENAME, "r");
+	if (fp)
+		return fp;
+#ifndef _WIN32
+	DIR *d = opendir(".");
+	if (!d)
+		return nullptr;
+	while (struct dirent *entry = readdir(d)) {
+		if (strcasecmp(INIFILENAME, entry->d_name) == 0) {
+			fp = fopen(entry->d_name, "r");
+			break;
+		}
+	}
+	closedir(d);
+#endif
+	return fp;
+}]=]
+  "config.cpp trim empty guard and case-insensitive ini open")
+alicehub_patch_replace(patched_config_cpp
+  [=[void Config::load_ini()
+{
+	FILE *fp = fopen(INIFILENAME, "r");
+	if (!fp)
+		return;
+
+	enum {
+		NO_SECTION,
+		CONFIG,
+		STRING,
+	} current_section = NO_SECTION;
+
+	char line[256];
+	for (int lineno = 1; fgets(line, sizeof(line), fp); lineno++) {
+		char val[256];
+
+		if (line[0] == ';')  // comment
+			continue;
+		if (is_empty_line(line))
+			continue;
+
+		if (sscanf(line, "[%[^]]]", val)) {]=]
+  [=[void Config::load_ini()
+{
+	FILE *fp = open_ini_case_insensitive();
+	if (!fp)
+		return;
+
+	enum {
+		NO_SECTION,
+		CONFIG,
+		STRING,
+	} current_section = NO_SECTION;
+
+	char line[256];
+	for (int lineno = 1; fgets(line, sizeof(line), fp); lineno++) {
+		char val[256];
+		char *p = line;
+		if (lineno == 1 &&
+		    static_cast<unsigned char>(p[0]) == 0xef &&
+		    static_cast<unsigned char>(p[1]) == 0xbb &&
+		    static_cast<unsigned char>(p[2]) == 0xbf) {
+			p += 3;
+		}
+		while (isspace(static_cast<unsigned char>(*p)))
+			p++;
+
+		if (*p == ';')  // comment
+			continue;
+		if (is_empty_line(p))
+			continue;
+
+		if (sscanf(p, "[%[^]]]", val)) {]=]
+  "config.cpp load_ini BOM and case-insensitive open")
+alicehub_patch_replace(patched_config_cpp
+  [=[			std::tie(key, val) = parse_keyval(line);]=]
+  [=[			std::tie(key, val) = parse_keyval(p);]=]
+  "config.cpp parse_keyval uses BOM-stripped pointer")
+alicehub_patch_replace(patched_config_cpp
+  [=[			else if (!strcasecmp(key, "game"))
+				game_id = val;
+			else if (!strcasecmp(key, "encoding"))
+				encoding = val;]=]
+  [=[			else if (!strcasecmp(key, "game") || !strcasecmp(key, "encoding")) {
+				char *clean = val;
+				if (*clean == '"') {
+					clean++;
+					char *q = strchr(clean, '"');
+					if (q) *q = '\0';
+				} else {
+					for (char *c = clean; *c; c++) {
+						if (*c == ';' || *c == '#' || (*c == '/' && c[1] == '/')) {
+							*c = '\0';
+							break;
+						}
+					}
+				}
+				clean = trim(clean);
+				if (!strcasecmp(key, "game"))
+					game_id = clean;
+				else
+					encoding = clean;
+			}]=]
+  "config.cpp strip inline comments on game and encoding")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/config.cpp" CONTENT "${patched_config_cpp}" @ONLY)
+
+# --- Patch sys/game_id.cpp (auto-detect GDISK.DAT / AGAME.DAT when ADISK.DAT is absent) ---
+set(orig_game_id_cpp "${src}/sys/game_id.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_game_id_cpp}")
+file(READ "${orig_game_id_cpp}" patched_game_id_cpp)
+alicehub_patch_replace(patched_game_id_cpp
+  [=[		uint32_t crc32_a = calc_crc32("ADISK.DAT");
+		uint32_t crc32_b = calc_crc32("BDISK.DAT");
+		entry = lookup(crc32_a, crc32_b);]=]
+  [=[		uint32_t crc32_a = calc_crc32("ADISK.DAT");
+		uint32_t crc32_b = calc_crc32("BDISK.DAT");
+		entry = lookup(crc32_a, crc32_b);
+		if (!crc32_a && !entry) {
+			uint32_t gdisk_crc = calc_crc32("GDISK.DAT");
+			if (gdisk_crc) {
+				crc32_a = gdisk_crc;
+				entry = lookup(crc32_a, 0);
+			} else {
+				uint32_t agame_crc = calc_crc32("AGAME.DAT");
+				if (agame_crc) {
+					crc32_a = agame_crc;
+					entry = lookup(crc32_a, 0);
+				}
+			}
+		}]=]
+  "game_id.cpp GDISK.DAT and AGAME.DAT CRC auto-detection")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/game_id.cpp" CONTENT "${patched_game_id_cpp}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/game_id.cpp")
+
+# --- Patch fileio.cpp (support LF-only and CRLF AG00.DAT lines) ---
+set(orig_fileio_cpp "${src}/fileio.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_fileio_cpp}")
+file(READ "${orig_fileio_cpp}" patched_fileio_cpp)
+alicehub_patch_replace(patched_fileio_cpp
+  [=[std::string FILEIO::gets()
+{
+	std::string s;
+	for (;;) {
+		int c = getc();
+		if (c == '\r' || c == EOF)
+			break;
+		if(c != '\n')
+			s.push_back(c);
+	}
+	return s;
+}]=]
+  [=[std::string FILEIO::gets()
+{
+	std::string s;
+	for (;;) {
+		int c = getc();
+		if (c == EOF)
+			break;
+		if (c == '\r') {
+			int next = getc();
+			if (next != '\n' && next != EOF)
+				ungetc(next, fp);
+			break;
+		}
+		if (c == '\n')
+			break;
+		s.push_back(c);
+	}
+	return s;
+}]=]
+  "FILEIO::gets LF and CRLF support")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/fileio.cpp" CONTENT "${patched_fileio_cpp}" @ONLY)
 
 # --- Patch sys/scenario.h and sys/scenario.cpp (bounds-checked dynamic string reads) ---
 set(orig_scenario_h "${src}/sys/scenario.h")
@@ -1033,6 +1251,7 @@ alicehub_patch_replace(patched_scenario_h
 		return w;
 	}
 	void ungetd() { addr_--; }
+	int safe_mblen(Encoding *enc, uint8_t first_byte) const;
 	void skip_syseng_string(Encoding *enc, uint8_t terminator);
 	void get_syseng_string(char* buf, int size, Encoding *enc, uint8_t terminator);
 	std::string get_syseng_string_dynamic(Encoding *enc, uint8_t terminator);]=]
@@ -1086,6 +1305,32 @@ void Scenario::get_syseng_string(char* buf, int size, Encoding *enc, uint8_t ter
 	return data_[addr_++];
 }
 
+int Scenario::safe_mblen(Encoding *enc, uint8_t first_byte) const
+{
+	int len = enc->mblen(first_byte);
+	if (len <= 1)
+		return 1;
+	if (!data_ || addr_ < 0 || static_cast<size_t>(addr_) >= data_size_)
+		return 1;
+	size_t rem = data_size_ - static_cast<size_t>(addr_);
+	if (enc->mblen(0xc2) == 2) {
+		// UTF-8 mode: only consume multi-byte sequences with valid lead and continuation bytes
+		// so untranslated Shift-JIS text in partially translated scripts never eats terminators/opcodes.
+		if (first_byte < 0xc2 || first_byte > 0xf4 || rem < static_cast<size_t>(len - 1))
+			return 1;
+		for (int j = 0; j < len - 1; ++j) {
+			if ((data_[addr_ + j] & 0xc0) != 0x80)
+				return 1;
+		}
+		return len;
+	}
+	// Shift-JIS mode: require a valid SJIS trail byte so stray UTF-8/CP1252 bytes never eat '\'' / '"' / ':'.
+	uint8_t trail = data_[addr_];
+	if (trail < 0x40 || trail == 0x7f || trail > 0xfc)
+		return 1;
+	return 2;
+}
+
 void Scenario::skip_syseng_string(Encoding *enc, uint8_t terminator)
 {
 	for (;;) {
@@ -1094,7 +1339,7 @@ void Scenario::skip_syseng_string(Encoding *enc, uint8_t terminator)
 			break;
 		if (c == '\\')
 			c = getd_checked();
-		int len = enc->mblen(c);
+		int len = safe_mblen(enc, c);
 		for (int j = 1; j < len; ++j)
 			(void)getd_checked();
 	}
@@ -1109,7 +1354,7 @@ void Scenario::get_syseng_string(char* buf, int size, Encoding *enc, uint8_t ter
 			break;
 		if (c == '\\')
 			c = getd_checked();
-		int len = enc->mblen(c);
+		int len = safe_mblen(enc, c);
 		if (i + len >= size)
 			sys_error("String buffer overrun at %d:%04x", page_, cmd_addr_);
 		buf[i++] = c;
@@ -1128,7 +1373,7 @@ std::string Scenario::get_syseng_string_dynamic(Encoding *enc, uint8_t terminato
 			break;
 		if (c == '\\')
 			c = getd_checked();
-		int len = enc->mblen(c);
+		int len = safe_mblen(enc, c);
 		out.push_back(static_cast<char>(c));
 		for (int j = 1; j < len; ++j)
 			out.push_back(static_cast<char>(getd_checked()));
@@ -1139,16 +1384,56 @@ std::string Scenario::get_syseng_string_dynamic(Encoding *enc, uint8_t terminato
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/scenario.cpp" CONTENT "${patched_scenario_cpp}" @ONLY)
 list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/scenario.cpp")
 
-# Copy nact.h and remaining sys/*.cpp that include nact.h so every translation unit sees patched scenario.h
-foreach(_sys_copy nact.h msgskip.cpp nact_sys1.cpp nact_gakuenking.cpp)
+# Copy nact.h and remaining unpatched sys/*.cpp that include nact.h so every translation unit sees patched scenario.h
+foreach(_sys_copy nact.h msgskip.cpp nact_gakuenking.cpp)
   set(_sys_copy_src "${src}/sys/${_sys_copy}")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_sys_copy_src}")
   configure_file("${_sys_copy_src}" "${CMAKE_CURRENT_BINARY_DIR}/${_sys_copy}" COPYONLY)
 endforeach()
 list(APPEND vm_sources
   "${CMAKE_CURRENT_BINARY_DIR}/msgskip.cpp"
-  "${CMAKE_CURRENT_BINARY_DIR}/nact_sys1.cpp"
   "${CMAKE_CURRENT_BINARY_DIR}/nact_gakuenking.cpp")
+
+# --- Patch sys/nact_sys1.cpp ---
+set(orig_nact_sys1 "${src}/sys/nact_sys1.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_sys1}")
+file(READ "${orig_nact_sys1}" patched_nact_sys1)
+alicehub_patch_replace(patched_nact_sys1
+  [=[			} else if (is_message(cmd)) {
+				sco.skip(encoding->mblen(cmd) - 1);]=]
+  [=[			} else if (is_message(cmd)) {
+				sco.skip(sco.safe_mblen(encoding.get(), cmd) - 1);]=]
+  "NACT_Sys1 branch skip safe_mblen")
+alicehub_patch_replace(patched_nact_sys1
+  [=[		case 7:
+			// Dummied. 0 - "Switch to interlace mode," 1 - disable.
+			break;
+		default:
+			WARNING("Unimplemented command: Y %d, %d", cmd, param);]=]
+  [=[		case 7:
+			// Dummied. 0 - "Switch to interlace mode," 1 - disable.
+			break;
+		case 240:
+			ags->draw_hankaku = (param == 1) ? true : false;
+			break;
+		default:
+			WARNING("Unimplemented command: Y %d, %d", cmd, param);]=]
+  "NACT_GakuenSenki Y 240 hankaku support")
+alicehub_patch_replace(patched_nact_sys1
+  [=[		case 3:
+			WAIT(param * 1000);
+			break;
+		case 255:]=]
+  [=[		case 3:
+			WAIT(param * 1000);
+			break;
+		case 240:
+			ags->draw_hankaku = (param == 1) ? true : false;
+			break;
+		case 255:]=]
+  "NACT_Intruder Y 240 hankaku support")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/nact_sys1.cpp" CONTENT "${patched_nact_sys1}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact_sys1.cpp")
 
 # --- Patch sys/nact.cpp ---
 set(orig_nact_cpp "${src}/sys/nact.cpp")
@@ -1164,6 +1449,20 @@ alicehub_patch_replace(patched_nact_cpp
   [=[	system3_reset_input_state();
 	platform_initialize();]=]
   "NACT::NACT reset input state")
+alicehub_patch_replace(patched_nact_cpp
+  [=[		std::string line = fio->gets();
+		if (sscanf_s(line.c_str(), "%d,%d,%d,%d", &d0, &d1, &d2, &d3) != 4)
+			sys_error("AG00.DAT: parse error");]=]
+  [=[		std::string line = fio->gets();
+		if (line.size() >= 3 &&
+		    static_cast<unsigned char>(line[0]) == 0xef &&
+		    static_cast<unsigned char>(line[1]) == 0xbb &&
+		    static_cast<unsigned char>(line[2]) == 0xbf) {
+			line.erase(0, 3);
+		}
+		if (sscanf_s(line.c_str(), "%d,%d,%d,%d", &d0, &d1, &d2, &d3) != 4)
+			sys_error("AG00.DAT: parse error");]=]
+  "NACT::NACT AG00.DAT UTF-8 BOM strip")
 alicehub_patch_replace(patched_nact_cpp
   [=[NACT::~NACT()
 {
@@ -1209,7 +1508,7 @@ alicehub_patch_replace(patched_nact_cpp
 	} else {
 		uint8_t c = first_byte;
 		while (is_message(c)) {
-			int len = encoding->mblen(c);
+			int len = sco.safe_mblen(encoding.get(), c);
 			buf.push_back(static_cast<char>(c));
 			for (int j = 1; j < len; ++j)
 				buf.push_back(static_cast<char>(sco.getd_checked()));
@@ -1230,6 +1529,10 @@ list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/nact.cpp")
 set(orig_nact_sys2 "${src}/sys/nact_sys2.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_nact_sys2}")
 file(READ "${orig_nact_sys2}" patched_nact_sys2)
+alicehub_patch_replace(patched_nact_sys2
+  [=[sco.skip(encoding->mblen(cmd) - 1);]=]
+  [=[sco.skip(sco.safe_mblen(encoding.get(), cmd) - 1);]=]
+  "NACT_Sys2 branch skip safe_mblen")
 alicehub_patch_replace(patched_nact_sys2
   [=[void NACT_Sys2::cmd_m()
 {
@@ -1350,6 +1653,12 @@ set(orig_ags_text "${src}/sys/ags_text.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_ags_text}")
 file(READ "${orig_ags_text}" patched_ags_text)
 alicehub_patch_replace(patched_ags_text
+  [=[	case u'｝': return u'}';
+	case u'~': return u'～';]=]
+  [=[	case u'｝': return u'}';
+	case u'～': return u'~';]=]
+  "AGS convert_to_hankaku tilde mapping")
+alicehub_patch_replace(patched_ags_text
   [=[	TTF_Font* font = NULL;
 	switch (ctx.font_size) {
 	case 16: font = hFont16; break;
@@ -1410,6 +1719,48 @@ list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/ags_text.cpp")
 set(orig_ags_cpp "${src}/sys/ags.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_ags_cpp}")
 file(READ "${orig_ags_cpp}" patched_ags_cpp)
+alicehub_patch_replace(patched_ags_cpp
+  [=[#include "fileio.h"]=]
+  [=[#include "fileio.h"
+#ifndef _WIN32
+#include <dirent.h>
+#endif]=]
+  "ags.cpp include <dirent.h>")
+alicehub_patch_replace(patched_ags_cpp
+  [=[	if (!config.font_file.empty()) {
+		rw_font = open_file(config.font_file.c_str());
+		if (!rw_font)
+			sys_error("Cannot open font file %s", config.font_file.c_str());
+	} else {
+		rw_font = open_resource(FONT_RESOURCE_NAME, "fonts");
+		if (!rw_font)
+			sys_error("Cannot open default font");
+	}]=]
+  [=[	if (!config.font_file.empty()) {
+		rw_font = open_file(config.font_file.c_str());
+#ifndef _WIN32
+		if (!rw_font && config.font_file.find('/') == std::string::npos) {
+			if (DIR *d = opendir(".")) {
+				while (struct dirent *entry = readdir(d)) {
+					if (strcasecmp(config.font_file.c_str(), entry->d_name) == 0) {
+						rw_font = open_file(entry->d_name);
+						break;
+					}
+				}
+				closedir(d);
+			}
+		}
+#endif
+		if (!rw_font) {
+			WARNING("Cannot open font file %s, falling back to default font", config.font_file.c_str());
+			rw_font = open_resource(FONT_RESOURCE_NAME, "fonts");
+		}
+	} else {
+		rw_font = open_resource(FONT_RESOURCE_NAME, "fonts");
+	}
+	if (!rw_font)
+		sys_error("Cannot open default font");]=]
+  "AGS::AGS case-insensitive fontfile and default fallback")
 alicehub_patch_replace(patched_ags_cpp
   [=[	if (config.no_antialias)
 		ags_setAntialiasedStringMode(0);]=]
@@ -1529,12 +1880,100 @@ if(ANDROID)
   target_link_options(system3 PRIVATE "LINKER:-z,max-page-size=16384" "LINKER:--exclude-libs,ALL")
   set(android_nact "${src}/android/nact_android.cpp")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${android_nact}")
-  file(READ "${android_nact}" android_nact_source)
-  set(original [=[bool NACT::handle_platform_event(const SDL_Event& e)
+  file(READ "${android_nact}" patched_android_nact)
+  alicehub_patch_replace(patched_android_nact
+    [=[void NACT::text_dialog()
+{
+	JNILocalFrame jni(16);
+	if (!jni.env())
+		return;
+
+	std::string oldstr = encoding->toUtf8(tvar[tvar_index - 1]);
+	jstring joldstr = jni.env()->NewStringUTF(oldstr.c_str());
+	if (!joldstr) {
+		WARNING("Failed to allocate a string");
+		return;
+	}
+	jmethodID mid = jni.GetMethodID("inputString", "(" STRING "I)" STRING);
+	jstring jnewstr = (jstring)jni.env()->CallObjectMethod(jni.context(), mid, joldstr, tvar_maxlen);
+	if (!jnewstr)
+		return;
+	const char* newstr_utf8 = jni.env()->GetStringUTFChars(jnewstr, NULL);
+	tvar[tvar_index - 1] = encoding->fromUtf8(newstr_utf8);
+	jni.env()->ReleaseStringUTFChars(jnewstr, newstr_utf8);
+}]=]
+    [=[#include <vector>
+
+static jstring utf8_to_jstring_safe(JNIEnv* env, const std::string& utf8)
+{
+	std::vector<jchar> utf16;
+	utf16.reserve(utf8.size());
+	const unsigned char* p = reinterpret_cast<const unsigned char*>(utf8.data());
+	const unsigned char* end = p + utf8.size();
+	while (p < end) {
+		uint32_t cp = 0xfffd;
+		if (*p < 0x80) {
+			cp = *p++;
+		} else if (*p >= 0xc2 && *p <= 0xdf && p + 2 <= end && (p[1] & 0xc0) == 0x80) {
+			cp = ((p[0] & 0x1f) << 6) | (p[1] & 0x3f);
+			p += 2;
+		} else if (*p >= 0xe0 && *p <= 0xef && p + 3 <= end &&
+		           (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
+			cp = ((p[0] & 0x0f) << 12) | ((p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+			if (cp < 0x800 || (cp >= 0xd800 && cp <= 0xdfff))
+				cp = 0xfffd;
+			p += 3;
+		} else if (*p >= 0xf0 && *p <= 0xf4 && p + 4 <= end &&
+		           (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80 && (p[3] & 0xc0) == 0x80) {
+			cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3f) << 12) | ((p[2] & 0x3f) << 6) | (p[3] & 0x3f);
+			if (cp < 0x10000 || cp > 0x10ffff)
+				cp = 0xfffd;
+			p += 4;
+		} else {
+			p++;
+		}
+		if (cp <= 0xffff) {
+			utf16.push_back(static_cast<jchar>(cp));
+		} else {
+			cp -= 0x10000;
+			utf16.push_back(static_cast<jchar>(0xd800 | (cp >> 10)));
+			utf16.push_back(static_cast<jchar>(0xdc00 | (cp & 0x3ff)));
+		}
+	}
+	return env->NewString(utf16.data(), static_cast<jsize>(utf16.size()));
+}
+
+void NACT::text_dialog()
+{
+	if (tvar_index < 1 || tvar_index > MAX_STRVAR)
+		return;
+	JNILocalFrame jni(16);
+	if (!jni.env())
+		return;
+
+	std::string oldstr = encoding->toUtf8(tvar[tvar_index - 1]);
+	jstring joldstr = utf8_to_jstring_safe(jni.env(), oldstr);
+	if (!joldstr) {
+		WARNING("Failed to allocate a string");
+		return;
+	}
+	jmethodID mid = jni.GetMethodID("inputString", "(" STRING "I)" STRING);
+	jstring jnewstr = (jstring)jni.env()->CallObjectMethod(jni.context(), mid, joldstr, tvar_maxlen);
+	if (!jnewstr)
+		return;
+	const char* newstr_utf8 = jni.env()->GetStringUTFChars(jnewstr, NULL);
+	if (newstr_utf8) {
+		tvar[tvar_index - 1] = encoding->fromUtf8(newstr_utf8);
+		jni.env()->ReleaseStringUTFChars(jnewstr, newstr_utf8);
+	}
+}]=]
+    "System 3 Android text_dialog bounds & UTF-16 JNI safety")
+  alicehub_patch_replace(patched_android_nact
+    [=[bool NACT::handle_platform_event(const SDL_Event& e)
 {
 	return false;
-}]=])
-  set(replacement [=[#include "ags.h"
+}]=]
+    [=[#include "ags.h"
 
 bool NACT::handle_platform_event(const SDL_Event& e)
 {
@@ -1543,11 +1982,8 @@ bool NACT::handle_platform_event(const SDL_Event& e)
 		return true;
 	}
 	return false;
-}]=])
-  string(REPLACE "${original}" "${replacement}" patched_android_nact "${android_nact_source}")
-  if(patched_android_nact STREQUAL android_nact_source)
-    message(FATAL_ERROR "Could not apply System 3 Android redraw patch")
-  endif()
+}]=]
+    "System 3 Android redraw patch")
   file(CONFIGURE OUTPUT nact_android.cpp CONTENT "${patched_android_nact}" @ONLY)
   target_include_directories(system3 PRIVATE "${src}/android")
   target_sources(system3 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/nact_android.cpp")
@@ -1676,7 +2112,7 @@ elseif(NINTENDO_SWITCH)
   set(sdlmain "${src}/sdlmain.cpp")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${sdlmain}")
   file(READ "${sdlmain}" switch_main)
-  set(startup_begin "\tg_window = create_window(config, game_id);")
+  set(startup_begin "\tGameId game_id(config);")
   set(startup_end "\n\tg_nact.reset(NACT::create(config, game_id));\n")
   set(fatal_dialog "\tSDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, \"system3\", buf, g_window);")
   foreach(fragment startup_begin startup_end fatal_dialog)
@@ -1685,8 +2121,8 @@ elseif(NINTENDO_SWITCH)
       message(FATAL_ERROR "Could not apply System 3 Switch startup patch: ${fragment}")
     endif()
   endforeach()
-  string(REPLACE "${startup_begin}" "\tswitch_starting = true;\n\ttry {\n${startup_begin}" switch_main "${switch_main}")
-  string(REPLACE "${startup_end}" "${startup_end}\n\t} catch (const SwitchStartupError&) {\n\t\tswitch_starting = false;\n\t\tSDL_DestroyRenderer(g_renderer);\n\t\tSDL_DestroyWindow(g_window);\n\t\tSDL_Quit();\n\t\tg_renderer = nullptr;\n\t\tg_window = nullptr;\n\t\tromfsExit();\n\t\treturn 1;\n\t}\n\tswitch_starting = false;" switch_main "${switch_main}")
+  string(REPLACE "${startup_begin}" "\tstd::unique_ptr<GameId> game_id_ptr;\n\tswitch_starting = true;\n\ttry {\n\tgame_id_ptr = std::make_unique<GameId>(config);\n\tconst GameId& game_id = *game_id_ptr;" switch_main "${switch_main}")
+  string(REPLACE "${startup_end}" "${startup_end}\n\t} catch (const SwitchStartupError&) {\n\t\tswitch_starting = false;\n\t\tg_nact.reset();\n\t\tif (g_renderer) {\n\t\t\tSDL_DestroyRenderer(g_renderer);\n\t\t\tg_renderer = nullptr;\n\t\t}\n\t\tif (g_window) {\n\t\t\tSDL_DestroyWindow(g_window);\n\t\t\tg_window = nullptr;\n\t\t}\n\t\tSDL_Quit();\n\t\tromfsExit();\n\t\treturn 1;\n\t}\n\tswitch_starting = false;\n\tconst GameId& game_id = *game_id_ptr;" switch_main "${switch_main}")
   string(REPLACE "${fatal_dialog}" "\tif (switch_starting) {\n\t\talicehub_switch_set_launch_error(buf);\n\t\tthrow SwitchStartupError{};\n\t}\n${fatal_dialog}" switch_main "${switch_main}")
   set(sdlmain_source "${CMAKE_CURRENT_BINARY_DIR}/sdlmain.cpp")
   file(CONFIGURE OUTPUT "${sdlmain_source}" CONTENT "#include \"launcher.h\"\nnamespace { struct SwitchStartupError {}; bool switch_starting; }\n${switch_main}" @ONLY)
@@ -1708,8 +2144,8 @@ endif()
 target_sources(system3 PRIVATE
   platform.cpp
   "${sdlmain_source}"
-  "${src}/config.cpp"
-  "${src}/fileio.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/config.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/fileio.cpp"
   "${CMAKE_CURRENT_BINARY_DIR}/encoding.cpp"
   "${src}/texthook.cpp"
   "${CMAKE_CURRENT_BINARY_DIR}/fm/makofm.cpp"

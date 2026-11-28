@@ -55,6 +55,7 @@ bool game_dohnadohna = false;
 bool game_evenicle = false;
 bool game_evenicle_rance = false;
 bool game_evenicle_rance_cn = false;
+bool game_has_mixed_gbk_sjis_text = false;
 bool game_evenicle_gaiden = false;
 bool game_bladebriders = false;
 bool game_evenicle2 = false;
@@ -677,6 +678,8 @@ static void apply_maman_cn_speaker_literals(struct ain *ain)
 static bool ain_messages_look_gbk(struct ain *ain)
 {
 	unsigned long gbk_score = 0;
+	unsigned long gbk_low_trail = 0;
+	unsigned long gbk_invalid_a1_a9 = 0;
 	unsigned long sjis_score = 0;
 	if (!ain || ain->nr_messages <= 0 || !ain->messages)
 		return false;
@@ -687,6 +690,8 @@ static bool ain_messages_look_gbk(struct ain *ain)
 		const unsigned char *s = (const unsigned char *)ain->messages[i]->text;
 		if (!s)
 			continue;
+		if (sys4_bytes_look_utf8(s, (size_t)ain->messages[i]->size))
+			continue;
 		for (size_t j = 0; s[j]; ) {
 			unsigned char b0 = s[j];
 			if (b0 < 0x80) {
@@ -696,9 +701,12 @@ static bool ain_messages_look_gbk(struct ain *ain)
 			if (b0 >= 0x81 && b0 <= 0xfe && s[j + 1] >= 0x40 && s[j + 1] <= 0xfe && s[j + 1] != 0x7f) {
 				unsigned char b1 = s[j + 1];
 				if ((b0 >= 0xb0 && b0 <= 0xd7 && b1 >= 0xa1 && b1 <= 0xfe)
-						|| (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0xa1 && b1 <= 0xfe)
-						|| (b0 >= 0xaa && b0 <= 0xdf && b1 >= 0x40 && b1 <= 0xa0)) {
+						|| (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0xa1 && b1 <= 0xfe)) {
 					gbk_score++;
+				} else if (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0x40 && b1 <= 0x7e) {
+					gbk_invalid_a1_a9++;
+				} else if (b0 >= 0xaa && b1 >= 0x40 && b1 <= 0x7e) {
+					gbk_low_trail++;
 				}
 				j += 2;
 				continue;
@@ -726,7 +734,7 @@ static bool ain_messages_look_gbk(struct ain *ain)
 			j++;
 		}
 	}
-	return gbk_score >= 64 && gbk_score > sjis_score * 2;
+	return gbk_score >= 64 && gbk_invalid_a1_a9 * 8 < gbk_score && gbk_low_trail <= gbk_score && gbk_score > sjis_score;
 }
 
 enum ain_text_encoding {
@@ -736,13 +744,18 @@ enum ain_text_encoding {
 };
 
 static void scan_string_array_encoding(struct string **arr, int count,
-		unsigned long *gbk_score_out, unsigned long *sjis_score_out)
+		unsigned long *gbk_score_out, unsigned long *sjis_score_out,
+		unsigned long *gbk_low_trail_out, unsigned long *gbk_invalid_a1_a9_out)
 {
 	unsigned long gbk_score = 0;
+	unsigned long gbk_low_trail = 0;
+	unsigned long gbk_invalid_a1_a9 = 0;
 	unsigned long sjis_score = 0;
 	if (!arr || count <= 0) {
 		*gbk_score_out = 0;
 		*sjis_score_out = 0;
+		*gbk_low_trail_out = 0;
+		*gbk_invalid_a1_a9_out = 0;
 		return;
 	}
 	int step = count > 8192 ? count / 8192 : 1;
@@ -750,6 +763,8 @@ static void scan_string_array_encoding(struct string **arr, int count,
 		if (!arr[i])
 			continue;
 		const unsigned char *s = (const unsigned char *)arr[i]->text;
+		if (sys4_bytes_look_utf8(s, (size_t)arr[i]->size))
+			continue;
 		for (size_t j = 0; s[j]; ) {
 			unsigned char b0 = s[j];
 			if (b0 < 0x80) {
@@ -759,9 +774,12 @@ static void scan_string_array_encoding(struct string **arr, int count,
 			if (b0 >= 0x81 && b0 <= 0xfe && s[j + 1] >= 0x40 && s[j + 1] <= 0xfe && s[j + 1] != 0x7f) {
 				unsigned char b1 = s[j + 1];
 				if ((b0 >= 0xb0 && b0 <= 0xd7 && b1 >= 0xa1 && b1 <= 0xfe)
-						|| (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0xa1 && b1 <= 0xfe)
-						|| (b0 >= 0xaa && b0 <= 0xdf && b1 >= 0x40 && b1 <= 0xa0)) {
+						|| (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0xa1 && b1 <= 0xfe)) {
 					gbk_score++;
+				} else if (b0 >= 0xa1 && b0 <= 0xa9 && b1 >= 0x40 && b1 <= 0x7e) {
+					gbk_invalid_a1_a9++;
+				} else if (b0 >= 0xaa && b1 >= 0x40 && b1 <= 0x7e) {
+					gbk_low_trail++;
 				}
 				j += 2;
 				continue;
@@ -791,22 +809,34 @@ static void scan_string_array_encoding(struct string **arr, int count,
 	}
 	*gbk_score_out = gbk_score;
 	*sjis_score_out = sjis_score;
+	*gbk_low_trail_out = gbk_low_trail;
+	*gbk_invalid_a1_a9_out = gbk_invalid_a1_a9;
 }
 
-static enum ain_text_encoding ain_detect_text_encoding(struct ain *ain)
+static enum ain_text_encoding ain_detect_text_encoding(struct ain *ain, bool *mixed_gbk_sjis_out)
 {
+	if (mixed_gbk_sjis_out)
+		*mixed_gbk_sjis_out = false;
 	if (!ain)
 		return AIN_ENC_UNKNOWN;
-	unsigned long gbk_score = 0, sjis_score = 0;
-	scan_string_array_encoding(ain->messages, ain->nr_messages, &gbk_score, &sjis_score);
-	if (gbk_score >= 64 && gbk_score > sjis_score * 2)
+	unsigned long gbk_score = 0, sjis_score = 0, gbk_low_trail = 0, gbk_invalid_a1_a9 = 0;
+	scan_string_array_encoding(ain->messages, ain->nr_messages, &gbk_score, &sjis_score,
+			&gbk_low_trail, &gbk_invalid_a1_a9);
+	if (gbk_score >= 64 && gbk_invalid_a1_a9 * 8 < gbk_score && gbk_low_trail <= gbk_score && gbk_score > sjis_score) {
+		if (mixed_gbk_sjis_out && sjis_score >= 32)
+			*mixed_gbk_sjis_out = true;
 		return AIN_ENC_GBK;
+	}
 	if (sjis_score >= 64 && sjis_score > gbk_score * 16)
 		return AIN_ENC_SJIS;
 	if (gbk_score + sjis_score < 32) {
-		scan_string_array_encoding(ain->strings, ain->nr_strings, &gbk_score, &sjis_score);
-		if (gbk_score >= 64 && gbk_score > sjis_score * 2)
+		scan_string_array_encoding(ain->strings, ain->nr_strings, &gbk_score, &sjis_score,
+				&gbk_low_trail, &gbk_invalid_a1_a9);
+		if (gbk_score >= 64 && gbk_invalid_a1_a9 * 8 < gbk_score && gbk_low_trail <= gbk_score && gbk_score > sjis_score) {
+			if (mixed_gbk_sjis_out && sjis_score >= 32)
+				*mixed_gbk_sjis_out = true;
 			return AIN_ENC_GBK;
+		}
 		if (sjis_score >= 64 && sjis_score > gbk_score * 16)
 			return AIN_ENC_SJIS;
 	}
@@ -1474,18 +1504,20 @@ void apply_game_specific_hacks(struct ain *ain)
 	// forced into GBK mode, while GBK releases with an unmodified JP/EN GameName still
 	// enable GBK. Fall back to GameName/symbol heuristics only when AIN text is inconclusive.
 	// UTF-8 releases are converted to GBK when loaded.
+	game_has_mixed_gbk_sjis_text = false;
 	enum ain_text_encoding text_enc = sys4_source_is_utf8
 		? AIN_ENC_GBK
-		: ain_detect_text_encoding(ain);
+		: ain_detect_text_encoding(ain, &game_has_mixed_gbk_sjis_text);
 	bool gbk_game_name = config_game_name_has_gbk_marker(config.game_name);
+	bool gbk_msg_evidence = text_enc == AIN_ENC_GBK || gbk_game_name || ain_messages_look_gbk(ain);
 	game_evenicle_rance_cn = game_evenicle_rance
 		&& (ain_has_gbk_string(ain, "\xb4\xcb\xce\xaa\xd2\xbb\xcc\xf5\xb2\xe2\xca\xd4\xce\xc4\xb1\xbe")
 			|| ain_has_gbk_string(ain, "\xc0\xbc\xcb\xb9"));
 	bool gbk_heuristics = gbk_game_name
 		|| ain_get_global(ain, "\xc8\xab\xcc\xe5\xa3\xc3\xa3\xc7\xb1\xa3\xb3\xd6") >= 0
 		|| ain_get_struct(ain, "\xa3\xd3\xb2\xbf\xb6\xd3\xd2\xbb\xc0\xc0") >= 0
-		|| (game_rance10 && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
-		|| (game_dohnadohna && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
+		|| (game_rance10 && gbk_msg_evidence && ain_get_global(ain, "\x91\x53\x91\xcc\x82\x62\x82\x66\x95\xdb\x8e\x9d") < 0)
+		|| (game_dohnadohna && gbk_msg_evidence && ain_get_function(ain, "\x91\x53\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x98\x67\x91\x53\x8f\xc1\x8b\x8e") < 0)
 		|| (game_evenicle && (ain_get_global(ain, "g_a\xa5\xad\xa5\xe3\xa5\xe9\xa5\xc7\xa9`\xa5\xbf") >= 0
 			|| ain_get_function(ain, "\xcb\xf9\xb3\xd6\xbd\xf0\xd4O\xb6\xa8") >= 0))
 		|| game_evenicle_rance_cn
@@ -1503,7 +1535,7 @@ void apply_game_specific_hacks(struct ain *ain)
 			|| ain_has_gbk_string(ain, "\xd2\xd1\xb6\xc1\xce\xc4\xb1\xbe\xcc\xf8\xb9\xfd")))
 		|| (game_tsumashibori && (ain_has_gbk_string(ain, "\xc6\xde\xa4\xb7\xa4\xdc\xa4\xea")
 			|| ain_has_gbk_string(ain, "\xba\xda\xcc\xe5")))
-		|| (game_ixseal && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0)
+		|| (game_ixseal && gbk_msg_evidence && ain_get_function(ain, "\x82\x6f\x81\x51\x83\x41\x83\x4e\x83\x65\x83\x42\x83\x72\x83\x65\x83\x42\x8e\xc0\x8d\x73") < 0)
 		|| ain_messages_look_gbk(ain);
 	sys4_set_text_gbk(text_enc == AIN_ENC_GBK || (text_enc != AIN_ENC_SJIS && gbk_heuristics));
 	if (game_evenicle_rance_cn && sys4_text_is_gbk && !sys4_source_is_utf8)

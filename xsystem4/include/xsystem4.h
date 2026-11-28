@@ -139,6 +139,7 @@ extern bool game_dohnadohna;
 extern bool game_evenicle;
 extern bool game_evenicle_rance;
 extern bool game_evenicle_rance_cn;
+extern bool game_has_mixed_gbk_sjis_text;
 extern bool game_evenicle_gaiden;
 extern bool game_bladebriders;
 extern bool game_evenicle2;

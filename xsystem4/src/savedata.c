@@ -791,6 +791,32 @@ int save_text_gbk_bias(const char *s)
 {
 	if (!s || !s[0] || cjk_is_ascii_only(s))
 		return 0;
+	int gb2312_pairs = 0;
+	int gbk_low_trail = 0;
+	int sjis_jis1_kanji = 0;
+	int sjis_non_jis1 = 0;
+	for (const uint8_t *r = (const uint8_t *)s; *r;) {
+		if (*r < 0x80) {
+			r++;
+		} else if (r[0] >= 0xa1 && r[0] <= 0xf7 && r[1] >= 0xa1 && r[1] <= 0xfe) {
+			gb2312_pairs++;
+			r += 2;
+		} else if (r[0] >= 0xa1 && r[0] <= 0xfe && r[1] >= 0x40 && r[1] <= 0x7e) {
+			gbk_low_trail++;
+			r += 2;
+		} else if (r[1]) {
+			uint16_t code = ((uint16_t)r[0] << 8) | r[1];
+			if (code >= 0x889f && code <= 0x9872 && ((r[1] >= 0x40 && r[1] <= 0x7e) || (r[1] >= 0x80 && r[1] <= 0xfc)))
+				sjis_jis1_kanji++;
+			else
+				sjis_non_jis1++;
+			r += 2;
+		} else {
+			break;
+		}
+	}
+	bool gbk_plausible = gb2312_pairs > 0 && gbk_low_trail <= gb2312_pairs;
+
 	bool ok_s = false, ok_g = false;
 	char *us = sys4_has_mai_word_table() ? mai_cjk2utf_strict(s, &ok_s) : cjk2utf_strict(s, false, &ok_s);
 	char *ug = cjk2utf_strict(s, true, &ok_g);
@@ -802,10 +828,11 @@ int save_text_gbk_bias(const char *s)
 	if (!ok_s && ok_g) {
 		free(us);
 		free(ug);
-		return 100;
+		return gbk_plausible ? 100 : 0;
 	}
 
 	int bias = 0;
+	int halfwidth_kana = 0;
 	if (us) {
 		const uint8_t *p = (const uint8_t *)us;
 		while (*p) {
@@ -824,9 +851,11 @@ int save_text_gbk_bias(const char *s)
 			if ((cp >= 0x3000 && cp <= 0x30ff) || (cp >= 0xff01 && cp <= 0xff5e))
 				bias -= 12;
 			else if (cp >= 0xff61 && cp <= 0xff9f)
-				bias += 8;
+				halfwidth_kana++;
 		}
 	}
+	if (gbk_plausible && gb2312_pairs >= 2)
+		bias += halfwidth_kana * 6;
 	if (ug) {
 		const uint8_t *p = (const uint8_t *)ug;
 		while (*p) {
@@ -846,18 +875,12 @@ int save_text_gbk_bias(const char *s)
 				bias += 12;
 		}
 	}
-	for (const uint8_t *r = (const uint8_t *)s; *r;) {
-		if (*r < 0x80) {
-			r++;
-		} else if (r[0] >= 0xb0 && r[0] <= 0xf7 && r[1] >= 0xa1 && r[1] <= 0xfe) {
-			bias += 4;
-			r += 2;
-		} else if (r[1]) {
-			r += 2;
-		} else {
-			break;
-		}
-	}
+	if (gbk_plausible && (gb2312_pairs >= 2 || halfwidth_kana == 0))
+		bias += gb2312_pairs * 4;
+	if (!gbk_plausible && ok_s && sjis_jis1_kanji > 0 && sjis_non_jis1 == 0)
+		bias -= sjis_jis1_kanji * 6;
+	if (!gbk_plausible && bias > 0)
+		bias = 0;
 	free(us);
 	free(ug);
 	return bias;

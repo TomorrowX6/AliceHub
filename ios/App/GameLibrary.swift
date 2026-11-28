@@ -111,13 +111,18 @@ final class GameLibrary: ObservableObject {
                 lower == "uif_config.json" ||
                 lower.hasSuffix("_chs.ald") || lower.hasSuffix("chs.afa") ||
                 lower.hasSuffix("chs2.afa") || lower.hasSuffix("_cn.afa") ||
-                lower.hasSuffix("_cn.ain") || lower.hasSuffix("_cn.ald") {
+                lower.hasSuffix("_cn.ain") || lower.hasSuffix("_cn.ald") ||
+                lower.hasSuffix("_cht.ald") || lower.hasSuffix("_cht.ain") ||
+                lower.hasSuffix("_cht.afa") || lower.hasSuffix("_tc.ain") ||
+                lower.hasSuffix("_tc.afa") || lower.hasSuffix("_tc.ald") {
                 return true
             }
             let ext = (lower as NSString).pathExtension
             guard chineseMarkerAssetExtensions.contains(ext) else { continue }
             if lower.hasPrefix("sourcehansanscn") || lower.contains("_cn_") ||
-                lower.contains("汉化") || lower.contains("中文") {
+                lower.contains("_tc_") || lower.contains("_cht_") ||
+                lower.contains("汉化") || lower.contains("漢化") ||
+                lower.contains("中文") || lower.contains("繁体") || lower.contains("繁體") {
                 return true
             }
         }
@@ -163,7 +168,7 @@ final class GameLibrary: ObservableObject {
     }
 
     private static let artworkAliases: [(String, [String])] = [
-        ("escalayer_reboot", ["escalayerreboot", "reboot"]),
+        ("escalayer_reboot", ["escalayerreboot", "beatangelescalayerreboot", "エスカレイヤーリブート", "エスカレイヤー・リブート"]),
         ("evenicle2rance", ["evenicle2rance", "イブニクル2ランス", "イブニクル２ランス", "夏娃年代记2兰斯", "夏娃年代記2蘭斯", "evenicle2兰斯"]),
         ("evenicle2", ["evenicle2", "イブニクル2", "夏娃年代记2"]),
         ("eveniclerance", ["eveniclerance", "イブニクルランス", "夏娃年代记兰斯", "夏娃年代記蘭斯", "夏娃兰斯"]),
@@ -177,22 +182,22 @@ final class GameLibrary: ObservableObject {
         ("rance1classic", ["rance1classic", "兰斯1原版", "兰斯1（原版）", "兰斯i寻找小光"]),
         ("rance2classic", ["rance2classic", "rance2sa.ald", "rance2ga.ald", "兰斯2原版", "兰斯2（原版）", "兰斯ii反叛的少女"]),
         ("rance3classic", ["rance3classic", "rance3sa.ald", "rance3ga.ald", "兰斯3原版", "兰斯3（原版）", "兰斯iii利萨斯陥落", "兰斯iii利萨斯陷落"]),
-        ("rance01", ["rance01", "兰斯01", "ランス01"]),
-        ("rance02", ["rance02", "兰斯02", "ランス02", "ランス０２"]),
-        ("rance03", ["rance03", "兰斯03", "ランス03"]),
+        ("rance01", ["rance01", "questforhikari", "兰斯01", "ランス01"]),
+        ("rance02", ["rance02", "rebelliousmaidens", "兰斯02", "ランス02", "ランス０２"]),
+        ("rance03", ["rance03", "fallofleazas", "兰斯03", "ランス03"]),
         ("rance41", ["rance41", "rance4.1", "ran41sa", "兰斯4.1", "兰斯41", "ランス4.1", "拯救制药厂", "お薬工場"]),
         ("rance42", ["rance42", "rance4.2", "ran42sa", "兰斯4.2", "兰斯42", "ランス4.2", "天使组", "天使組", "エンジェル組"]),
         ("rance04", ["rance04", "rance4sa", "ranceiv", "兰斯iv", "兰斯4", "ランスiv", "ランス4", "教团的遗产", "教団の遺産"]),
-        ("rance5d", ["rance5d", "r5dsa", "兰斯5d", "ランス5d", "ランス５ｄ"]),
+        ("rance5d", ["rance5d", "r5dsa", "lonelygirl", "兰斯5d", "ランス5d", "ランス５ｄ"]),
         ("rance6after", ["rance6after", "ranceviaftermath", "rancevisonogo", "ランス6その後", "ランス６その後", "兰斯06后日谈", "兰斯6后日谈", "兰斯vi后日谈", "儔儞僗俇偦偺屻"]),
-        ("rance06", ["rance06", "rance6", "兰斯6", "ランス6"]),
-        ("rance08", ["rance08", "rance8", "兰斯8", "ランスクエスト"]),
-        ("rance09", ["rance09", "rance9", "兰斯9", "ランス9"]),
+        ("rance06", ["rance06", "rance6", "rancevi", "collapseofzeth", "兰斯6", "ランス6"]),
+        ("rance08", ["rance08", "rance8", "rancequest", "兰斯8", "ランスクエスト"]),
+        ("rance09", ["rance09", "rance9", "ranceix", "helmanian", "兰斯9", "ランス9"]),
         ("daiakuji", ["daiakuji", "大悪司", "大恶司"]),
         ("daibanchougaiden", ["daibanchougaiden", "大番長外伝", "大番长外传", "大番長外傳"]),
         ("daibanchou", ["daibanchou", "大番長", "大番长", "bigbangage"]),
         ("daiteikoku", ["daiteikoku", "大帝国", "大帝國"]),
-        ("galzoo", ["galzoo"]), ("ixseal", ["ixseal", "イクシール"]),
+        ("galzoo", ["galzoo"]), ("ixseal", ["ixseal", "エクシール", "イクシール", "beatvalkyrie"]),
         ("harukavsesca", ["harukavsesca", "ハルカvs", "ハルカｖｓ", "遥vs艾斯卡", "遙vs艾斯卡", "harukavsescalayer"]),
         ("harukaninja", ["harukaninja", "疾風!?忍者大作戦", "疾風！？忍者大作戦", "疾风!?忍者大作战", "疾风！？忍者大作战", "忍者大作戦", "忍者大作战", "shippuu"]),
         ("haruka", ["haruka", "ハルカ"]), ("tsumashibori", ["tsumashibori", "妻しぼり"]),
@@ -329,7 +334,7 @@ final class GameLibrary: ObservableObject {
         ("yorugakuru", ["yorugakuru", "nightremaster", "夜が来る", "邪夜将至", "邪夜將至", "squareofthemoon"]),
         ("maman", ["maman", "heartfulmaman", "は～とふるママン", "は〜とふるママン", "はーとふるママン", "再婚妈妈", "再婚媽媽"]),
         ("haharanman", ["haharanman", "母爛漫", "母烂漫", "曣椆枤"]),
-        ("escalayer", ["escalayer", "doki", "エスカレイヤー"]),
+        ("escalayer", ["escalayer", "beatangelescalayer", "dokisa.ald", "dokiga.ald", "エスカレイヤー"]),
         ("evenicle", ["evenicle", "イブニクル", "夏娃年代记"])
     ]
 
@@ -370,8 +375,80 @@ final class GameLibrary: ObservableObject {
         return nil
     }
 
+    private static let legacySystem3EnglishAdiskCrcs: Set<UInt32> = [
+        0xc39ca9e6, // Rance 4.1 EN
+        0x07e46c85, // Rance 4.2 EN
+        0x61985a7f, // Little Vampire EN
+        0x6ba8c102, // Gakuen Senki EN
+    ]
+
+    private static let explicitEnglishSys4Titles: [String] = [
+        "sengoku rance",
+        "rance 01",
+        "quest for hikari",
+        "rance 02",
+        "rebellious maidens",
+        "rance 03",
+        "fall of leazas",
+        "rance vi",
+        "collapse of zeth",
+        "rance quest",
+        "rance ix",
+        "helmanian revolution",
+        "rance x",
+        "beat blades haruka",
+        "beat angel escalayer",
+        "beat valkyrie ixseal",
+        "let's do bad things together",
+        "english edition",
+        "(en)",
+        "[en]",
+    ]
+
+    private static func iniKeyValue(in rawText: String, key targetKey: String) -> String? {
+        let text = rawText.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
+        for rawLine in text.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("#") || line.hasPrefix("//") {
+                continue
+            }
+            guard let eq = line.firstIndex(of: "=") else { continue }
+            let key = line[..<eq].trimmingCharacters(in: .whitespaces)
+            guard key.caseInsensitiveCompare(targetKey) == .orderedSame else { continue }
+            var value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            if value.hasPrefix("\"") {
+                let rest = value.dropFirst()
+                if let close = rest.firstIndex(of: "\"") {
+                    value = String(rest[..<close])
+                } else {
+                    value = String(rest)
+                }
+            } else {
+                for marker in [";", "#", "//"] {
+                    if let range = value.range(of: marker) {
+                        value = String(value[..<range.lowerBound])
+                    }
+                }
+                value = value.trimmingCharacters(in: .whitespaces)
+            }
+            if !value.isEmpty { return value }
+        }
+        return nil
+    }
+
+    private static func system4GameNameFromRegularFiles(_ regularFiles: [URL]) -> String? {
+        for iniName in ["alicestart.ini", "system40.ini", "alicestart2.ini"] {
+            guard let file = regularFiles.first(where: { $0.lastPathComponent.lowercased() == iniName }),
+                  let data = try? Data(contentsOf: file), data.count <= 256 * 1024 else { continue }
+            let decoded = ArchiveExtractor.decodeBestCjkText(data)
+            if let value = iniKeyValue(in: decoded, key: "GameName"), !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
     private static func system4BootConfigurations(_ regularFiles: [URL], in root: URL) -> [(ini: URL, script: URL)] {
-        let codeName = #"(?m)^[\t ]*CodeName[\t ]*=[\t ]*"([^"\r\n]+)""#
         return regularFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { file in
             let name = file.lastPathComponent.lowercased()
             guard !name.hasPrefix("."), name != "system39.ini", name != "system3.ini",
@@ -386,11 +463,8 @@ final class GameLibrary: ObservableObject {
                 String(data: data, encoding: .shiftJIS),
                 String(data: data, encoding: String.Encoding(rawValue: ArchiveExtractor.gbk)),
             ].compactMap({ $0 }) {
-                let text = decoded.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}"))
-                guard let range = text.range(of: codeName, options: .regularExpression),
-                      let firstQuote = text[range].firstIndex(of: "\"") else { continue }
-                let code = text[text.index(after: firstQuote)..<range.upperBound].dropLast()
-                if let script = system4ConfiguredScript(String(code), in: root) {
+                guard let code = iniKeyValue(in: decoded, key: "CodeName") else { continue }
+                if let script = system4ConfiguredScript(code, in: root) {
                     return (file, script)
                 }
             }
@@ -414,7 +488,8 @@ final class GameLibrary: ObservableObject {
         if system39 || names.contains(where: isSystem35Scenario) {
             return (.system3, url, system39)
         }
-        if names.contains("adisk.dat") && (names.contains("acg.dat") || names.contains("acg0.dat") || names.contains("acg3.dat")) {
+        if (names.contains("adisk.dat") || names.contains("gdisk.dat") || names.contains("agame.dat")) &&
+            (names.contains("acg.dat") || names.contains("acg0.dat") || names.contains("acg3.dat")) {
             return (.legacySystem3, url, false)
         }
         throw LibraryError.notGame
@@ -425,18 +500,16 @@ final class GameLibrary: ObservableObject {
         return lower.hasSuffix("sa.ald") || lower.hasSuffix("sa_chs.ald") || lower == "adisk.ald"
     }
 
-    private static func legacySystem3GameIdFromRegularFiles(_ regularFiles: [URL]) -> String? {
+    private static func rawLegacySystem3GameIdFromRegularFiles(_ regularFiles: [URL]) -> String? {
         guard let ini = regularFiles.first(where: { $0.lastPathComponent.lowercased() == "system3.ini" }),
-              let data = try? Data(contentsOf: ini), data.count <= 256 * 1024,
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        for line in text.split(whereSeparator: \.isNewline) {
-            let parts = line.split(separator: "=", maxSplits: 1)
-            if parts.count == 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "game" {
-                let value = parts[1].trimmingCharacters(in: .whitespaces).lowercased()
-                if !value.isEmpty { return value }
-            }
-        }
-        return nil
+              let data = try? Data(contentsOf: ini), data.count <= 256 * 1024 else { return nil }
+        let text = ArchiveExtractor.decodeBestCjkText(data)
+        return iniKeyValue(in: text, key: "game")?.lowercased()
+    }
+
+    private static func legacySystem3GameIdFromRegularFiles(_ regularFiles: [URL]) -> String? {
+        guard let raw = rawLegacySystem3GameIdFromRegularFiles(regularFiles) else { return nil }
+        return raw.hasSuffix("_eng") ? String(raw.dropLast(4)) : raw
     }
 
     private static func legacyDiskPrefixCrc32FromRegularFiles(_ regularFiles: [URL], fileNameLower: String) -> UInt32? {
@@ -456,7 +529,9 @@ final class GameLibrary: ObservableObject {
     }
 
     private static func legacyAdiskCrc32FromRegularFiles(_ regularFiles: [URL]) -> UInt32? {
-        legacyDiskPrefixCrc32FromRegularFiles(regularFiles, fileNameLower: "adisk.dat")
+        legacyDiskPrefixCrc32FromRegularFiles(regularFiles, fileNameLower: "adisk.dat") ??
+            legacyDiskPrefixCrc32FromRegularFiles(regularFiles, fileNameLower: "gdisk.dat") ??
+            legacyDiskPrefixCrc32FromRegularFiles(regularFiles, fileNameLower: "agame.dat")
     }
 
     private static func legacyBdiskCrc32FromRegularFiles(_ regularFiles: [URL]) -> UInt32? {
@@ -570,8 +645,9 @@ final class GameLibrary: ObservableObject {
         let info = try? launchInfoFromRegularFiles(url, regularFiles: regularFiles)
         let engine = info?.engine ?? .system4
         let regularNamesLower = Set(regularFiles.map { $0.lastPathComponent.lowercased() })
-        let legacyId = engine == .legacySystem3 ? legacySystem3GameIdFromRegularFiles(regularFiles) : nil
-        let adiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
+        let rawLegacyId = engine == .legacySystem3 ? rawLegacySystem3GameIdFromRegularFiles(regularFiles) : nil
+        let legacyId = rawLegacyId.map { $0.hasSuffix("_eng") ? String($0.dropLast(4)) : $0 }
+        let adiskCrc = engine == .legacySystem3 ? legacyAdiskCrc32FromRegularFiles(regularFiles) : nil
         let bdiskCrc = (engine == .legacySystem3 && legacyId == nil) ? legacyBdiskCrc32FromRegularFiles(regularFiles) : nil
 
         let kichikuou = engine == .system3 && (
@@ -579,7 +655,7 @@ final class GameLibrary: ObservableObject {
             regularNamesLower.contains("kichikurancega.ald") ||
             regularNamesLower.contains("鬼畜王sa.ald")
         )
-        let rance04 = engine == .system3 && regularNamesLower.contains("rance4sa.ald")
+        let rance04 = engine == .system3 && (regularNamesLower.contains("rance4sa.ald") || regularNamesLower.contains("rance4sa_chs.ald"))
         let rance1Classic = (engine == .system3 && regularNamesLower.contains("rancesa.ald")) ||
             (engine == .legacySystem3 && (legacyId == "rance" || (legacyId == nil && adiskCrc == 0x2fffbd60)))
         let rance2Classic = (engine == .system3 && regularNamesLower.contains("rance2sa.ald")) ||
@@ -595,23 +671,23 @@ final class GameLibrary: ObservableObject {
         let dpsSg3Rabbit = engine == .legacySystem3 && ((legacyId == "dps_sg3_rabbit" || legacyId == "dpssg3rabbit") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0xa3228b6c))
         let dpsSg3Shinkon = engine == .legacySystem3 && ((legacyId == "dps_sg3_shinkon" || legacyId == "dpssg3shinkon") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0x09b4448a))
         let dpsSg3Sotsugyou = engine == .legacySystem3 && ((legacyId == "dps_sg3_sotsugyou" || legacyId == "dpssg3sotsugyou") || (legacyId == nil && adiskCrc == 0xb77ae133 && bdiskCrc == 0xbc4525d8))
-        let rance41 = (engine == .system3 && regularNamesLower.contains("ran41_sa.ald")) ||
+        let rance41 = (engine == .system3 && (regularNamesLower.contains("ran41_sa.ald") || regularNamesLower.contains("rance41sa.ald"))) ||
             (engine == .legacySystem3 && (
-                (legacyId.map { $0 == "rance41" || $0 == "rance41_eng" || $0 == "rance4.1" } ?? false) ||
+                (legacyId.map { $0 == "rance41" || $0 == "rance4.1" } ?? false) ||
                 (legacyId == nil && (adiskCrc == 0xa43fb4b6 || adiskCrc == 0xc39ca9e6))
             ))
-        let rance42 = (engine == .system3 && regularNamesLower.contains("ran42_sa.ald")) ||
+        let rance42 = (engine == .system3 && (regularNamesLower.contains("ran42_sa.ald") || regularNamesLower.contains("rance42sa.ald"))) ||
             (engine == .legacySystem3 && (
-                (legacyId.map { $0 == "rance42" || $0 == "rance42_eng" || $0 == "rance4.2" } ?? false) ||
+                (legacyId.map { $0 == "rance42" || $0 == "rance4.2" } ?? false) ||
                 (legacyId == nil && (adiskCrc == 0x04d24d1e || adiskCrc == 0x07e46c85))
             ))
         let rance5d = engine == .system3 && regularNamesLower.contains("r5d_sa.ald")
         let yakata2 = engine == .legacySystem3 && (
-            (legacyId.map { $0 == "yakata2" || $0 == "yakata2_eng" } ?? false) ||
-            (legacyId == nil && adiskCrc == 0x45951cab)
+            legacyId == "yakata2" ||
+            (legacyId == nil && (adiskCrc == 0x45951cab || adiskCrc == 0x2df591ff))
         )
         let yakata1 = engine == .legacySystem3 && ((legacyId == "yakata" || legacyId == "yakata1") || (legacyId == nil && (adiskCrc == 0x8cef6fa6 || adiskCrc == 0xd8f84e34)))
-        let littleVampire = engine == .legacySystem3 && ((legacyId == "vampire" || legacyId == "little_vampire" || legacyId == "littlevampire") || (legacyId == nil && adiskCrc == 0x957bcfbf))
+        let littleVampire = engine == .legacySystem3 && ((legacyId == "vampire" || legacyId == "little_vampire" || legacyId == "littlevampire") || (legacyId == nil && (adiskCrc == 0x957bcfbf || adiskCrc == 0x61985a7f)))
         let intruder = engine == .legacySystem3 && (legacyId == "intruder" || (legacyId == nil && adiskCrc == 0xa7520fb2))
         let crescent = engine == .legacySystem3 && (legacyId == "crescent" || (legacyId == nil && adiskCrc == 0x42351f2c))
         let tengu = engine == .legacySystem3 && ((legacyId == "tengu" || legacyId == "abunai_tengu") || (legacyId == nil && adiskCrc == 0xc942ff58))
@@ -619,9 +695,10 @@ final class GameLibrary: ObservableObject {
         let sdpsTono = engine == .legacySystem3 && ((legacyId == "sdps_tono" || legacyId == "sdpstono") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xbb1edff1))
         let sdpsKaizoku = engine == .legacySystem3 && ((legacyId == "sdps_kaizoku" || legacyId == "sdpskaizoku") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xf81829e3))
         let sdpsMaria = engine == .legacySystem3 && (
-            (legacyId.map { $0 == "sdps_maria" || $0 == "sdps_maria_eng" || $0 == "sdps" || $0 == "superdps" } ?? false) ||
-            (legacyId == nil && adiskCrc == 0x9418eef5)
+            (legacyId.map { $0 == "sdps_maria" || $0 == "sdps" || $0 == "superdps" } ?? false) ||
+            (legacyId == nil && (adiskCrc == 0x9418eef5 || (adiskCrc == 0xc7a20cdf && bdiskCrc == 0x80d4eaca)))
         )
+        let drStop = engine == .legacySystem3 && (legacyId == "drstop" || (legacyId == nil && adiskCrc == 0x73fa86c4))
         let gakuenKing = engine == .legacySystem3 && isGakuenKingFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
         let onlyYou = engine == .legacySystem3 && isOnlyYouFromRegularFiles(legacyId: legacyId, adiskCrc: adiskCrc)
         let ayumiLive = engine == .legacySystem3 && isAyumiLiveFromRegularFiles(regularNamesLower, legacyId: legacyId, adiskCrc: adiskCrc)
@@ -666,6 +743,7 @@ final class GameLibrary: ObservableObject {
         else if sdpsTono { displayName = "Super D.P.S 远野之森" }
         else if sdpsKaizoku { displayName = "Super D.P.S 欢乐海盗生涯" }
         else if sdpsMaria { displayName = "Super D.P.S 玛利亚和坎潘" }
+        else if drStop { displayName = "Dr.STOP!" }
         else if gakuenKing { displayName = "学园KING" }
         else if onlyYou { displayName = "Only You 世纪末的朱丽叶们" }
         else if ayumiLive { displayName = "步美物语 真人版" }
@@ -743,6 +821,7 @@ final class GameLibrary: ObservableObject {
         else if sdpsTono { detectedArtworkID = "sdpstono" }
         else if sdpsKaizoku { detectedArtworkID = "sdpskaizoku" }
         else if sdpsMaria { detectedArtworkID = "sdpsmaria" }
+        else if drStop { detectedArtworkID = "drstop" }
         else if gakuenKing { detectedArtworkID = "gakuenking" }
         else if onlyYou { detectedArtworkID = "onlyyou" }
         else if ayumiLive { detectedArtworkID = "ayumilive" }
@@ -768,11 +847,12 @@ final class GameLibrary: ObservableObject {
         else if isTenguDir { detectedArtworkID = "tengu" }
         else { detectedArtworkID = nil }
 
+        let sys4GameName = engine == .system4 ? system4GameNameFromRegularFiles(regularFiles) : nil
         let artworkKey: String?
         if let detectedArtworkID {
             artworkKey = detectedArtworkID
         } else {
-            let names = contents.map { $0.lastPathComponent } + [url.lastPathComponent]
+            let names = contents.map { $0.lastPathComponent } + [url.lastPathComponent] + (sys4GameName.map { [$0] } ?? [])
             let normalized = names.joined(separator: " ").lowercased()
                 .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "_", with: "")
                 .replacingOccurrences(of: "-", with: "").replacingOccurrences(of: "・", with: "")
@@ -792,7 +872,21 @@ final class GameLibrary: ObservableObject {
         }
 
         let hasLocalChinese = hasLocalChineseMarkers(regularFiles: regularFiles, directoryContents: contents)
-        let hasExplicitNonChinese = legacyId?.hasSuffix("_eng") == true
+        let hasEnglishSys4Title: Bool = {
+            guard let title = sys4GameName?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+                return false
+            }
+            let hasCjk = title.unicodeScalars.contains {
+                (0x4E00...0x9FFF).contains($0.value) || (0x3040...0x30FF).contains($0.value)
+            }
+            if hasCjk { return false }
+            let lower = title.lowercased()
+            return explicitEnglishSys4Titles.contains(where: lower.contains)
+        }()
+        let hasExplicitNonChinese = rawLegacyId?.hasSuffix("_eng") == true ||
+            (engine == .legacySystem3 && (adiskCrc.map { legacySystem3EnglishAdiskCrcs.contains($0) } ?? false)) ||
+            regularNamesLower.contains { $0.hasSuffix("_en.ain") || $0.hasSuffix("_eng.ain") || $0.hasSuffix("_en_us.ain") } ||
+            hasEnglishSys4Title
         let hasCnPatch = hasInstalledCnPatch(url, regularFiles: regularFiles)
 
         return InspectedGame(
@@ -831,28 +925,10 @@ final class GameLibrary: ObservableObject {
         guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
               let info = try? launchInfo(url), info.engine == .system3 else { return false }
         return contents.contains {
-            $0.lastPathComponent.lowercased() == "rance4sa.ald" &&
+            let lower = $0.lastPathComponent.lowercased()
+            return (lower == "rance4sa.ald" || lower == "rance4sa_chs.ald") &&
                 (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }
-    }
-
-    private static func legacySystem3GameId(_ url: URL) -> String? {
-        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]),
-              let info = try? launchInfo(url), info.engine == .legacySystem3,
-              let ini = contents.first(where: {
-                  $0.lastPathComponent.lowercased() == "system3.ini" &&
-                      (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
-              }),
-              let data = try? Data(contentsOf: ini), data.count <= 256 * 1024,
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        for line in text.split(whereSeparator: \.isNewline) {
-            let parts = line.split(separator: "=", maxSplits: 1)
-            if parts.count == 2 && parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "game" {
-                let value = parts[1].trimmingCharacters(in: .whitespaces).lowercased()
-                if !value.isEmpty { return value }
-            }
-        }
-        return nil
     }
 
     static func isRance41(_ url: URL) -> Bool {
@@ -860,11 +936,14 @@ final class GameLibrary: ObservableObject {
               let info = try? launchInfo(url) else { return false }
         let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
         if info.engine == .system3 {
-            return regularFiles.contains { $0.lastPathComponent.lowercased() == "ran41_sa.ald" }
+            return regularFiles.contains {
+                let lower = $0.lastPathComponent.lowercased()
+                return lower == "ran41_sa.ald" || lower == "rance41sa.ald"
+            }
         }
         guard info.engine == .legacySystem3 else { return false }
         if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
-            return game == "rance41" || game == "rance41_eng" || game == "rance4.1"
+            return game == "rance41" || game == "rance4.1"
         }
         let crc = legacyAdiskCrc32FromRegularFiles(regularFiles)
         return crc == 0xa43fb4b6 || crc == 0xc39ca9e6
@@ -875,11 +954,14 @@ final class GameLibrary: ObservableObject {
               let info = try? launchInfo(url) else { return false }
         let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
         if info.engine == .system3 {
-            return regularFiles.contains { $0.lastPathComponent.lowercased() == "ran42_sa.ald" }
+            return regularFiles.contains {
+                let lower = $0.lastPathComponent.lowercased()
+                return lower == "ran42_sa.ald" || lower == "rance42sa.ald"
+            }
         }
         guard info.engine == .legacySystem3 else { return false }
         if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
-            return game == "rance42" || game == "rance42_eng" || game == "rance4.2"
+            return game == "rance42" || game == "rance4.2"
         }
         let crc = legacyAdiskCrc32FromRegularFiles(regularFiles)
         return crc == 0x04d24d1e || crc == 0x07e46c85
@@ -890,9 +972,10 @@ final class GameLibrary: ObservableObject {
               let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
         let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
         if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
-            return game == "yakata2" || game == "yakata2_eng"
+            return game == "yakata2"
         }
-        return legacyAdiskCrc32FromRegularFiles(regularFiles) == 0x45951cab
+        let crc = legacyAdiskCrc32FromRegularFiles(regularFiles)
+        return crc == 0x45951cab || crc == 0x2df591ff
     }
 
     static func isSdpsMaria(_ url: URL) -> Bool {
@@ -900,9 +983,11 @@ final class GameLibrary: ObservableObject {
               let info = try? launchInfo(url), info.engine == .legacySystem3 else { return false }
         let regularFiles = contents.filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
         if let game = legacySystem3GameIdFromRegularFiles(regularFiles) {
-            return game == "sdps_maria" || game == "sdps_maria_eng" || game == "sdps" || game == "superdps"
+            return game == "sdps_maria" || game == "sdps" || game == "superdps"
         }
-        return legacyAdiskCrc32FromRegularFiles(regularFiles) == 0x9418eef5
+        let crc = legacyAdiskCrc32FromRegularFiles(regularFiles)
+        if crc == 0x9418eef5 { return true }
+        return crc == 0xc7a20cdf && legacyBdiskCrc32FromRegularFiles(regularFiles) == 0x80d4eaca
     }
 
     static func isGakuenKing(_ url: URL) -> Bool {

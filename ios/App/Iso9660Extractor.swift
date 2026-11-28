@@ -103,13 +103,20 @@ enum Iso9660Extractor {
             try checkCancelled()
             let extent = queue[index]; index += 1
             guard visited.insert(extent.lba).inserted else { throw ArchiveError.invalidImage }
+            var dirNames = Set<String>()
             for entry in try entries(directoryBytes(file, desc.layout, extent), joliet: desc.joliet) {
                 if entry.directory { queue.append(entry.extents[0]) }
                 else {
                     let name = entry.name.lowercased()
                     if name == "alicestart.chs" || name == "alicestart.ini" || name == "alicestart2.ini" || name == "system40.ini" ||
+                        name == "system39.ini" || name == "system39.ain" || GameLibrary.isSystem35Scenario(name) ||
                         (!name.hasPrefix(".") && name != "system39.ain" && name.hasSuffix(".ain")) { return true }
+                    dirNames.insert(name)
                 }
+            }
+            if (dirNames.contains("adisk.dat") || dirNames.contains("gdisk.dat") || dirNames.contains("agame.dat")) &&
+                (dirNames.contains("acg.dat") || dirNames.contains("acg0.dat") || dirNames.contains("acg3.dat")) {
+                return true
             }
         }
         return false

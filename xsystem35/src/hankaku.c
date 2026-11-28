@@ -342,10 +342,35 @@ static char *zen2han_utf8(const char *src) {
 	return _dst;
 }
 
+static uint8_t *zen2han_gbk(const uint8_t *src) {
+	uint8_t *dst = malloc(strlen((const char *)src) + 1);
+	if (dst == NULL)
+		NOMEMERR();
+	uint8_t *p = dst;
+	while (*src) {
+		if (src[0] == 0xa1 && src[1] == 0xa1) {
+			*p++ = ' ';
+			src += 2;
+		} else if (src[0] == 0xa3 && src[1] >= 0xa1 && src[1] <= 0xfe) {
+			*p++ = (uint8_t)(src[1] - 0x80);
+			src += 2;
+		} else if (CHECKGBK1BYTE(src[0]) && src[1] >= 0x40) {
+			*p++ = *src++;
+			*p++ = *src++;
+		} else {
+			*p++ = *src++;
+		}
+	}
+	*p = '\0';
+	return dst;
+}
+
 uint8_t *zen2han(const uint8_t *src, CharacterEncoding enc) {
 	switch (enc) {
 	case SHIFT_JIS:
 		return zen2han_sjis(src);
+	case GBK:
+		return zen2han_gbk(src);
 	case UTF8:
 		return zen2han_utf8(src);
 	default:

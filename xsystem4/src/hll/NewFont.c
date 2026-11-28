@@ -17,6 +17,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "system4/utfsjis.h"
 #include "gfx/font.h"
 #include "sact.h"
 #include "sprite.h"
@@ -135,11 +136,27 @@ static int NewFont_DrawShadowChar(int sp_no, int c)
 	return 1;
 }
 
+static uint32_t newfont_decode_vm_char(int c)
+{
+	if (c <= 0)
+		return 0;
+	if ((c & ~0xff) == 0 && c < 0x80)
+		return (uint32_t)c;
+	char text[3] = { (char)(c & 0xff), (char)((c >> 8) & 0xff), 0 };
+	int unicode = 0;
+	if (mai_sjis_char2unicode(text, &unicode) && unicode > 0)
+		return (uint32_t)unicode;
+	return (uint32_t)c;
+}
+
 static int NewFont_MeasureChar(int c1, int c2)
 {
 	struct font_size *size = NewFont_metrics.font_size;
-	//return lround(size->font->size_char_kerning(size, c1, c2));
-	return ceilf(size->font->size_char_kerning(size, c1, c2));
+	if (!size || !size->font)
+		return 0;
+	uint32_t u1 = newfont_decode_vm_char(c1);
+	uint32_t u2 = newfont_decode_vm_char(c2);
+	return ceilf(size->font->size_char_kerning(size, u1, u2));
 }
 
 // XXX: not used

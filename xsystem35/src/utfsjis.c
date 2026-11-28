@@ -181,7 +181,7 @@ uint8_t *sjis2utf(const uint8_t *src) {
 				break;
 			if (chs_remap_loaded) {
 				uint16_t mapped = chs_remap_tbl[((unsigned)src[0] << 8) | src[1]];
-				if (mapped) {
+				if (mapped && mapped != 0x003f) {
 					if (mapped <= 0x7f) {
 						c = mapped;
 					} else {
@@ -371,27 +371,82 @@ void cjk_score_sample(const uint8_t *src, int *sjis_err, int *gbk_err, int *gbk_
 	}
 }
 
+static bool cjk_is_valid_utf8_multibyte(const uint8_t *src) {
+	bool has_3plus = false;
+	int two_byte_non_gb2312 = 0, two_byte_cyrillic_greek = 0;
+	for (const uint8_t *p = src; *p;) {
+		uint8_t b = *p;
+		if (b < 0x80) {
+			p++;
+			continue;
+		}
+		if (b >= 0xc2 && b <= 0xdf) {
+			if ((p[1] & 0xc0) != 0x80)
+				return false;
+			uint32_t cp = ((uint32_t)(b & 0x1f) << 6) | (uint32_t)(p[1] & 0x3f);
+			if (p[1] <= 0xa0 && ((cp >= 0x00c0 && cp <= 0x024f) || (cp >= 0x0370 && cp <= 0x04ff)))
+				two_byte_non_gb2312++;
+			if (cp >= 0x0370 && cp <= 0x04ff)
+				two_byte_cyrillic_greek++;
+			p += 2;
+		} else if (b >= 0xe0 && b <= 0xef) {
+			if ((p[1] & 0xc0) != 0x80 || (p[2] & 0xc0) != 0x80)
+				return false;
+			if ((b == 0xe0 && p[1] < 0xa0) || (b == 0xed && p[1] >= 0xa0))
+				return false;
+			has_3plus = true;
+			p += 3;
+		} else if (b >= 0xf0 && b <= 0xf4) {
+			if ((p[1] & 0xc0) != 0x80 || (p[2] & 0xc0) != 0x80 || (p[3] & 0xc0) != 0x80)
+				return false;
+			if ((b == 0xf0 && p[1] < 0x90) || (b == 0xf4 && p[1] > 0x8f))
+				return false;
+			has_3plus = true;
+			p += 4;
+		} else {
+			return false;
+		}
+	}
+	return has_3plus || two_byte_non_gb2312 > 0 || two_byte_cyrillic_greek >= 2;
+}
+
 bool cjk_looks_like_gbk(const uint8_t *src) {
-	if (!src)
+	if (!src || cjk_is_valid_utf8_multibyte(src))
 		return false;
 	int sjis_err = 0, gbk_err = 0, gbk_valid = 0;
 	cjk_score_sample(src, &sjis_err, &gbk_err, &gbk_valid);
-	if (gbk_valid <= 0 || sjis_err <= gbk_err)
+	if (gbk_valid <= 0)
 		return false;
 
-	int sjis_kana = 0, gb2312_valid = 0;
+	int sjis_kana = 0, gb2312_valid = 0, gbk_low_trail = 0;
+	int hankaku_voiced = 0, hankaku_kata_marks = 0, gb2312_punct = 0;
 	const uint8_t *p = src;
+	uint8_t prev = 0;
 	while (*p) {
 		if (*p < 0x80) {
-			p++;
+			prev = *p++;
 		} else if ((*p >= 0x81 && *p <= 0x9f) || (*p >= 0xe0 && *p <= 0xfc)) {
 			uint8_t b2 = p[1];
 			if ((p[0] == 0x82 && b2 >= 0x9f && b2 <= 0xf1) ||
 				(p[0] == 0x83 && b2 >= 0x40 && b2 <= 0x96)) {
 				sjis_kana++;
 			}
+			prev = 0;
 			p += b2 ? 2 : 1;
 		} else {
+			uint8_t b = *p;
+			if (b == 0xb0 && prev >= 0xb1 && prev <= 0xdf) {
+				hankaku_kata_marks++;
+			} else if (b == 0xde && (prev == 0xb3 || (prev >= 0xb6 && prev <= 0xc4) || (prev >= 0xca && prev <= 0xce))) {
+				hankaku_voiced++;
+				hankaku_kata_marks++;
+			} else if (b == 0xdf && prev >= 0xca && prev <= 0xce) {
+				hankaku_voiced++;
+				hankaku_kata_marks++;
+			} else if (b == 0xaf && prev >= 0xb1 && prev <= 0xdd && p[1] >= 0xb1 && p[1] <= 0xdd) {
+				hankaku_kata_marks++;
+			}
+			prev = b;
 			p++;
 		}
 	}
@@ -404,15 +459,33 @@ bool cjk_looks_like_gbk(const uint8_t *src) {
 			if (b2 < 0x40 || b2 > 0xfe || b2 == 0x7f || gbk_to_unicode[*p - 0x81][b2 - 0x40] == 0) {
 				p++;
 			} else {
-				if (*p >= 0xa1 && *p <= 0xf7 && b2 >= 0xa1 && b2 <= 0xfe)
+				if (*p >= 0xa1 && *p <= 0xf7 && b2 >= 0xa1 && b2 <= 0xfe) {
 					gb2312_valid++;
+					if ((*p == 0xa1 && (b2 == 0xa2 || b2 == 0xa3 || b2 == 0xb0 || b2 == 0xb1 || b2 == 0xb6 || b2 == 0xb7)) ||
+						(*p == 0xa3 && (b2 == 0xa1 || b2 == 0xac || b2 == 0xba || b2 == 0xbf))) {
+						gb2312_punct++;
+					}
+				} else if (*p >= 0xa1 && b2 >= 0x40 && b2 <= 0x7e) {
+					gbk_low_trail++;
+				}
 				p += 2;
 			}
 		} else {
 			p++;
 		}
 	}
-	return gb2312_valid > 0 && gb2312_valid > sjis_kana;
+	if (gbk_low_trail > gb2312_valid)
+		return false;
+	if (sjis_err <= gbk_err) {
+		// Pure GB2312 sentences whose bytes fall in 0xA1..0xDF parse as 1-byte halfwidth katakana in SJIS
+		// with sjis_err == 0; accept on a tie when GB2312 punctuation is present, no voiced halfwidth
+		// katakana (ﾞ/ﾟ) appear, and isolated apparent marks (e.g. '冒' = C3 B0) stay rare.
+		return gbk_err == 0 && sjis_kana == 0 && gb2312_valid >= 4 &&
+			gb2312_punct > 0 && hankaku_voiced == 0 && hankaku_kata_marks < gb2312_valid / 2;
+	}
+	if (gbk_err > 0 && (gb2312_valid < 4 || sjis_err <= gbk_err * 2))
+		return false;
+	return gb2312_valid >= 2 && gb2312_valid > sjis_kana;
 }
 
 /* src 内に半角カナもしくはASCII文字があるかどうか */
@@ -439,15 +512,33 @@ bool sjis_has_zenkaku(const uint8_t *src) {
 	return false;
 }
 
+static bool unicode_is_halfwidth(int cp) {
+	if (cp <= 0x7f)
+		return true;
+	if (cp >= 0x00c0 && cp <= 0x024f && cp != 0x00d7 && cp != 0x00f7)
+		return true;
+	if (cp >= 0x0370 && cp <= 0x04ff)
+		return true;
+	if (cp >= 0xff61 && cp <= 0xff9f)
+		return true;
+	return false;
+}
+
 bool cjk_has_hankaku(const uint8_t *src, CharacterEncoding enc) {
+	if (enc == UTF8) {
+		const char *s = (const char *)src;
+		while (*s) {
+			int cp = utf8_next_codepoint(&s);
+			if (unicode_is_halfwidth(cp))
+				return true;
+		}
+		return false;
+	}
 	while (*src) {
 		if (CHECKCJK1BYTE(*src, enc)) {
 			if (!src[1])
 				return false;
 			src += 2;
-		} else if (enc == UTF8 && (*src & 0x80)) {
-			while (*++src && UTF8_TRAIL_BYTE(*src))
-				;
 		} else {
 			return true;
 		}
@@ -456,10 +547,17 @@ bool cjk_has_hankaku(const uint8_t *src, CharacterEncoding enc) {
 }
 
 bool cjk_has_zenkaku(const uint8_t *src, CharacterEncoding enc) {
+	if (enc == UTF8) {
+		const char *s = (const char *)src;
+		while (*s) {
+			int cp = utf8_next_codepoint(&s);
+			if (!unicode_is_halfwidth(cp))
+				return true;
+		}
+		return false;
+	}
 	while (*src) {
 		if (CHECKCJK1BYTE(*src, enc))
-			return true;
-		if (enc == UTF8 && (*src & 0x80))
 			return true;
 		src++;
 	}
@@ -518,7 +616,7 @@ int cjk_display_width(const char *s, CharacterEncoding enc) {
 	int width = 0;
 	while (*s) {
 		int cp = utf8_next_codepoint(&s);
-		if (cp <= 0x7f || (cp >= 0xff61 && cp <= 0xff9f))
+		if (unicode_is_halfwidth(cp))
 			width += 1;
 		else
 			width += 2;

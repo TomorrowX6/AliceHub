@@ -53,8 +53,11 @@ static bool is_half_width(uint32_t code)
 	// ASCII characters
 	if (code < 128)
 		return true;
-	// Latin letters
-	if (0xbf <= code && code <= 0xff && code != 0xd7 && code != 0xf7)
+	// Latin-1 / Latin Extended-A & B letters
+	if (0xbf <= code && code <= 0x024f && code != 0xd7 && code != 0xf7)
+		return true;
+	// Greek and Cyrillic letters
+	if (0x0370 <= code && code <= 0x04ff)
 		return true;
 	// Halfwidth punctuation / katakana
 	if (0xff61 <= code && code <= 0xff9f)

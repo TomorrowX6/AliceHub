@@ -115,7 +115,7 @@ static int load_rc_file(const char *profile_path)
 			if (*q == ':')
 				is_flag = true;
 
-			if (iscntrl(*q) || (!is_flag && isspace(*q)))
+			if (iscntrl((unsigned char)*q) || (!is_flag && isspace((unsigned char)*q)))
 				q++;
 			else
 				*p++ = *q++;
@@ -136,7 +136,7 @@ static int load_rc_file(const char *profile_path)
 		*p = '\0';
 
 		while (*++p)
-			if (!isspace(*p) && !iscntrl(*p))
+			if (!isspace((unsigned char)*p) && !iscntrl((unsigned char)*p))
 				break;
 
 		if (!insert_profile(rc_line, p)) {

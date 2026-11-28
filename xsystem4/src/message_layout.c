@@ -16,7 +16,15 @@
 #include "vm/page.h"
 #include "xsystem4.h"
 
-static bool is_word_char(int c) { return c > 0 && c < 128 && (isalnum(c) || c == '_' || c == '\''); }
+static bool is_word_char(int c)
+{
+	if (c > 0 && c < 128)
+		return isalnum(c) || c == '_' || c == '\'';
+	if ((c >= 0x00c0 && c <= 0x024f && c != 0x00d7 && c != 0x00f7)
+			|| (c >= 0x0370 && c <= 0x04ff))
+		return true;
+	return false;
+}
 
 static bool is_opening_punct(int c)
 {
@@ -174,7 +182,7 @@ static void fit_window(struct page *items, struct page *window, int window_no)
 		};
 		text_style_set_edge_width(&rec->style, font->values[4].f);
 		int code = 0;
-		sjis_char2unicode(rec->text->text, &code);
+		mai_sjis_char2unicode(rec->text->text, &code);
 		cells[count] = (struct message_layout_cell){
 			.code = code,
 			.source_y = rec->y,

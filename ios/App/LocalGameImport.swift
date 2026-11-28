@@ -14,7 +14,7 @@ enum LocalGameImport {
         guard let leaf = parts.last else { return false }
         if parts.contains(where: { ["android-port", "savedata", "directx"].contains($0) }) ||
             parts.dropLast().contains(where: { $0.hasPrefix(".") }) ||
-            (leaf.hasPrefix(".") && leaf != ".xsys35rc") {
+            (leaf.hasPrefix(".") && leaf != ".xsys35rc" && leaf != ".xsys4rc") {
             return true
         }
         return ["opensavefolder.exe", "resetconfig.exe", "uninstaller.exe"].contains(leaf) ||
@@ -184,6 +184,7 @@ enum LocalGameImport {
 
     static func stageFolder(_ source: URL, to output: URL) throws {
         var primary: (url: URL, engine: GameEngine, names: Set<String>)?
+        var weakSystem4Candidates = [(url: URL, names: Set<String>)]()
         var sources = [(url: URL, data: Bool, engine: GameEngine?, names: Set<String>)]()
         var patches = [URL]()
         var pending = [(source, 0)]
@@ -195,8 +196,8 @@ enum LocalGameImport {
             let local = Set(children.filter { !directory($0) }.map(leaf))
             let launch = try? GameLibrary.launchInfo(root)
             let engine = launch?.engine
-            if let engine, depth == 0 ||
-                (engine == .system4 && (hasSystem4Root(local) || launch?.target.pathExtension.lowercased() == "ini")) ||
+            let strongSystem4 = engine == .system4 && (hasSystem4Root(local) || launch?.target.pathExtension.lowercased() == "ini")
+            if let engine, depth == 0 || strongSystem4 ||
                 (engine == .system3 && local.contains(where: GameLibrary.isSystem35Scenario)) ||
                 engine == .legacySystem3 {
                 if primary == nil {
@@ -210,6 +211,9 @@ enum LocalGameImport {
                 if engine == .system4 { patches += children.filter { directory($0) && leaf($0) == "patchcn" } }
                 if depth == 0 { break }
             } else {
+                if engine == .system4 && !system4Code(local).isEmpty {
+                    weakSystem4Candidates.append((root, local))
+                }
                 if depth > 0 && isCompanionData(root, names: local) {
                     sources.append((root, true, engine, local))
                 } else if depth > 0 && local.contains(where: { ["ald", "bgi", "alk"].contains(($0 as NSString).pathExtension) }) {
@@ -220,7 +224,18 @@ enum LocalGameImport {
                 }
             }
         }
+        if primary == nil, let first = weakSystem4Candidates.first {
+            primary = (first.url, .system4, first.names)
+        }
         guard let primary else { throw LibraryError.notGame }
+        if primary.engine == .system4 {
+            for candidate in weakSystem4Candidates where candidate.url.path != primary.url.path {
+                if matchesDisc(engine: .system4, names: candidate.names, primaryEngine: primary.engine,
+                               primaryNames: primary.names) {
+                    sources.append((candidate.url, false, .system4, candidate.names))
+                }
+            }
+        }
         let rules = try LocalImportCleanup(root: primary.url)
         if rules.game == .ixseal {
             for patch in patches {
@@ -275,7 +290,7 @@ enum LocalGameImport {
         switch launch.engine {
         case .system4:
             guard let local = try? names(url) else { return false }
-            return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini" || !system4Code(local).isEmpty
+            return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini"
         case .system3, .legacySystem3:
             return true
         }
@@ -365,7 +380,7 @@ enum LocalGameImport {
                 })
             }
         }
-        let ain = try names(root).sorted().first { $0.hasSuffix(".ain") }
+        let ains = Set(try names(root).filter { $0.hasSuffix(".ain") && $0 != "system39.ain" })
         let gameDepth = root.resolvingSymlinksInPath().pathComponents.count
         for patch in all where leaf(patch) == "commonfiles" {
             let inGame = contains(patch, in: root)
@@ -373,7 +388,8 @@ enum LocalGameImport {
                 .dropFirst(gameDepth).map { $0.lowercased() }
             if inGame && patchPath != ["updatefiles", "files", "commonfiles"] { continue }
             let local = try names(patch)
-            if let ain, local.contains(where: { $0.hasSuffix(".ain") }), !local.contains(ain) { continue }
+            let patchAins = local.filter { $0.hasSuffix(".ain") && $0 != "system39.ain" }
+            if !ains.isEmpty && !patchAins.isEmpty && ains.isDisjoint(with: patchAins) { continue }
             try merge(patch, into: root, overwrite: true, exclude: { relative, _ in
                 inGame && patchPath.starts(with: relative.lowercased().split(separator: "/").map(String.init))
             })

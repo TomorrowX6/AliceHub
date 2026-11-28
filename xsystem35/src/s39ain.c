@@ -190,7 +190,7 @@ bool s39ain_init(const char *path_to_ain, S39AIN *ain) {
 	}
 
 	if (!sys_isCharacterEncodingLocked() && ain->msgnum > 0) {
-		int sjis_err = 0, gbk_err = 0, gbk_valid = 0;
+		int sjis_err = 0, gbk_err = 0, gbk_valid = 0, gb2312_valid = 0;
 		int utf8_non_ascii = 0, utf8_err = 0;
 		int step = ain->msgnum > 2000 ? ain->msgnum / 2000 : 1;
 		for (int m = 0; m < ain->msgnum; m += step) {
@@ -202,10 +202,22 @@ bool s39ain_init(const char *path_to_ain, S39AIN *ain) {
 				utf8_err++;
 			}
 			cjk_score_sample(msg, &sjis_err, &gbk_err, &gbk_valid);
+			for (const uint8_t *q = msg; *q;) {
+				if (*q < 0x80) {
+					q++;
+				} else if (*q >= 0xa1 && *q <= 0xf7 && q[1] >= 0xa1 && q[1] <= 0xfe) {
+					gb2312_valid++;
+					q += 2;
+				} else if (*q >= 0x81 && *q <= 0xfe && q[1] >= 0x40 && q[1] <= 0xfe && q[1] != 0x7f) {
+					q += 2;
+				} else {
+					q++;
+				}
+			}
 		}
-		if (utf8_non_ascii > 0 && utf8_err == 0)
+		if (utf8_non_ascii > 0 && (utf8_err == 0 || (utf8_non_ascii >= 8 && utf8_non_ascii > utf8_err * 4)))
 			sys_setDefaultCharacterEncoding(UTF8, false);
-		else if (gbk_valid > 0 && sjis_err > gbk_err)
+		else if (gb2312_valid >= 16 && gbk_valid > 0 && sjis_err > gbk_err)
 			sys_setDefaultCharacterEncoding(GBK, false);
 	}
 

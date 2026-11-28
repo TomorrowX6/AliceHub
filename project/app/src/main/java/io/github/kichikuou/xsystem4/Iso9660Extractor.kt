@@ -159,6 +159,7 @@ object Iso9660Extractor {
                     if (!visited.add(dlba)) throw IOException("Cyclic or repeated ISO directory extent: $dlba")
                     val entries = parseDirectory(readExtentBytes(ch, desc.layout, dlba, dsize), desc.joliet)
                     var hasIni = false
+                    var hasAnySys4Script = false
                     var hasMatchingAin = false
                     var hasSys3Scenario = false
                     val dirFileNames = ArrayList<String>()
@@ -187,6 +188,7 @@ object Iso9660Extractor {
                                 hasIni = true
                             }
                             if (GameCatalog.isSystem4AinFile(e.name)) {
+                                hasAnySys4Script = true
                                 if (expectedAinName.isNullOrBlank() ||
                                     e.name.equals(expectedAinName, ignoreCase = true) ||
                                     ArchiveExtractor.repairSjisAsGbkMojibake(e.name).equals(expectedAinName, ignoreCase = true)
@@ -196,18 +198,42 @@ object Iso9660Extractor {
                             }
                             if (GameCatalog.isSystem35Scenario(e.name)) {
                                 if (expectedAinName.isNullOrBlank() ||
-                                    e.name.equals(expectedAinName, ignoreCase = true)
+                                    e.name.equals(expectedAinName, ignoreCase = true) ||
+                                    (!targetGameId.isNullOrBlank() && !targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM))
                                 ) {
                                     hasSys3Scenario = true
                                 }
                             }
                         }
                     }
-                    if (hasIni && !hasMatchingAin) {
-                        val readSmallIsoFile: (String) -> ByteArray? = { name ->
-                            entryByLowerName[name.lowercase(Locale.ROOT)]?.let {
+                    val readSmallIsoFile: (String) -> ByteArray? = { name ->
+                        entryByLowerName[name.lowercase(Locale.ROOT)]?.let {
+                            if (name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true) ||
+                                name.equals("GDISK.DAT", true) || name.equals("AGAME.DAT", true)
+                            ) {
+                                readEntryPrefixBytes(ch, desc.layout, it, 256)
+                            } else {
                                 readEntrySmallBytes(ch, desc.layout, it)
                             }
+                        }
+                    }
+                    if (!hasIni) {
+                        hasIni = dirFileNames.any { name ->
+                            System4BootEntry.isCandidateIniFile(name) && run {
+                                val raw = readSmallIsoFile(name)
+                                raw != null && System4BootEntry.extractCodeNames(raw).any { code ->
+                                    val leaf = code.replace('\\', '/').substringAfterLast('/')
+                                    dirFileNames.any {
+                                        it.equals(leaf, ignoreCase = true) ||
+                                            ArchiveExtractor.repairSjisAsGbkMojibake(it).equals(leaf, ignoreCase = true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (hasIni && (!hasMatchingAin || !hasAnySys4Script)) {
+                        if (dirFileNames.any { name -> GameCatalog.isSystem4CodeFile(name, dirFileNames, readSmallIsoFile) }) {
+                            hasAnySys4Script = true
                         }
                         if (dirFileNames.any { name ->
                                 GameCatalog.isSystem4CodeFile(name, dirFileNames, readSmallIsoFile) && (
@@ -220,6 +246,7 @@ object Iso9660Extractor {
                             hasMatchingAin = true
                         }
                     }
+                    val isLegacySys3 = GameCatalog.isLegacySystem3GameFiles(dirFileNames)
                     if (targetGameId == GameCatalog.ID_KICHIKUOU) {
                         val playlistEntry = entryByLowerName["playlist.txt"]
                         if (playlistEntry != null) {
@@ -241,8 +268,11 @@ object Iso9660Extractor {
                             }
                         }
                     }
-                    if ((hasIni && hasMatchingAin) || hasSys3Scenario) {
-                        if (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)) {
+                    val hasBuiltInTarget = !targetGameId.isNullOrBlank() && !targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM)
+                    val isRootCandidate = (hasIni && (hasMatchingAin || (hasBuiltInTarget && hasAnySys4Script))) ||
+                        hasSys3Scenario || isLegacySys3
+                    if (isRootCandidate) {
+                        if (!hasBuiltInTarget) {
                             return true
                         }
                         val bgmNames = if ((targetGameId == GameCatalog.ID_KICHIKUOU ||
@@ -257,26 +287,21 @@ object Iso9660Extractor {
                         } else {
                             emptyList()
                         }
-                        val readSmallFile: (String) -> ByteArray? = { name ->
-                            entryByLowerName[name.lowercase(Locale.ROOT)]?.let {
-                                if (name.equals("ADISK.DAT", true) || name.equals("BDISK.DAT", true)) {
-                                    readEntryPrefixBytes(ch, desc.layout, it, 256)
-                                } else {
-                                    readEntrySmallBytes(ch, desc.layout, it)
-                                }
-                            }
+                        val getIsoFileSize: (String) -> Long? = { name ->
+                            entryByLowerName[name.lowercase(Locale.ROOT)]?.extents?.sumOf { it.second }?.takeIf { it > 0L }
                         }
                         if (GameCatalog.matchesTargetGameFiles(
                                 targetGameId = targetGameId,
                                 fileNames = dirFileNames,
                                 bgmFileNames = bgmNames,
-                                readSmallFile = readSmallFile
+                                readSmallFile = readSmallIsoFile,
+                                getFileSize = getIsoFileSize
                             )
                         ) {
                             return true
                         }
                         if (hasSys3Scenario &&
-                            GameCatalog.classifyGameRootFiles(dirFileNames, bgmNames, readSmallFile) == null
+                            GameCatalog.classifyGameRootFiles(dirFileNames, bgmNames, readSmallIsoFile, getIsoFileSize) == null
                         ) {
                             hasUnclassifiedSys3Root = true
                         }
