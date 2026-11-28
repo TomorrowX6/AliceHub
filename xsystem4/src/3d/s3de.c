@@ -756,36 +756,42 @@ static struct s3de *parse_s3de_ex(const uint8_t *data, size_t size)
 
 	struct ex_value *emitters = RE_ex_block(ex, "エミッタリスト");
 	if (emitters && emitters->type == EX_TREE && !emitters->tree->is_leaf && emitters->tree->nr_children > 0) {
-		s->nr_objects = (int)emitters->tree->nr_children;
-		s->objects = xcalloc(s->nr_objects, sizeof(struct s3de_object));
-		for (int i = 0; i < s->nr_objects; i++) {
+		int max_objects = (int)emitters->tree->nr_children;
+		s->objects = xcalloc(max_objects, sizeof(struct s3de_object));
+		for (int i = 0; i < max_objects; i++) {
 			struct ex_tree *c = &emitters->tree->children[i];
-			struct s3de_object *o = &s->objects[i];
-			o->texture_anime_frame = 1.0f;
-			o->start_size = o->end_size = (struct s3de_range){ 1.0f, 0.0f };
-			o->start_x_size = o->end_x_size = (struct s3de_range){ 1.0f, 0.0f };
-			o->start_y_size = o->end_y_size = (struct s3de_range){ 1.0f, 0.0f };
 			if (c->is_leaf)
 				continue;
-
-			const char *ename = RE_ex_sjis_str(c, "エミッタ名");
-			o->name = strdup(ename ? ename : (c->name ? c->name->text : ""));
 
 			int kind = 0, visible = 1, iv = 0;
 			float fv = 0.0f;
 			RE_ex_int(c, "種類", &kind);
 			RE_ex_int(c, "表示フラグ", &visible);
-			if (!visible || kind < 0 || kind > S3DE_OBJ_CAMERA) {
-				o->type = S3DE_OBJ_CAMERA;
-			} else {
-				o->type = (enum s3de_object_type)kind;
-				const char *tex = RE_ex_sjis_str(c, "テクスチャ");
-				if (tex && *tex)
-					o->texture = strdup(tex);
-				const char *pol = RE_ex_sjis_str(c, "ポリゴン");
-				if (pol && *pol)
-					o->polygon_name = strdup(pol);
-			}
+			// In SealEngine 2 .txtex.ex files:
+			//   kind 0 = billboard, kind 1 = polygon,
+			//   kind 2 = sub-emitter reference (参照エミッタ),
+			//   kind 6 = composite/group container.
+			// Skip hidden and unsupported emitters instead of mapping them to
+			// S3DE_OBJ_CAMERA, which activates update_camera_override() and
+			// hijacks the 3D scene camera.
+			if (!visible || (kind != 0 && kind != 1))
+				continue;
+
+			struct s3de_object *o = &s->objects[s->nr_objects++];
+			o->texture_anime_frame = 1.0f;
+			o->start_size = o->end_size = (struct s3de_range){ 1.0f, 0.0f };
+			o->start_x_size = o->end_x_size = (struct s3de_range){ 1.0f, 0.0f };
+			o->start_y_size = o->end_y_size = (struct s3de_range){ 1.0f, 0.0f };
+
+			const char *ename = RE_ex_sjis_str(c, "エミッタ名");
+			o->name = strdup(ename ? ename : (c->name ? c->name->text : ""));
+			o->type = (kind == 1) ? S3DE_OBJ_POLYGON : S3DE_OBJ_BILLBOARD;
+			const char *tex = RE_ex_sjis_str(c, "テクスチャ");
+			if (tex && *tex)
+				o->texture = strdup(tex);
+			const char *pol = RE_ex_sjis_str(c, "ポリゴン");
+			if (pol && *pol)
+				o->polygon_name = strdup(pol);
 
 			if (RE_ex_int(c, "移動タイプ", &iv))
 				o->movement_type = iv == 1 ? S3DE_MOVE_BEZIER : S3DE_MOVE_LINEAR;
@@ -854,6 +860,10 @@ static struct s3de *parse_s3de_ex(const uint8_t *data, size_t size)
 			ex_read_vec3_table(c, "回転リスト", &o->rotation_list, &o->nr_rotation_entries);
 			ex_read_vec3_table(c, "乗算カラーリスト", &o->multiply_color_list, &o->nr_multiply_color_entries);
 			ex_read_vec3_table(c, "加算カラーリスト", &o->additive_color_list, &o->nr_additive_color_entries);
+		}
+		if (s->nr_objects == 0) {
+			free(s->objects);
+			s->objects = NULL;
 		}
 	}
 	ex_free(ex);
@@ -1693,7 +1703,8 @@ struct s3de_effect *s3de_effect_create(struct s3de *s, struct archive *aar)
 {
 	struct s3de_effect *eff = xcalloc(1, sizeof(struct s3de_effect));
 	eff->s3de = s;
-	eff->objects = xcalloc(s->nr_objects, sizeof(struct s3de_object_state));
+	if (s->nr_objects > 0)
+		eff->objects = xcalloc(s->nr_objects, sizeof(struct s3de_object_state));
 	eff->wav_channel = -1;
 
 	for (int i = 0; i < s->nr_objects; i++) {
