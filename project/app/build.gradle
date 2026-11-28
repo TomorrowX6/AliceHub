@@ -50,17 +50,32 @@ android {
             releaseStorePassword &&
             releaseKeyAlias &&
             releaseKeyPassword
-    def requireReleaseSigning = (project.findProperty('CI_REQUIRE_RELEASE_SIGNING')
+    def explicitRequireSigning = (project.findProperty('CI_REQUIRE_RELEASE_SIGNING')
             ?: System.getenv('CI_REQUIRE_RELEASE_SIGNING'))?.toString()?.trim()?.equalsIgnoreCase('true') ?: false
+    def isCi = (System.getenv('CI')?.equalsIgnoreCase('true')
+            || System.getenv('GITHUB_ACTIONS')?.equalsIgnoreCase('true'))
+    def requireReleaseSigning = explicitRequireSigning || isCi
+    def missingSigningMsg = "Release keystore credentials are missing (expected project/keystore.jks and KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD)."
     def isReleaseTaskRequested = gradle.startParameter.taskNames.any {
         it.toLowerCase().contains('release')
     }
-    if (buildAsApplication && !hasReleaseSigning && (isReleaseTaskRequested || requireReleaseSigning)) {
-        def missingSigningMsg = "Release keystore credentials are missing (expected project/keystore.jks and KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD)."
+    if (buildAsApplication && !hasReleaseSigning && (isReleaseTaskRequested || explicitRequireSigning)) {
         if (requireReleaseSigning) {
-            throw new GradleException("${missingSigningMsg} Failing build because CI_REQUIRE_RELEASE_SIGNING=true.")
+            throw new GradleException("${missingSigningMsg} Debug signing fallback is forbidden in CI.")
         } else {
-            logger.warn("WARNING: ${missingSigningMsg} Falling back to debug signing config for release APK.")
+            logger.warn("WARNING: ${missingSigningMsg} Falling back to debug signing config for local release APK.")
+        }
+    }
+    if (buildAsApplication && requireReleaseSigning && !hasReleaseSigning) {
+        gradle.taskGraph.whenReady { graph ->
+            def hasReleasePackagingTask = graph.allTasks.any { task ->
+                task.project == project &&
+                        task.name.toLowerCase().contains('release') &&
+                        (task.name.startsWith('assemble') || task.name.startsWith('package') || task.name.startsWith('bundle'))
+            }
+            if (hasReleasePackagingTask) {
+                throw new GradleException("${missingSigningMsg} Debug signing fallback is forbidden in CI.")
+            }
         }
     }
     signingConfigs {
@@ -70,6 +85,9 @@ android {
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAlias
                 keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
             }
         }
     }
@@ -79,7 +97,7 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
-            } else {
+            } else if (!requireReleaseSigning) {
                 signingConfig signingConfigs.debug
             }
         }

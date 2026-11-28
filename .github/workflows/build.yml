@@ -66,26 +66,32 @@ jobs:
 
       - name: Build Signed APK
         run: |
+          set -euo pipefail
           cd project
           sed -i 's/\r$//' ./gradlew
           chmod +x ./gradlew
-          if [ -n "${KEYSTORE_BASE64}" ] && [ -n "${KEYSTORE_PASSWORD}" ] && [ -n "${KEY_ALIAS}" ] && [ -n "${KEY_PASSWORD}" ]; then
-            echo "${KEYSTORE_BASE64}" | base64 -d > keystore.jks
-          else
+          if [ -z "${KEYSTORE_BASE64:-}" ] || [ -z "${KEYSTORE_PASSWORD:-}" ] || [ -z "${KEY_ALIAS:-}" ] || [ -z "${KEY_PASSWORD:-}" ]; then
+            echo "::error::Release signing secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) are required in CI; debug signing fallback is forbidden."
+            exit 1
+          fi
+          printf '%s' "${KEYSTORE_BASE64}" | tr -d '\r\n' | base64 -d > keystore.jks
+          chmod 600 keystore.jks
+          if [ ! -s keystore.jks ]; then
             rm -f keystore.jks
-            echo "::warning::Release signing secrets (KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) are missing; building with debug signing config unless CI_REQUIRE_RELEASE_SIGNING=true."
+            echo "::error::Decoded project/keystore.jks is empty."
+            exit 1
           fi
           SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ -n "${REF_NAME}" ]; then
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ -n "${REF_NAME:-}" ]; then
             APP_VER="${REF_NAME}"
-          elif [ -n "${REF_NAME}" ]; then
+          elif [ -n "${REF_NAME:-}" ]; then
             APP_VER="${REF_NAME}-${SHORT_SHA}"
           else
             APP_VER="${SHORT_SHA}"
           fi
           ./gradlew assembleRelease \
             "-PAPP_VERSION_NAME=${APP_VER}" \
-            "-PCI_REQUIRE_RELEASE_SIGNING=${CI_REQUIRE_RELEASE_SIGNING}"
+            "-PCI_REQUIRE_RELEASE_SIGNING=true"
           cp app/build/outputs/apk/release/app-release.apk ../AliceHub-arm64-v8a.apk
         env:
           REF_NAME: ${{ github.ref_name }}
@@ -93,7 +99,56 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          CI_REQUIRE_RELEASE_SIGNING: ${{ vars.CI_REQUIRE_RELEASE_SIGNING || 'false' }}
+          CI_REQUIRE_RELEASE_SIGNING: 'true'
+
+      - name: Verify APK Signature
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER=$(ls -1 "${SDK_ROOT}"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "${APKSIGNER}" ] || [ ! -x "${APKSIGNER}" ]; then
+            echo "::error::apksigner not found under ${SDK_ROOT}/build-tools"
+            exit 1
+          fi
+
+          "${APKSIGNER}" verify AliceHub-arm64-v8a.apk
+          # Pass --min-sdk-version 23 (< 24) so apksigner verifies V1 (JAR) in addition to V2 and V3
+          # even though the APK manifest minSdkVersion is 26.
+          VERIFY_OUT=$("${APKSIGNER}" verify --verbose --print-certs --min-sdk-version 23 AliceHub-arm64-v8a.apk)
+          echo "${VERIFY_OUT}"
+
+          for scheme in \
+            "Verified using v1 scheme (JAR signing): true" \
+            "Verified using v2 scheme (APK Signature Scheme v2): true" \
+            "Verified using v3 scheme (APK Signature Scheme v3): true"; do
+            if ! printf '%s\n' "${VERIFY_OUT}" | grep -Fq "${scheme}"; then
+              echo "::error::APK signature check failed: missing '${scheme}'"
+              exit 1
+            fi
+          done
+
+          APK_SHA256=$(printf '%s\n' "${VERIFY_OUT}" \
+            | awk '/^Signer #1 certificate SHA-256 digest: / && !found { sub(/^Signer #1 certificate SHA-256 digest: /, ""); gsub(/[[:space:]]/, ""); print tolower($0); found=1 }')
+          KEYTOOL_OUT=$(LC_ALL=C keytool -list -v -keystore project/keystore.jks -alias "${KEY_ALIAS}" -storepass:env KEYSTORE_PASSWORD)
+          EXPECTED_SHA256=$(printf '%s\n' "${KEYTOOL_OUT}" \
+            | awk '{ line = tolower($0) } line ~ /^[[:space:]]*sha-?256:[[:space:]]*/ && !found { sub(/^[[:space:]]*sha-?256:[[:space:]]*/, "", line); gsub(/[:[:space:]]/, "", line); print line; found=1 }')
+
+          if [ -z "${APK_SHA256}" ] || [ -z "${EXPECTED_SHA256}" ]; then
+            echo "::error::Failed to extract certificate SHA-256 (apk='${APK_SHA256}', expected='${EXPECTED_SHA256}')"
+            exit 1
+          fi
+          if [ "${APK_SHA256}" != "${EXPECTED_SHA256}" ]; then
+            echo "::error::APK signer SHA-256 (${APK_SHA256}) does not match release keystore (${EXPECTED_SHA256})"
+            exit 1
+          fi
+          echo "Verified V1 + V2 + V3 APK signature matches release keystore (SHA-256: ${APK_SHA256})"
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+
+      - name: Clean Up Keystore
+        if: always()
+        run: rm -f project/keystore.jks
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
