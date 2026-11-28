@@ -9,8 +9,8 @@
   <link rel="icon" type="image/png" href="assets/alice-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="site.css" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="site.css?v=20261128e" />
 </head>
 <body>
   <!-- Full-Viewport Interactive Three.js 3D Curved Background Wall -->
@@ -18,13 +18,13 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <!-- Quiet Minimal Header -->
-  <header class="site-nav" id="site-nav">
+  <!-- Minimal Transparent Top Bar -->
+  <header class="site-nav">
     <div class="nav-inner">
-      <a href="#stage" class="brand">
+      <div class="brand">
         <img src="assets/alice-icon.png" alt="AliceHub" class="brand-icon" width="24" height="24" />
         <span>AliceHub</span>
-      </a>
+      </div>
 
       <nav class="nav-right" aria-label="Utility">
         <div class="lang-switch" role="group" aria-label="Language">
@@ -33,333 +33,138 @@
           <button type="button" class="lang-btn" data-lang="ja">日</button>
         </div>
         <a href="https://github.com/TomorrowX6/AliceHub" target="_blank" rel="noopener" class="nav-link">GitHub</a>
-        <a href="#download" class="nav-link nav-link-strong" data-i18n="nav.download">下载</a>
+        <button type="button" class="nav-link nav-link-strong" data-open-dl data-i18n="nav.download">下载</button>
       </nav>
     </div>
   </header>
 
-  <main class="page-layer">
-    <!-- =========================================================
-         01 // UNOBSTRUCTED 3D GALLERY STAGE (PURE POSTER ANCHOR)
-         ========================================================= -->
-    <section id="stage" class="stage">
-      <div class="stage-scrim" aria-hidden="true"></div>
+  <!-- Single-Screen Unobstructed 3D Gallery Stage -->
+  <main class="stage">
+    <div class="stage-scrim" aria-hidden="true"></div>
 
-      <div class="stage-bottom">
-        <div class="stage-row-top">
-          <div class="stage-focus">
-            <span class="focus-dot"></span>
-            <span id="hud-title">兰斯 10 -决战-</span>
-            <span class="focus-sep">/</span>
-            <span id="hud-eng">xsystem4</span>
-          </div>
-        </div>
-
-        <div class="stage-rule"></div>
-
-        <div class="stage-row-main">
-          <div class="poster-id">
-            <button type="button" class="alice-emblem" id="alice-emblem" aria-label="AliceHub">
-              <div class="alice-stage" id="alice-avatar-box">
-                <img src="assets/alice-face-shell.png" alt="AliceHub" class="alice-shell" width="60" height="60" />
-                <span class="alice-eye alice-eye-rose" id="alice-eye-m" aria-hidden="true"><span class="eye-glint"></span></span>
-                <span class="alice-eye alice-eye-cyan" id="alice-eye-c" aria-hidden="true"><span class="eye-glint"></span></span>
-              </div>
-            </button>
-            <div>
-              <h1 class="poster-title">AliceHub</h1>
-              <p class="poster-sub" data-i18n="hero.sub">AliceSoft System 多平台原生启动器</p>
-            </div>
-          </div>
-
-          <div class="poster-actions">
-            <a href="#download" class="poster-cta">
-              <span data-i18n="hero.cta">获取版本</span>
-              <code id="hero-ver">f0810b6</code>
-              <span aria-hidden="true">↓</span>
-            </a>
-          </div>
+    <div class="stage-bottom">
+      <div class="stage-row-top">
+        <div class="stage-focus">
+          <span class="focus-dot"></span>
+          <span id="hud-title">兰斯 10 -决战-</span>
+          <span class="focus-sep">/</span>
+          <span id="hud-eng">xsystem4</span>
         </div>
       </div>
-    </section>
 
-    <!-- =========================================================
-         02 // SWISS EDITORIAL SHEET + HARDWARE & MOTION SHOWCASE
-         ========================================================= -->
-    <div class="editorial-sheet">
-      <!-- A. Asymmetric Manifesto + Hairline Spec Index -->
-      <section id="about" class="ed-section">
-        <div class="ed-wrap ed-grid reveal">
-          <div class="ed-label" data-i18n="ed.about">说明</div>
-          <div class="ed-content">
-            <p class="ed-statement" data-i18n="ed.statement">
-              在手机与掌机上直接打开 AliceSoft 作品。
-              <span>不依赖 Wine 或转译层，由三套开源原生内核驱动，支持压缩包与镜像导入、汉化与 MOD 补丁及跨平台存档互通。</span>
-            </p>
+      <div class="stage-rule"></div>
 
-            <dl class="spec-ledger">
-              <div class="spec-row">
-                <dt data-i18n="spec.k1">内核</dt>
-                <dd>system3-sdl2 · xsystem35 · xsystem4 (System 1–4)</dd>
-              </div>
-              <div class="spec-row">
-                <dt data-i18n="spec.k2">目录</dt>
-                <dd data-i18n="spec.v2">内置 171+ 作品识别，支持自由导入任意目录与多碟合并</dd>
-              </div>
-              <div class="spec-row">
-                <dt data-i18n="spec.k3">输入</dt>
-                <dd data-i18n="spec.v3">原生触控手势、自由拖拽虚拟按键与主流蓝牙 / USB 手柄</dd>
-              </div>
-              <div class="spec-row">
-                <dt data-i18n="spec.k4">许可</dt>
-                <dd data-i18n="spec.v4">GNU GPL-2.0 开源免费，安装包不含任何游戏本体</dd>
-              </div>
-            </dl>
+      <div class="stage-row-main">
+        <div class="poster-id">
+          <button type="button" class="alice-emblem" id="alice-emblem" aria-label="AliceHub">
+            <div class="alice-stage" id="alice-avatar-box">
+              <img src="assets/alice-face-shell.png" alt="AliceHub" class="alice-shell" width="60" height="60" />
+              <span class="alice-eye alice-eye-rose" id="alice-eye-m" aria-hidden="true"><span class="eye-glint"></span></span>
+              <span class="alice-eye alice-eye-cyan" id="alice-eye-c" aria-hidden="true"><span class="eye-glint"></span></span>
+            </div>
+          </button>
+          <div>
+            <h1 class="poster-title">AliceHub</h1>
+            <p class="poster-sub" data-i18n="hero.sub">AliceSoft System 多平台原生启动器</p>
           </div>
         </div>
-      </section>
 
-      <!-- B. Visual Interactive Showcase (Morphing Hardware / Optical Save Flow / 3D Era Deck) -->
-      <section id="showcase" class="ed-section ed-section-showcase">
-        <div class="ed-wrap reveal">
-          <div class="sc-header">
-            <div class="sc-tabs" role="tablist" aria-label="Interactive Showcase">
-              <button type="button" class="sc-tab is-active" role="tab" aria-selected="true" data-sc="device">
-                <em>01</em>
-                <span data-i18n="sc.t1">三端实机与操控</span>
-              </button>
-              <button type="button" class="sc-tab" role="tab" aria-selected="false" data-sc="save">
-                <em>02</em>
-                <span data-i18n="sc.t2">跨端存档互通</span>
-              </button>
-              <button type="button" class="sc-tab" role="tab" aria-selected="false" data-sc="era">
-                <em>03</em>
-                <span data-i18n="sc.t3">三核架构与谱系</span>
-              </button>
-            </div>
-            <p class="sc-note" id="sc-note" data-i18n="sc.n1">切换设备形态、缩放局内字体，或在屏幕内直接拖拽虚拟按键。</p>
-          </div>
-
-          <!-- STAGE 01: MORPHING HARDWARE DEVICE (SWITCH / ANDROID / iPAD) -->
-          <div class="sc-panel is-active" data-sc-panel="device">
-            <div class="device-arena">
-              <div class="hw-shell" id="hw-shell" data-hw="switch">
-                <!-- Switch Left Joy-Con Rail (retracts smoothly in Android/iPad mode) -->
-                <div class="jc jc-left" aria-hidden="true">
-                  <span class="jc-shoulder jc-l"></span>
-                  <span class="jc-stick"></span>
-                  <div class="jc-dpad"><i></i><i></i><i></i><i></i></div>
-                </div>
-
-                <!-- Machined Screen Core -->
-                <div class="hw-screen" id="hw-screen">
-                  <canvas id="hw-scene-canvas" class="hw-scene-canvas" aria-hidden="true"></canvas>
-                  <div class="hw-snap-grid" id="hw-snap-grid" aria-hidden="true"></div>
-
-                  <!-- Crisp Layered Visual-Novel Composition -->
-                  <div class="vn-top">
-                    <button type="button" class="vn-ball" id="vn-ball" title="AliceHub Overlay">
-                      <img src="assets/alice-icon.png" alt="" width="18" height="18" />
-                    </button>
-                    <button type="button" class="vn-ctrl" id="vn-ctrl">» Ctrl</button>
-                    <span class="vn-badge" id="vn-badge">SWITCH · xsystem4</span>
-                  </div>
-
-                  <div class="vn-stage-art">
-                    <img src="assets/games/rance10.webp" alt="" class="vn-portrait" id="vn-portrait" />
-                  </div>
-
-                  <div class="vn-box-row">
-                    <div class="vn-box" id="vn-box">
-                      <div class="vn-spk" id="vn-spk">兰斯</div>
-                      <div class="vn-text" id="vn-text"></div>
-                      <span class="vn-caret" aria-hidden="true">▾</span>
-                    </div>
-                    <div class="vn-scroll" aria-hidden="true">
-                      <span class="vn-scroll-bar" id="vn-scroll-bar"></span>
-                    </div>
-                  </div>
-
-                  <!-- Actually Draggable Translucent Virtual Pad Clusters -->
-                  <div class="drag-pad pad-dpad" id="pad-dpad" data-drag-pad style="left: 4%; top: 36%;">
-                    <button type="button" class="dp-k dp-u" data-vn-act="prev">▲</button>
-                    <button type="button" class="dp-k dp-l" data-vn-act="prev">◀</button>
-                    <button type="button" class="dp-k dp-r" data-vn-act="next">▶</button>
-                    <button type="button" class="dp-k dp-d" data-vn-act="next">▼</button>
-                  </div>
-
-                  <div class="drag-pad pad-abxy" id="pad-abxy" data-drag-pad style="right: 4%; top: 36%;">
-                    <button type="button" class="dp-c dp-y" data-vn-act="shot">Y</button>
-                    <button type="button" class="dp-c dp-x" data-vn-act="skip">X</button>
-                    <button type="button" class="dp-c dp-b" data-vn-act="menu">B</button>
-                    <button type="button" class="dp-c dp-a" data-vn-act="next">A</button>
-                  </div>
-                </div>
-
-                <!-- Switch Right Joy-Con Rail -->
-                <div class="jc jc-right" aria-hidden="true">
-                  <span class="jc-shoulder jc-r"></span>
-                  <div class="jc-btns"><i></i><i></i><i></i><i></i></div>
-                  <span class="jc-stick"></span>
-                </div>
-              </div>
-            </div>
-
-            <div class="sc-dock">
-              <div class="dock-group" role="group" aria-label="Hardware Form Factor">
-                <button type="button" class="dock-btn is-active" data-hw-btn="switch">Switch</button>
-                <button type="button" class="dock-btn" data-hw-btn="android">Android</button>
-                <button type="button" class="dock-btn" data-hw-btn="ipad">iPad</button>
-              </div>
-
-              <label class="dock-slider">
-                <span data-i18n="sc.font">字号</span>
-                <input type="range" id="vn-font-range" min="80" max="155" value="105" />
-                <code id="vn-font-val">105%</code>
-              </label>
-
-              <div class="dock-group" role="group" aria-label="Virtual Pad Visibility">
-                <button type="button" class="dock-btn is-active" data-vpad-mode="show" data-i18n="sc.padOn">虚拟按键（可拖拽）</button>
-                <button type="button" class="dock-btn" data-vpad-mode="hide" data-i18n="sc.padOff">纯触控</button>
-              </div>
-
-              <button type="button" class="dock-btn dock-ghost" id="vn-cycle-game" data-i18n="sc.nextGame">切换作品 ↻</button>
-            </div>
-          </div>
-
-          <!-- STAGE 02: 60FPS OPTICAL FIBER SAVE TRANSFER CANVAS -->
-          <div class="sc-panel" data-sc-panel="save">
-            <div class="optical-stage">
-              <canvas id="save-fiber-canvas" class="save-fiber-canvas"></canvas>
-
-              <div class="opt-nodes">
-                <div class="opt-endpoint opt-left">
-                  <span class="opt-tag" id="opt-left-tag">HANDHELD · X4SS</span>
-                  <strong id="opt-left-file">saves/rance10/0001.save</strong>
-                  <code id="opt-left-hex">58 34 53 53 00 1A F2 09</code>
-                </div>
-
-                <div class="opt-center">
-                  <code id="opt-ain">Rance10.ain</code>
-                  <span id="opt-dir-label" data-i18n="sc.toPc">掌机 → PC 无损转换</span>
-                </div>
-
-                <div class="opt-endpoint opt-right">
-                  <span class="opt-tag opt-tag-c" id="opt-right-tag">WINDOWS · GD\x01\x01</span>
-                  <strong id="opt-right-file">PC_SaveData/0001.save</strong>
-                  <code id="opt-right-hex">47 44 01 01 00 1A F2 09</code>
-                </div>
-              </div>
-            </div>
-
-            <div class="sc-dock">
-              <div class="dock-group" role="group" aria-label="Save Format Sample">
-                <button type="button" class="dock-btn is-active" data-opt-game="rance10">兰斯 10</button>
-                <button type="button" class="dock-btn" data-opt-game="evenicle2">夏娃年代记 2</button>
-                <button type="button" class="dock-btn" data-opt-game="escalayer_reboot">超昂天使 R</button>
-              </div>
-
-              <button type="button" class="dock-btn dock-primary" id="opt-flip-btn" data-i18n="sc.flip">切换传输方向 ⇄</button>
-
-              <span class="dock-status" id="opt-backup-note" data-i18n="sc.backupOk">覆盖前自动备份 · 支持一键还原</span>
-            </div>
-          </div>
-
-          <!-- STAGE 03: 3D FANNED ERA ARTWORK DECK -->
-          <div class="sc-panel" data-sc-panel="era">
-            <div class="era-stage">
-              <div class="era-deck" id="era-deck"></div>
-              <div class="era-meta">
-                <div class="era-meta-head">
-                  <code id="era-kernel">xsystem4</code>
-                  <span id="era-years">2002 — PRESENT</span>
-                </div>
-                <h3 id="era-title">System 4.x 全世代原生内核</h3>
-                <p id="era-desc">支持 AIN v0–v14.1、PartsEngine 字体重排、SealEngine 3D、FLAT v15、CHS.TBL/UIF 汉化映射及原子备份 MOD 与 AliceStart.CHS 启动入口切换。</p>
-                <div class="era-specs" id="era-specs">
-                  <span>.ZIP / .RAR / .7Z / .ISO / .MDF</span>
-                  <span>多碟合并</span>
-                  <span>无损 MOD / 去码</span>
-                  <span>Ogg Opus 语音</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="sc-dock">
-              <div class="dock-group" role="group" aria-label="Engine Era">
-                <button type="button" class="dock-btn" data-era="sys3">1989 · System 1–3</button>
-                <button type="button" class="dock-btn" data-era="sys35">1996 · System 3.5–3.9</button>
-                <button type="button" class="dock-btn is-active" data-era="sys4">2002+ · System 4.x</button>
-              </div>
-              <span class="dock-status" data-i18n="sc.autoRoute">自动识别目录结构并匹配原生引擎</span>
-            </div>
-          </div>
+        <div class="poster-actions">
+          <button type="button" class="poster-qq" data-open-qq>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v3h-1M14 20h7"/></svg>
+            <span data-i18n="hero.qq">QQ 群</span>
+          </button>
+          <button type="button" class="poster-cta" data-open-dl>
+            <span data-i18n="hero.cta">获取版本</span>
+            <code id="hero-ver">f0810b6</code>
+            <span aria-hidden="true">↗</span>
+          </button>
         </div>
-      </section>
-
-      <!-- C. Hairline Interactive Release Ledger -->
-      <section id="download" class="ed-section ed-section-dl">
-        <div class="ed-wrap ed-grid reveal">
-          <div class="ed-label">
-            <span data-i18n="ed.download">下载</span>
-            <code class="ed-ver" id="dl-release-tag">f0810b6</code>
-          </div>
-
-          <div class="ed-content">
-            <div class="release-list">
-              <a class="release-row" id="dl-card-android" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
-                <span class="rr-name">Android</span>
-                <span class="rr-meta" data-i18n="dl.android">Android 8.0+ · 直接安装</span>
-                <span class="rr-size" id="dl-size-android">44.3 MiB</span>
-                <span class="rr-ext">APK <em>↗</em></span>
-              </a>
-
-              <a class="release-row" id="dl-card-ios" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
-                <span class="rr-name">iOS / iPadOS</span>
-                <span class="rr-meta" data-i18n="dl.ios">iOS 15+ · 自签侧载</span>
-                <span class="rr-size" id="dl-size-ios">48.6 MiB</span>
-                <span class="rr-ext">IPA <em>↗</em></span>
-              </a>
-
-              <a class="release-row" id="dl-card-switch" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
-                <span class="rr-name">Nintendo Switch</span>
-                <span class="rr-meta" data-i18n="dl.switch">Homebrew · 解压至 /switch/</span>
-                <span class="rr-size" id="dl-size-switch">85.9 MiB</span>
-                <span class="rr-ext">ZIP <em>↗</em></span>
-              </a>
-            </div>
-
-            <div class="ed-links">
-              <button type="button" id="copy-qq-btn" data-qq="383917628">
-                <span data-i18n="dl.qq">QQ 交流群</span> 383917628
-              </button>
-              <a href="https://github.com/TomorrowX6/AliceHub/releases" target="_blank" rel="noopener" data-i18n="dl.releases">历史版本 ↗</a>
-              <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml" target="_blank" rel="noopener" data-i18n="dl.ci">构建记录 ↗</a>
-              <a href="https://github.com/TomorrowX6/AliceHub" target="_blank" rel="noopener">GitHub ↗</a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Editorial Colophon -->
-      <footer class="ed-footer">
-        <div class="ed-wrap footer-row">
-          <div class="footer-left">
-            <img src="assets/alice-icon.png" alt="AliceHub" width="20" height="20" />
-            <span>AliceHub</span>
-          </div>
-          <div class="footer-credits">
-            <a href="https://github.com/nunuhara/xsystem4" target="_blank" rel="noopener">xsystem4</a>
-            <a href="https://github.com/nunuhara/libsys4" target="_blank" rel="noopener">libsys4</a>
-            <a href="https://github.com/kichikuou/system3-sdl2" target="_blank" rel="noopener">system3-sdl2</a>
-            <a href="https://github.com/kichikuou/xsystem35-sdl2" target="_blank" rel="noopener">xsystem35-sdl2</a>
-            <a href="https://github.com/kichikuou/xsystem4-android" target="_blank" rel="noopener">xsystem4-android</a>
-          </div>
-        </div>
-      </footer>
+      </div>
     </div>
   </main>
 
-  <script type="module" src="site.js"></script>
+  <!-- QQ Group QR Code Modal -->
+  <div class="dl-modal" id="qq-modal" role="dialog" aria-modal="true" aria-labelledby="qq-modal-title" hidden>
+    <div class="dl-backdrop" data-close-qq></div>
+
+    <div class="dl-dialog qq-dialog">
+      <div class="dl-head">
+        <div class="dl-head-left">
+          <span id="qq-modal-title" data-i18n="dl.qq">QQ 交流群</span>
+          <code>383917628</code>
+        </div>
+        <button type="button" class="dl-close" data-close-qq aria-label="Close">×</button>
+      </div>
+
+      <div class="qq-qr-frame">
+        <img src="assets/qq-group-qr.webp" alt="AliceHub QQ Group 383917628 QR Code" width="260" height="320" />
+      </div>
+
+      <div class="qq-foot">
+        <span data-i18n="qq.hint">手机 QQ 扫码加入交流群</span>
+        <button type="button" class="qq-copy-btn" data-copy-qq data-qq="383917628" data-i18n="qq.copy">复制群号</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Minimal Swiss Hairline Release Modal -->
+  <div class="dl-modal" id="dl-modal" role="dialog" aria-modal="true" aria-labelledby="dl-modal-title" hidden>
+    <div class="dl-backdrop" data-close-dl></div>
+
+    <div class="dl-dialog">
+      <div class="dl-head">
+        <div class="dl-head-left">
+          <span id="dl-modal-title" data-i18n="dl.title">下载</span>
+          <code id="dl-release-tag">f0810b6</code>
+        </div>
+        <button type="button" class="dl-close" data-close-dl aria-label="Close">×</button>
+      </div>
+
+      <div class="release-list">
+        <a class="release-row" id="dl-card-android" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
+          <span class="rr-name">Android</span>
+          <span class="rr-meta" data-i18n="dl.android">Android 8.0+ · 直接安装</span>
+          <span class="rr-size" id="dl-size-android">44.3 MiB</span>
+          <span class="rr-ext">APK <em>↗</em></span>
+        </a>
+
+        <a class="release-row" id="dl-card-ios" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
+          <span class="rr-name">iOS / iPadOS</span>
+          <span class="rr-meta" data-i18n="dl.ios">iOS 15+ · 自签侧载</span>
+          <span class="rr-size" id="dl-size-ios">48.6 MiB</span>
+          <span class="rr-ext">IPA <em>↗</em></span>
+        </a>
+
+        <a class="release-row" id="dl-card-switch" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
+          <span class="rr-name">Nintendo Switch</span>
+          <span class="rr-meta" data-i18n="dl.switch">Homebrew · 解压至 /switch/</span>
+          <span class="rr-size" id="dl-size-switch">85.9 MiB</span>
+          <span class="rr-ext">ZIP <em>↗</em></span>
+        </a>
+      </div>
+
+      <div class="ed-links">
+        <button type="button" data-copy-qq data-qq="383917628">
+          <span data-i18n="dl.qq">QQ 交流群</span> 383917628
+        </button>
+        <a href="https://github.com/TomorrowX6/AliceHub/releases" target="_blank" rel="noopener" data-i18n="dl.releases">历史版本 ↗</a>
+        <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml" target="_blank" rel="noopener" data-i18n="dl.ci">构建记录 ↗</a>
+        <a href="https://github.com/TomorrowX6/AliceHub" target="_blank" rel="noopener">GitHub ↗</a>
+      </div>
+
+      <div class="dl-colophon">
+        <span data-i18n="dl.license">GNU GPL-2.0 · 纯开源启动器，不含游戏本体</span>
+        <div class="dl-credits">
+          <a href="https://github.com/nunuhara/xsystem4" target="_blank" rel="noopener">xsystem4</a>
+          <a href="https://github.com/nunuhara/libsys4" target="_blank" rel="noopener">libsys4</a>
+          <a href="https://github.com/kichikuou/system3-sdl2" target="_blank" rel="noopener">system3-sdl2</a>
+          <a href="https://github.com/kichikuou/xsystem35-sdl2" target="_blank" rel="noopener">xsystem35-sdl2</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="site.js?v=20261128e"></script>
 </body>
 </html>
