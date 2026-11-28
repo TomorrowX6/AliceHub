@@ -118,6 +118,9 @@ const I18N = {
     'dl.switch': 'Homebrew · 解压至 /switch/',
     'dl.qq': 'QQ 交流群',
     'toast.qq': '已复制 QQ 群号：383917628',
+    'toast.fdroid': '已复制 F-Droid 源地址：store.000.moe/fdroid/repo',
+    'toast.sidestore': '已复制 SideStore 源地址：store.000.moe/altstore/source.json',
+    'toast.hbas': '已复制 HBAS 源地址：store.000.moe/hbas',
   },
   en: {
     'nav.download': 'Download',
@@ -132,6 +135,9 @@ const I18N = {
     'dl.switch': 'Homebrew · Extract to /switch/',
     'dl.qq': 'QQ Group',
     'toast.qq': 'Copied QQ Group: 383917628',
+    'toast.fdroid': 'Copied F-Droid repo URL: store.000.moe/fdroid/repo',
+    'toast.sidestore': 'Copied SideStore source URL: store.000.moe/altstore/source.json',
+    'toast.hbas': 'Copied HBAS repo URL: store.000.moe/hbas',
   },
   ja: {
     'nav.download': '入手',
@@ -146,6 +152,9 @@ const I18N = {
     'dl.switch': 'Homebrew · /switch/ へ展開',
     'dl.qq': 'QQ グループ',
     'toast.qq': 'QQ 番号をコピーしました：383917628',
+    'toast.fdroid': 'F-Droid リポジトリ URL をコピーしました',
+    'toast.sidestore': 'SideStore ソース URL をコピーしました',
+    'toast.hbas': 'HBAS リポジトリ URL をコピーしました',
   },
 };
 
@@ -694,5 +703,18 @@ document.querySelectorAll('[data-copy-qq]').forEach((qqBtn) => {
       navigator.clipboard.writeText(qq).catch(() => {});
     }
     showToast(I18N[currentLang]['toast.qq']);
+  });
+});
+
+document.querySelectorAll('[data-copy-store]').forEach((link) => {
+  link.addEventListener('click', () => {
+    const url = link.dataset.copyStore;
+    if (url && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).catch(() => {});
+    }
+    const toastKey = link.dataset.storeToast;
+    if (toastKey && I18N[currentLang][toastKey]) {
+      showToast(I18N[currentLang][toastKey]);
+    }
   });
 });

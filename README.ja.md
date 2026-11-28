@@ -30,6 +30,16 @@ Android、iOS、Nintendo Switch のパッケージはいずれも [**最新リ�
 
 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) の成功した実行から `AliceHub-arm64-v8a`、`AliceHub-ios-unsigned`、`AliceHub-switch` をダウンロードして最新コミットのビルドを取得することもできます。成果物のダウンロードには GitHub へのログインが必要です。
 
+### 公式セルフホストリポジトリ（F-Droid / SideStore / HBAS）
+
+公式セルフホストストア（[store.000.moe](https://store.000.moe/)）から導入・アップデートすることもできます。
+
+| プラットフォーム | 対応クライアント | リポジトリ URL |
+| :--- | :--- | :--- |
+| **Android** | F-Droid / Droid-ify / Neo Store | `https://store.000.moe/fdroid/repo`（SHA-256 フィンガープリント：`48620D9F64F02B26196550D138B7014D24B3C22C2C2DC168F0838ACC454ACDFA`） |
+| **iOS / iPadOS** | SideStore / AltStore | `https://store.000.moe/altstore/source.json` |
+| **Nintendo Switch** | Homebrew App Store (HBAS) | `https://store.000.moe/hbas`（または [`repos.json`](https://store.000.moe/hbas/repos.json) を SD カードの `/switch/appstore/.get/repos.json` へ配置） |
+
 ### Android
 
 APK をインストールして **AliceHub** を開き、ゲームを選択するか、右上のメニューから **他のゲームを導入** を選びます。ゲームファイル一式を含むフォルダ、`.zip` / `.rar` / `.7z` アーカイブ、`.iso` / `.mdf` ディスクイメージを読み込めます。導入後は **ゲーム開始** をタップします。

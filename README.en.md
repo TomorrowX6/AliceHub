@@ -30,6 +30,16 @@ Get Android, iOS, and Nintendo Switch packages from the [**latest release**](htt
 
 You can also download `AliceHub-arm64-v8a`, `AliceHub-ios-unsigned`, or `AliceHub-switch` from a successful [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) run for the latest commit builds. GitHub sign-in is required for artifacts.
 
+### Official self-hosted app repositories (F-Droid / SideStore / HBAS)
+
+You can also install and receive updates via the self-hosted repositories at [store.000.moe](https://store.000.moe/):
+
+| Platform | Store client | Repository URL |
+| :--- | :--- | :--- |
+| **Android** | F-Droid / Droid-ify / Neo Store | `https://store.000.moe/fdroid/repo` (SHA-256 fingerprint: `48620D9F64F02B26196550D138B7014D24B3C22C2C2DC168F0838ACC454ACDFA`) |
+| **iOS / iPadOS** | SideStore / AltStore | `https://store.000.moe/altstore/source.json` |
+| **Nintendo Switch** | Homebrew App Store (HBAS) | `https://store.000.moe/hbas` (or drop [`repos.json`](https://store.000.moe/hbas/repos.json) into `/switch/appstore/.get/repos.json` on your SD card) |
+
 ### Android
 
 Install the APK and open **AliceHub**. Select a game entry, or choose **Import Other Game** from the top-right menu. Import a folder, a `.zip` / `.rar` / `.7z` archive, or an `.iso` / `.mdf` disc image containing the complete game files. Tap **Start Game** after import.

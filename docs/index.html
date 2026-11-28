@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="site.css?v=20261128g" />
+  <link rel="stylesheet" href="site.css?v=20261128j" />
 </head>
 <body>
   <!-- Full-Viewport Interactive Three.js 3D Curved Background Wall -->
@@ -121,35 +121,45 @@
         <div class="dl-head-left">
           <span id="dl-modal-title" data-i18n="dl.title">下载</span>
           <code id="dl-release-tag">f0810b6</code>
+          <a class="dl-head-store" href="https://store.000.moe/" target="_blank" rel="noopener">store.000.moe ↗</a>
         </div>
         <button type="button" class="dl-close" data-close-dl aria-label="Close">×</button>
       </div>
 
       <div class="release-list">
-        <a class="release-row" id="dl-card-android" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
+        <div class="release-row">
           <span class="rr-name">Android</span>
           <span class="rr-meta" data-i18n="dl.android">Android 8.0+ · 直接安装</span>
           <span class="rr-size" id="dl-size-android">44.3 MiB</span>
-          <span class="rr-ext">APK <em>↗</em></span>
-        </a>
+          <div class="rr-actions">
+            <a class="rr-store" href="fdroidrepos://store.000.moe/fdroid/repo?fingerprint=48620D9F64F02B26196550D138B7014D24B3C22C2C2DC168F0838ACC454ACDFA" data-copy-store="https://store.000.moe/fdroid/repo" data-store-toast="toast.fdroid">F-Droid</a>
+            <a class="rr-ext" id="dl-card-android" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">APK <em>↗</em></a>
+          </div>
+        </div>
 
-        <a class="release-row" id="dl-card-ios" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
+        <div class="release-row">
           <span class="rr-name">iOS / iPadOS</span>
           <span class="rr-meta" data-i18n="dl.ios">iOS 15+ · 自签侧载</span>
           <span class="rr-size" id="dl-size-ios">48.6 MiB</span>
-          <span class="rr-ext">IPA <em>↗</em></span>
-        </a>
+          <div class="rr-actions">
+            <a class="rr-store" href="sidestore://source?url=https%3A%2F%2Fstore.000.moe%2Faltstore%2Fsource.json" data-copy-store="https://store.000.moe/altstore/source.json" data-store-toast="toast.sidestore">SideStore</a>
+            <a class="rr-ext" id="dl-card-ios" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">IPA <em>↗</em></a>
+          </div>
+        </div>
 
-        <a class="release-row" id="dl-card-switch" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">
+        <div class="release-row">
           <span class="rr-name">Nintendo Switch</span>
           <span class="rr-meta" data-i18n="dl.switch">Homebrew · 解压至 /switch/</span>
           <span class="rr-size" id="dl-size-switch">85.9 MiB</span>
-          <span class="rr-ext">ZIP <em>↗</em></span>
-        </a>
+          <div class="rr-actions">
+            <a class="rr-store" href="https://store.000.moe/#hbas" target="_blank" rel="noopener" data-copy-store="https://store.000.moe/hbas" data-store-toast="toast.hbas">HBAS</a>
+            <a class="rr-ext" id="dl-card-switch" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener">ZIP <em>↗</em></a>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <script type="module" src="site.js?v=20261128i"></script>
+  <script type="module" src="site.js?v=20261128j"></script>
 </body>
 </html>

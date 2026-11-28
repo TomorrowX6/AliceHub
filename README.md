@@ -31,6 +31,16 @@ Android、iOS 和 Nintendo Switch 安装包均可在 [**最新 Release**](https:
 
 也可在 [GitHub Actions → Build](https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml) 的成功构建中下载 `AliceHub-arm64-v8a`、`AliceHub-ios-unsigned` 或 `AliceHub-switch` 获取最新提交的构建产物（下载构建产物需登录 GitHub）。
 
+### 官方自建软件源（F-Droid / SideStore / HBAS）
+
+也可通过官方自建源（[store.000.moe](https://store.000.moe/)）自动获取与更新：
+
+| 平台 | 客户端 | 软件源地址 |
+| :--- | :--- | :--- |
+| **Android** | F-Droid / Droid-ify / Neo Store | `https://store.000.moe/fdroid/repo`（SHA-256 指纹：`48620D9F64F02B26196550D138B7014D24B3C22C2C2DC168F0838ACC454ACDFA`） |
+| **iOS / iPadOS** | SideStore / AltStore | `https://store.000.moe/altstore/source.json` |
+| **Nintendo Switch** | Homebrew App Store (HBAS) | `https://store.000.moe/hbas`（或下载现成 [`repos.json`](https://store.000.moe/hbas/repos.json) 放至 SD 卡 `/switch/appstore/.get/repos.json`） |
+
 ### Android
 
 安装 APK，打开 **AliceHub**，选择游戏条目，或从右上角菜单选择 **导入其他游戏**。可以导入包含完整游戏资源的文件夹、`.zip` / `.rar` / `.7z` 压缩包或 `.iso` / `.mdf` 光盘镜像。导入后点击 **开始游戏**。
