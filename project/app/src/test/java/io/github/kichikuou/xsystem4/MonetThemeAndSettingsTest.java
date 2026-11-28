@@ -2,7 +2,9 @@ package io.github.kichikuou.xsystem4;
 
 import android.app.AlertDialog;
 import android.os.Looper;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -131,6 +133,16 @@ public class MonetThemeAndSettingsTest {
             assertEquals(activity.getColor(R.color.ocean_primary), UiKit.INSTANCE.primaryColor(activity));
             assertEquals(activity.getColor(R.color.ocean_bg), UiKit.INSTANCE.bgColor(activity));
             assertEquals(activity.getColor(R.color.ocean_surface), UiKit.INSTANCE.surfaceColor(activity));
+
+            // FAB icon tint and onboarding step label resolve palette theme attributes cleanly in dark mode
+            View launcherView = LayoutInflater.from(activity).inflate(R.layout.launcher, null);
+            ImageView fab = launcherView.findViewById(R.id.fab_import_game);
+            assertNotNull(fab.getImageTintList());
+            assertEquals(activity.getColor(R.color.ocean_on_primary), fab.getImageTintList().getDefaultColor());
+
+            View onboardingView = LayoutInflater.from(activity).inflate(R.layout.activity_onboarding, null);
+            TextView step = onboardingView.findViewById(R.id.onboarding_step);
+            assertEquals(activity.getColor(R.color.ocean_primary), step.getCurrentTextColor());
         }
     }
 }
