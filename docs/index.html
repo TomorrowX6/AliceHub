@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AliceHub — AliceSoft System 1–4 多平台原生引擎启动器</title>
+  <meta name="description" content="在 Android、iOS / iPadOS 与 Nintendo Switch 上以三套原生 SDL2 引擎直接运行 AliceSoft System 1–4 游戏。零 Wine，零指令转译。" />
+  <meta name="theme-color" content="#050507" />
+  <link rel="icon" type="image/png" href="assets/alice-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=JetBrains+Mono:wght@400;600;700;800&family=Noto+Sans+JP:wght@500;700;900&family=Noto+Sans+SC:wght@500;700;900&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="site.css" />
+</head>
+<body class="is-booting">
+  <!-- Custom kinetic crosshair cursor (desktop fine pointer only) -->
+  <div id="custom-cursor" class="custom-cursor" aria-hidden="true">
+    <span class="cursor-ring"></span>
+    <span class="cursor-cross cursor-cross-h"></span>
+    <span class="cursor-cross cursor-cross-v"></span>
+    <span class="cursor-tag" id="cursor-tag"></span>
+  </div>
+
+  <!-- Theatrical Harlequin Shutter Boot Intro -->
+  <div id="boot-curtain" class="boot-curtain" aria-hidden="true">
+    <div class="boot-half boot-half-top"></div>
+    <div class="boot-half boot-half-bottom"></div>
+    <div class="boot-core">
+      <div class="boot-emblem">
+        <img src="assets/alice-icon.png" alt="" width="76" height="76" />
+      </div>
+      <div class="boot-code">
+        <span class="boot-label">ALICEHUB // NATIVE METAL BOOT</span>
+        <span class="boot-pct" id="boot-pct">00%</span>
+      </div>
+      <div class="boot-bar"><span id="boot-bar-fill"></span></div>
+    </div>
+  </div>
+
+  <!-- Floating Toast -->
+  <div id="toast" class="brutal-toast" role="status" aria-live="polite"></div>
+
+  <!-- Floating HUD Navigation -->
+  <header class="hud-nav" id="hud-nav">
+    <div class="hud-nav-inner">
+      <a href="#hero" class="brand-lockup" data-cursor="TOP">
+        <span class="brand-checker" aria-hidden="true"></span>
+        <img src="assets/alice-icon.png" alt="AliceHub" class="brand-icon" width="34" height="34" />
+        <span class="brand-wordmark">ALICE<span class="accent-m">HUB</span></span>
+        <span class="brand-ver" id="nav-release-tag">f0810b6</span>
+      </a>
+
+      <nav class="hud-links" aria-label="Primary">
+        <a href="#engines" data-sec="engines"><span class="nav-idx">01</span><span data-i18n="nav.engines">三核引擎</span></a>
+        <a href="#platforms" data-sec="platforms"><span class="nav-idx">02</span><span data-i18n="nav.platforms">三端实机</span></a>
+        <a href="#features" data-sec="features"><span class="nav-idx">03</span><span data-i18n="nav.features">硬核能力</span></a>
+        <a href="#catalog" data-sec="catalog"><span class="nav-idx">04</span><span data-i18n="nav.catalog">作品矩阵</span></a>
+        <a href="#download" data-sec="download"><span class="nav-idx">05</span><span data-i18n="nav.download">获取安装</span></a>
+      </nav>
+
+      <div class="hud-actions">
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button type="button" class="lang-btn is-active" data-lang="zh">简</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="ja">日</button>
+        </div>
+        <a href="#download" class="hud-cta" data-cursor="GET">
+          <span data-i18n="nav.cta">立即下载</span>
+          <span class="cta-arrow" aria-hidden="true">↗</span>
+        </a>
+        <button type="button" class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle Menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Drawer -->
+    <div class="mobile-drawer" id="mobile-drawer" hidden>
+      <a href="#engines" data-i18n="nav.engines">三核引擎</a>
+      <a href="#platforms" data-i18n="nav.platforms">三端实机</a>
+      <a href="#features" data-i18n="nav.features">硬核能力</a>
+      <a href="#catalog" data-i18n="nav.catalog">作品矩阵</a>
+      <a href="#download" data-i18n="nav.download">获取安装</a>
+    </div>
+  </header>
+
+  <!-- Right-edge Telemetry Scroll Rail -->
+  <aside class="telemetry-rail" aria-hidden="true">
+    <div class="rail-sec" id="rail-sec">SEC.01</div>
+    <div class="rail-track">
+      <div class="rail-fill" id="rail-fill"></div>
+    </div>
+    <div class="rail-pct" id="rail-pct">00%</div>
+  </aside>
+
+  <main>
+    <!-- =========================================================
+         SECTION 01 // HERO STAGE (OBSIDIAN + CHROMATIC KINETIC)
+         ========================================================= -->
+    <section id="hero" class="hero-section" data-section="hero">
+      <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
+      <div class="hero-halftone" aria-hidden="true"></div>
+      <div class="hero-scanlines" aria-hidden="true"></div>
+
+      <div class="hero-container">
+        <div class="hero-copy">
+          <div class="hazard-badge reveal-slam" style="--delay: 0.05s">
+            <span class="hazard-dot"></span>
+            <span data-i18n="hero.badge">ZERO WINE · ZERO WINLATOR · 100% NATIVE SDL2</span>
+          </div>
+
+          <h1 class="hero-title reveal-slam" style="--delay: 0.14s">
+            <span class="title-glitch" data-text="ALICEHUB">
+              <span class="glitch-layer glitch-m" aria-hidden="true">ALICEHUB</span>
+              <span class="glitch-layer glitch-c" aria-hidden="true">ALICEHUB</span>
+              <span class="glitch-main">ALICE<span class="accent-m">HUB</span></span>
+            </span>
+            <span class="title-sub-slash">
+              <span class="slash-block" data-i18n="hero.sub">原生突破 · SYSTEM 1–4</span>
+            </span>
+          </h1>
+
+          <p class="hero-lead reveal-slam" style="--delay: 0.24s" data-i18n="hero.lead">
+            把 AliceSoft 四十年经典直接运行在 <strong>Android、iOS / iPadOS 与 Nintendo Switch</strong> 原生图形与音频管线上。三套独立原生引擎，告别模拟器卡顿与转译损耗。
+          </p>
+
+          <div class="hero-cta-row reveal-slam" style="--delay: 0.32s">
+            <a href="#download" class="btn-slash btn-slash-primary" data-cursor="BOOM">
+              <span class="btn-slash-bg" aria-hidden="true"></span>
+              <span class="btn-slash-text">
+                <span data-i18n="hero.ctaPrimary">获取最新版</span>
+                <code id="hero-ver-pill">f0810b6</code>
+              </span>
+              <span class="btn-slash-icon" aria-hidden="true">→</span>
+            </a>
+            <a href="#engines" class="btn-slash btn-slash-ghost" data-cursor="SCAN">
+              <span class="btn-slash-text" data-i18n="hero.ctaSecondary">检视三核架构</span>
+              <span class="btn-slash-icon" aria-hidden="true">↓</span>
+            </a>
+            <a href="https://github.com/TomorrowX6/AliceHub" target="_blank" rel="noopener" class="btn-square-link" data-cursor="CODE" aria-label="GitHub Repository">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.54 2.87 8.39 6.84 9.75.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.72-2.78.62-3.37-1.38-3.37-1.38-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.86.09-.67.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.08 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.73 0 0 .84-.28 2.75 1.05a9.35 9.35 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.47.1 2.73.64.72 1.03 1.64 1.03 2.76 0 3.95-2.34 4.82-4.57 5.07.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.26 10.26 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/></svg>
+              <span>GITHUB</span>
+            </a>
+          </div>
+
+          <div class="hero-metrics reveal-slam" style="--delay: 0.42s">
+            <div class="metric-box">
+              <span class="metric-val" data-count="3">3</span>
+              <span class="metric-unit">ENGINES</span>
+              <span class="metric-desc" data-i18n="hero.m1">Sys 1–3 / 3.5 / 4.x</span>
+            </div>
+            <div class="metric-box">
+              <span class="metric-val" data-count="3">3</span>
+              <span class="metric-unit">PLATFORMS</span>
+              <span class="metric-desc" data-i18n="hero.m2">Android · iOS · Switch</span>
+            </div>
+            <div class="metric-box metric-box-m">
+              <span class="metric-val" data-count="171" data-suffix="+">171+</span>
+              <span class="metric-unit">CATALOG</span>
+              <span class="metric-desc" data-i18n="hero.m3">内置目录 · 含 54+ 汉化</span>
+            </div>
+            <div class="metric-box metric-box-c">
+              <span class="metric-val" data-count="0" data-suffix="%">0%</span>
+              <span class="metric-unit">EMULATION</span>
+              <span class="metric-desc" data-i18n="hero.m4">纯原生编译 · 零转译</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive 3D Alice Mascot Stage -->
+        <div class="hero-stage-wrap reveal-slam" style="--delay: 0.22s">
+          <div class="alice-shrine" id="alice-shrine" data-cursor="POKE!">
+            <div class="shrine-orbit shrine-orbit-outer" aria-hidden="true"></div>
+            <div class="shrine-orbit shrine-orbit-inner" aria-hidden="true"></div>
+            <div class="shrine-burst" aria-hidden="true"></div>
+
+            <div class="shrine-card" id="shrine-card">
+              <div class="shrine-card-header">
+                <span class="shrine-code">UNIT // ALICE-04</span>
+                <span class="shrine-live"><i class="live-dot"></i>60FPS LOCK</span>
+              </div>
+
+              <div class="alice-avatar-box" id="alice-avatar-box">
+                <img src="assets/alice-icon.png" alt="" class="alice-ghost alice-ghost-m" id="alice-ghost-m" aria-hidden="true" />
+                <img src="assets/alice-icon.png" alt="" class="alice-ghost alice-ghost-c" id="alice-ghost-c" aria-hidden="true" />
+                <img src="assets/alice-face-shell.png" alt="AliceHub Mascot" class="alice-shell" width="256" height="256" />
+                <!-- Live cursor-tracking heterochromia eyes -->
+                <span class="alice-eye alice-eye-m" id="alice-eye-m" aria-hidden="true">
+                  <span class="eye-shine"></span>
+                </span>
+                <span class="alice-eye alice-eye-c" id="alice-eye-c" aria-hidden="true">
+                  <span class="eye-shine"></span>
+                </span>
+              </div>
+
+              <div class="shrine-card-footer">
+                <span class="pill-tag pill-m">ARM64</span>
+                <span class="pill-tag pill-c">SDL2</span>
+                <span class="pill-tag pill-y">GPL-2.0</span>
+              </div>
+            </div>
+
+            <!-- Floating Parallax Hardware Badges -->
+            <div class="float-chip chip-tl" data-depth="28">
+              <span class="chip-k">ANDROID</span>
+              <span class="chip-v">API 26+ · ADPF</span>
+            </div>
+            <div class="float-chip chip-br" data-depth="34">
+              <span class="chip-k">SWITCH</span>
+              <span class="chip-v">4× NRO · HOMEBREW</span>
+            </div>
+            <div class="float-chip chip-bl" data-depth="22">
+              <span class="chip-k">iOS / iPadOS</span>
+              <span class="chip-v">15.0+ · ARM64</span>
+            </div>
+          </div>
+          <p class="shrine-hint" data-i18n="hero.hint">✦ 移动光标看瞳孔追踪 · 点击画面任意处引爆色散冲击波</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         INTERSECTING HARLEQUIN CHECKERED MARQUEE SLASHES
+         ========================================================= -->
+    <div class="slash-ribbon-zone" aria-hidden="true">
+      <div class="ribbon ribbon-magenta" data-marquee="-1">
+        <div class="ribbon-track">
+          <span>NO WINE /// NO WINLATOR /// PURE NATIVE SDL2 /// SYSTEM 1–4 /// ZERO TRANSLATION /// 60FPS VSYNC /// ANDROID · iOS · SWITCH ///</span>
+          <span>NO WINE /// NO WINLATOR /// PURE NATIVE SDL2 /// SYSTEM 1–4 /// ZERO TRANSLATION /// 60FPS VSYNC /// ANDROID · iOS · SWITCH ///</span>
+        </div>
+      </div>
+      <div class="ribbon ribbon-checker" data-marquee="1">
+        <div class="ribbon-track">
+          <span class="chk-pill">SYSTEM3-SDL2</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">XSYSTEM35</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">XSYSTEM4</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">AIN v0–v14.1</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">SEALENGINE 3D</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">FLAT v15</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">GD\x01\x01 PC SAVE</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">CHS.TBL / UIF</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">SYSTEM3-SDL2</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">XSYSTEM35</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">XSYSTEM4</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">AIN v0–v14.1</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">SEALENGINE 3D</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">FLAT v15</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">GD\x01\x01 PC SAVE</span>
+          <span class="chk-sep">◆</span>
+          <span class="chk-pill">CHS.TBL / UIF</span>
+          <span class="chk-sep">◆</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         SECTION 02 // THREE-ENGINE CUT-IN MATRIX (CHALK WHITE POLARITY!)
+         ========================================================= -->
+    <section id="engines" class="section-paper engines-section" data-section="engines">
+      <div class="paper-grid-bg" aria-hidden="true"></div>
+      <div class="wrap">
+        <div class="sec-head sec-head-paper reveal-up">
+          <div class="sec-kicker">
+            <span class="kicker-num">01</span>
+            <span class="kicker-line"></span>
+            <span data-i18n="engines.kicker">TRIPLE NATIVE KERNEL ARCHITECTURE</span>
+          </div>
+          <h2 class="sec-title-xl" data-i18n="engines.title">三核原生引擎矩阵</h2>
+          <p class="sec-sub" data-i18n="engines.sub">启动器自动扫描游戏根目录标记并路由至对应原生内核——从 1989 年的 DAT 经典到 2020s 的 3D 骨骼与粒子演出，一套入口全部贯通。</p>
+        </div>
+
+        <div class="engine-matrix reveal-up">
+          <!-- Left: Diagonal Slashed Engine Tabs -->
+          <div class="engine-tabs" role="tablist" aria-label="Native Engines">
+            <button type="button" class="engine-tab" role="tab" aria-selected="false" data-engine="sys3" data-cursor="SYS3">
+              <span class="etab-num">01</span>
+              <span class="etab-meta">
+                <strong class="etab-name">SYSTEM 1–3</strong>
+                <span class="etab-core">system3-sdl2 · DAT ERA</span>
+              </span>
+              <span class="etab-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button type="button" class="engine-tab" role="tab" aria-selected="false" data-engine="sys35" data-cursor="SYS35">
+              <span class="etab-num">02</span>
+              <span class="etab-meta">
+                <strong class="etab-name">SYSTEM 3.5–3.9</strong>
+                <span class="etab-core">xsystem35 · ALD / MIDI</span>
+              </span>
+              <span class="etab-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button type="button" class="engine-tab is-active" role="tab" aria-selected="true" data-engine="sys4" data-cursor="SYS4">
+              <span class="etab-num">03</span>
+              <span class="etab-meta">
+                <strong class="etab-name">SYSTEM 4.x</strong>
+                <span class="etab-core">xsystem4 · AIN v0–v14.1</span>
+              </span>
+              <span class="etab-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+
+          <!-- Right: Cut-In Dark Brutalist Engine Stage -->
+          <div class="engine-stage" id="engine-stage">
+            <div class="cutin-wipe" id="engine-wipe" aria-hidden="true"></div>
+            <div class="engine-stage-top">
+              <span class="estage-badge" id="eng-badge">KERNEL // XSYSTEM4</span>
+              <span class="estage-era" id="eng-era">2002 — PRESENT</span>
+            </div>
+
+            <h3 class="estage-title" id="eng-title">System 4.x 全世代原生内核</h3>
+            <p class="estage-desc" id="eng-desc">覆盖早期 System 4.0（SACT2 / StoatSpriteEngine / DrawDungeon）至现代旗舰（AIN v12–v14.1、PartsEngine、SealEngine 3D UBO 骨骼、FLAT v15、Ogg Opus、CHS.TBL/UIF 汉化映射与 &lt;memory&gt; 虚拟存档）。</p>
+
+            <div class="estage-markers">
+              <span class="markers-label" data-i18n="engines.markersLabel">自动识别标记</span>
+              <div class="markers-list" id="eng-markers"></div>
+            </div>
+
+            <div class="estage-terminal" aria-live="polite">
+              <div class="term-bar">
+                <span></span><span></span><span></span>
+                <em id="eng-term-title">xsystem4.runtime // telemetry</em>
+              </div>
+              <pre class="term-body" id="eng-terminal"></pre>
+            </div>
+
+            <div class="estage-games">
+              <span class="markers-label" data-i18n="engines.samplesLabel">代表作品</span>
+              <div class="estage-game-row" id="eng-games"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         SECTION 03 // THREE-PLATFORM HARDWARE STAGE (OBSIDIAN + PLAYABLE PAD)
+         ========================================================= -->
+    <section id="platforms" class="section-dark platforms-section" data-section="platforms">
+      <div class="wrap">
+        <div class="sec-head reveal-up">
+          <div class="sec-kicker">
+            <span class="kicker-num">02</span>
+            <span class="kicker-line"></span>
+            <span data-i18n="platforms.kicker">THREE PLATFORMS · ONE UNIFIED EXPERIENCE</span>
+          </div>
+          <h2 class="sec-title-xl" data-i18n="platforms.title">三端原生 · 掌上即战</h2>
+          <p class="sec-sub" data-i18n="platforms.sub">Android、iOS / iPadOS 与 Nintendo Switch 同步构建、同享 Release 发布页，全平台具备 PC 兼容存档导出、启动入口切换与内置更新检查。</p>
+        </div>
+
+        <!-- Platform Brutalist Switcher -->
+        <div class="platform-tabs reveal-up" role="tablist" aria-label="Platforms">
+          <button type="button" class="plat-tab is-active" role="tab" aria-selected="true" data-platform="android" data-cursor="APK">
+            <span class="plat-tag">01</span>
+            <span class="plat-name">ANDROID</span>
+            <span class="plat-sub">arm64-v8a · API 26+</span>
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-platform="ios" data-cursor="IPA">
+            <span class="plat-tag">02</span>
+            <span class="plat-name">iOS / iPadOS</span>
+            <span class="plat-sub">arm64 · iOS 15+</span>
+          </button>
+          <button type="button" class="plat-tab" role="tab" aria-selected="false" data-platform="switch" data-cursor="NRO">
+            <span class="plat-tag">03</span>
+            <span class="plat-name">NINTENDO SWITCH</span>
+            <span class="plat-sub">4× NRO · Homebrew</span>
+          </button>
+        </div>
+
+        <div class="platform-stage reveal-up">
+          <!-- Left: Spec Sheet & Steps -->
+          <div class="plat-info-card" id="plat-info-card">
+            <div class="cutin-wipe" id="plat-wipe" aria-hidden="true"></div>
+            <div class="plat-card-head">
+              <span class="plat-pill" id="plat-pill">ANDROID // ARM64-V8A</span>
+              <span class="plat-pkg" id="plat-pkg">AliceHub-f0810b6-arm64-v8a.apk</span>
+            </div>
+
+            <h3 class="plat-headline" id="plat-headline">旗舰级 Android 原生调度与可编辑虚拟手柄</h3>
+            <p class="plat-summary" id="plat-summary"></p>
+
+            <ul class="plat-bullets" id="plat-bullets"></ul>
+
+            <div class="plat-actions">
+              <a href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener" class="btn-slash btn-slash-primary" id="plat-dl-btn" data-cursor="DL">
+                <span class="btn-slash-bg" aria-hidden="true"></span>
+                <span class="btn-slash-text" id="plat-dl-label">下载 Android APK</span>
+                <span class="btn-slash-icon" aria-hidden="true">↓</span>
+              </a>
+              <span class="plat-size-chip" id="plat-size-chip">~44.3 MiB</span>
+            </div>
+          </div>
+
+          <!-- Right: Interactive Playable Hardware / Virtual Gamepad Deck -->
+          <div class="hardware-deck" id="hardware-deck">
+            <div class="deck-header">
+              <span class="deck-label" data-i18n="platforms.deckTitle">INTERACTIVE CONTROL DECK // 点击测试按键反馈</span>
+              <span class="deck-mode" id="deck-mode">MODE: ANDROID TOUCH + PAD</span>
+            </div>
+
+            <div class="deck-screen">
+              <div class="deck-screen-grid" aria-hidden="true"></div>
+              <div class="deck-hud-top">
+                <button type="button" class="deck-float-ball" data-pad="MENU" title="Floating Menu">
+                  <img src="assets/alice-icon.png" alt="" width="24" height="24" />
+                </button>
+                <button type="button" class="deck-ctrl-pill" id="deck-ctrl-pill" data-pad="CTRL">⏩ Ctrl</button>
+                <span class="deck-fps" id="deck-fps">60.0 FPS</span>
+              </div>
+
+              <div class="deck-dialogue" id="deck-dialogue">
+                <div class="deck-speaker" id="deck-speaker">SYSTEM // ALICEHUB</div>
+                <div class="deck-text" id="deck-text" data-i18n="platforms.deckInitial">点击下方虚拟按键或悬浮球，体验原生手势与手柄映射反馈。</div>
+                <div class="deck-signal" id="deck-signal">READY · WAITING INPUT</div>
+              </div>
+
+              <div class="deck-controls">
+                <div class="deck-dpad" role="group" aria-label="Directional Pad">
+                  <button type="button" class="dpad-btn dpad-up" data-pad="UP">▲</button>
+                  <button type="button" class="dpad-btn dpad-left" data-pad="LEFT">◀</button>
+                  <button type="button" class="dpad-btn dpad-center" data-pad="CURSOR">◎</button>
+                  <button type="button" class="dpad-btn dpad-right" data-pad="RIGHT">▶</button>
+                  <button type="button" class="dpad-btn dpad-down" data-pad="DOWN">▼</button>
+                </div>
+
+                <div class="deck-mid-keys">
+                  <button type="button" class="mid-btn" data-pad="WHEEL_UP">LB / ▲</button>
+                  <button type="button" class="mid-btn" data-pad="LR">L + R</button>
+                  <button type="button" class="mid-btn" data-pad="WHEEL_DN">RB / ▼</button>
+                </div>
+
+                <div class="deck-abxy">
+                  <button type="button" class="ab-btn ab-y" data-pad="SHOT">Y</button>
+                  <button type="button" class="ab-btn ab-x" data-pad="SKIP">X</button>
+                  <button type="button" class="ab-btn ab-b" data-pad="CANCEL">B</button>
+                  <button type="button" class="ab-btn ab-a" data-pad="CONFIRM">A</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="deck-footer" id="deck-footer">
+              <span>SINGLE TAP → CLICK</span>
+              <span>2-FINGER → MENU</span>
+              <span>LONG PRESS → CTRL SKIP</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         SECTION 04 // ENGINEERING ARSENAL (BRUTALIST BENTO GRID)
+         ========================================================= -->
+    <section id="features" class="section-dark features-section" data-section="features">
+      <div class="wrap">
+        <div class="sec-head reveal-up">
+          <div class="sec-kicker">
+            <span class="kicker-num">03</span>
+            <span class="kicker-line"></span>
+            <span data-i18n="features.kicker">ENGINEERED BEYOND EMULATION</span>
+          </div>
+          <h2 class="sec-title-xl" data-i18n="features.title">六维硬核工程能力</h2>
+          <p class="sec-sub" data-i18n="features.sub">从底层字节码、存档序列化、多格式流式解压到移动端帧率与显存恢复，每一项都是面向真实游玩痛点打磨的原生能力。</p>
+        </div>
+
+        <div class="bento-grid">
+          <!-- Card 1: Wide - PC <-> Mobile Save Morph -->
+          <article class="bento-card bento-wide bento-magenta reveal-up" data-cursor="SAVE">
+            <span class="crop-mark cm-tl"></span><span class="crop-mark cm-br"></span>
+            <div class="bento-head">
+              <span class="bento-idx">F.01</span>
+              <span class="bento-tag">ANDROID · iOS · SWITCH</span>
+            </div>
+            <h3 data-i18n="feat.f1.title">PC ⇄ 移动端双向无损存档互通</h3>
+            <p data-i18n="feat.f1.desc">导出 PC 兼容存档时自动读取对应 .ain 结构定义，将移动端 X4SS 存档无损转换并修复为 Windows 原版 GD\x01\x01 / .gsave / .rsm 格式，随时无缝跨设备续关。</p>
+            <div class="save-morph-widget" aria-hidden="true">
+              <div class="morph-box morph-src">
+                <span class="morph-label">MOBILE X4SS</span>
+                <code id="hex-src">58 34 53 53 00 1A F2 09</code>
+              </div>
+              <div class="morph-bridge">
+                <span class="morph-pulse"></span>
+                <em>.AIN SCHEMA</em>
+                <span class="morph-arrow">⇄</span>
+              </div>
+              <div class="morph-box morph-dst">
+                <span class="morph-label">WINDOWS PC</span>
+                <code id="hex-dst">47 44 01 01 00 1A F2 09</code>
+              </div>
+            </div>
+          </article>
+
+          <!-- Card 2: Multi-Format Direct Extractor -->
+          <article class="bento-card bento-cyan reveal-up" data-cursor="ISO">
+            <span class="crop-mark cm-tl"></span><span class="crop-mark cm-br"></span>
+            <div class="bento-head">
+              <span class="bento-idx">F.02</span>
+              <span class="bento-tag">LIBARCHIVE + ISO9660</span>
+            </div>
+            <h3 data-i18n="feat.f2.title">全格式直读与多碟自动合并</h3>
+            <p data-i18n="feat.f2.desc">内置流式解压与 ISO9660 / Joliet 光盘镜像提取器，直读 .zip / .rar / .7z / .iso / .mdf（2048/2352/2448 扇区），自动合并 Disk1/Disk2 并修复文件名乱码。</p>
+            <div class="format-strip">
+              <span>.ZIP</span><span>.RAR</span><span>.7Z</span><span>.ISO</span><span>.MDF</span><span>MULTI-DISC</span>
+            </div>
+          </article>
+
+          <!-- Card 3: Frame Pacing Oscilloscope -->
+          <article class="bento-card bento-yellow reveal-up" data-cursor="60FPS">
+            <span class="crop-mark cm-tl"></span><span class="crop-mark cm-br"></span>
+            <div class="bento-head">
+              <span class="bento-idx">F.03</span>
+              <span class="bento-tag">ADPF · VSYNC · 16KB</span>
+            </div>
+            <h3 data-i18n="feat.f3.title">60fps 稳帧调度与切后台无损恢复</h3>
+            <p data-i18n="feat.f3.desc">高优先级渲染/混音线程、Android 12+ ADPF 动态提频、Android 15+ 16KB 页对齐与 EGLContext 丢失自动重建；切回瞬间满帧续绘。</p>
+            <div class="scope-bars" id="scope-bars" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </article>
+
+          <!-- Card 4: Non-Destructive MODs & Localization -->
+          <article class="bento-card bento-cyan reveal-up" data-cursor="MOD">
+            <span class="crop-mark cm-tl"></span><span class="crop-mark cm-br"></span>
+            <div class="bento-head">
+              <span class="bento-idx">F.04</span>
+              <span class="bento-tag">ATOMIC BACKUP</span>
+            </div>
+            <h3 data-i18n="feat.f4.title">无损 MOD、汉化补丁与编码全适配</h3>
+            <p data-i18n="feat.f4.desc">覆盖前自动原子备份原版文件，一键卸载还原；全面支持 Shift-JIS / GBK / CHS.TBL / UIF / word.mai 重映射编码与未汉化系统弹窗智能识别。</p>
+            <div class="format-strip">
+              <span>CHS.TBL</span><span>UIF</span><span>WORD.MAI</span><span>&lt;MEMORY&gt;</span>
+            </div>
+          </article>
+
+          <!-- Card 5: Launch Entry & Shared Storage -->
+          <article class="bento-card bento-magenta reveal-up" data-cursor="BOOT">
+            <span class="crop-mark cm-tl"></span><span class="crop-mark cm-br"></span>
+            <div class="bento-head">
+              <span class="bento-idx">F.05</span>
+              <span class="bento-tag">MULTI-INSTANCE</span>
+            </div>
+            <h3 data-i18n="feat.f5.title">单游戏启动入口与灵活存储同步</h3>
+            <p data-i18n="feat.f5.desc">支持按作品自由切换 AliceStart.ini / AliceStart.CHS 等启动入口；Android 支持共享目录「内部存储/AliceHub」，iOS 支持 iCloud Drive 存档同步。</p>
+            <div class="format-strip">
+              <span>ALICESTART.INI</span><span>.CHS</span><span>ICLOUD</span><span>SHARED</span>
+            </div>
+          </article>
+
+          <!-- Card 6: Full-Span Showcase - Floating Tools & Modifiers -->
+          <article class="bento-card bento-full bento-ink reveal-up" data-cursor="PAD">
+            <span class="crop-mark cm-tl"></span><span class="crop-mark cm-br"></span>
+            <div class="bento-full-body">
+              <div class="bento-full-copy">
+                <div class="bento-head">
+                  <span class="bento-idx">F.06</span>
+                  <span class="bento-tag">OVERLAY + MODIFIERS</span>
+                </div>
+                <h3 data-i18n="feat.f6.title">全屏虚拟手柄编辑器、字号缩放与局内修改器</h3>
+                <p data-i18n="feat.f6.desc">内置 GAL / RPG 布局预设与可视化拖拽编辑器，即插即用 Xbox / PlayStation / Switch Pro 手柄；支持 PartsEngine 字体 75%–160% 实时缩放、滚动条 100%–300% 加宽、离线存档编辑与实时数值锁定。</p>
+              </div>
+              <div class="slider-demo" id="slider-demo">
+                <span class="slider-demo-label">PARTS FONT SCALE</span>
+                <input type="range" id="demo-font-range" min="75" max="160" value="115" aria-label="Demo Font Scale" />
+                <strong id="demo-font-val">115%</strong>
+                <span class="slider-preview" id="slider-preview" data-i18n="feat.f6.preview">兰斯 10 · 局内字体实时无损重排</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         SECTION 05 // 171+ GAME CATALOG KINETIC WALL (CHALK WHITE!)
+         ========================================================= -->
+    <section id="catalog" class="section-paper catalog-section" data-section="catalog">
+      <div class="paper-grid-bg" aria-hidden="true"></div>
+      <div class="wrap">
+        <div class="sec-head sec-head-paper reveal-up">
+          <div class="sec-kicker">
+            <span class="kicker-num">04</span>
+            <span class="kicker-line"></span>
+            <span data-i18n="catalog.kicker">171+ CATALOG ENTRIES · PLUS ANY CUSTOM IMPORT</span>
+          </div>
+          <h2 class="sec-title-xl" data-i18n="catalog.title">跨越四十年作品矩阵</h2>
+          <p class="sec-sub" data-i18n="catalog.sub">内置 171+ 部作品识别目录（含 54+ 部汉化标识），同时支持自由导入目录之外的任意 AliceSoft System 1–4 作品与多碟镜像。</p>
+        </div>
+      </div>
+
+      <!-- Dual Opposing Real Artwork Kinetic Strips -->
+      <div class="catalog-wall" id="catalog-wall">
+        <div class="art-strip art-strip-a" id="art-strip-a"></div>
+        <div class="art-strip art-strip-b" id="art-strip-b"></div>
+      </div>
+
+      <div class="wrap">
+        <div class="legal-stamp reveal-up">
+          <span class="legal-badge">NOTICE // BYO-ASSETS</span>
+          <p data-i18n="catalog.notice">AliceHub 是纯开源引擎与启动器，安装包不包含任何游戏本体或版权素材。请自行准备您合法拥有使用权的游戏文件。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         SECTION 06 // HIGH-VOLTAGE DOWNLOAD & COMMUNITY FINALE
+         ========================================================= -->
+    <section id="download" class="section-dark download-section" data-section="download">
+      <div class="download-checker-top" aria-hidden="true"></div>
+      <div class="wrap">
+        <div class="dl-header reveal-up">
+          <div class="sec-kicker">
+            <span class="kicker-num">05</span>
+            <span class="kicker-line"></span>
+            <span data-i18n="download.kicker">READY FOR DEPLOYMENT // OPEN SOURCE GPL-2.0</span>
+          </div>
+          <h2 class="dl-mega-title">
+            <span data-i18n="download.title">即刻启动原生引擎</span>
+            <span class="dl-tag-stamp" id="dl-release-tag">RELEASE f0810b6</span>
+          </h2>
+          <p class="sec-sub" id="dl-release-meta" data-i18n="download.sub">全部三端安装包均直接托管于 GitHub Releases，并由 GitHub Actions 公开透明构建。</p>
+        </div>
+
+        <div class="dl-cards reveal-up">
+          <a class="dl-card dl-card-android" id="dl-card-android" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener" data-cursor="APK">
+            <div class="dl-card-top">
+              <span class="dl-os">ANDROID</span>
+              <span class="dl-ext">.APK</span>
+            </div>
+            <strong class="dl-file" id="dl-file-android">AliceHub-f0810b6-arm64-v8a.apk</strong>
+            <p class="dl-req" data-i18n="download.androidReq">Android 8.0+ · arm64-v8a · OpenGL ES 3.0 · 直接安装</p>
+            <div class="dl-card-foot">
+              <span class="dl-size" id="dl-size-android">44.3 MiB</span>
+              <span class="dl-go">DOWNLOAD ↗</span>
+            </div>
+          </a>
+
+          <a class="dl-card dl-card-ios" id="dl-card-ios" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener" data-cursor="IPA">
+            <div class="dl-card-top">
+              <span class="dl-os">iOS / iPadOS</span>
+              <span class="dl-ext">.IPA</span>
+            </div>
+            <strong class="dl-file" id="dl-file-ios">AliceHub-f0810b6-ios-unsigned.ipa</strong>
+            <p class="dl-req" data-i18n="download.iosReq">iOS 15.0+ · arm64 · 未签名，使用 AltStore / SideStore / Sideloadly 自签</p>
+            <div class="dl-card-foot">
+              <span class="dl-size" id="dl-size-ios">48.6 MiB</span>
+              <span class="dl-go">DOWNLOAD ↗</span>
+            </div>
+          </a>
+
+          <a class="dl-card dl-card-switch" id="dl-card-switch" href="https://github.com/TomorrowX6/AliceHub/releases/latest" target="_blank" rel="noopener" data-cursor="NRO">
+            <div class="dl-card-top">
+              <span class="dl-os">NINTENDO SWITCH</span>
+              <span class="dl-ext">.ZIP</span>
+            </div>
+            <strong class="dl-file" id="dl-file-switch">AliceHub-f0810b6-switch.zip</strong>
+            <p class="dl-req" data-i18n="download.switchReq">Homebrew Menu 应用模式 · 解压将 4 个 NRO 放入 SD 卡 /switch/</p>
+            <div class="dl-card-foot">
+              <span class="dl-size" id="dl-size-switch">85.9 MiB</span>
+              <span class="dl-go">DOWNLOAD ↗</span>
+            </div>
+          </a>
+        </div>
+
+        <!-- Community & Open Source Utility Row -->
+        <div class="community-strip reveal-up">
+          <button type="button" class="comm-btn" id="copy-qq-btn" data-qq="383917628" data-cursor="COPY">
+            <span class="comm-k">QQ 交流群</span>
+            <strong class="comm-v">383917628</strong>
+            <span class="comm-act" data-i18n="download.copy">点击复制</span>
+          </button>
+
+          <a class="comm-btn" href="https://github.com/TomorrowX6/AliceHub/releases" target="_blank" rel="noopener" data-cursor="ALL">
+            <span class="comm-k" data-i18n="download.allReleases">历史版本</span>
+            <strong class="comm-v">GitHub Releases</strong>
+            <span class="comm-act">VIEW ↗</span>
+          </a>
+
+          <a class="comm-btn" href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml" target="_blank" rel="noopener" data-cursor="CI">
+            <span class="comm-k" data-i18n="download.ciBuilds">持续构建</span>
+            <strong class="comm-v">GitHub Actions</strong>
+            <span class="comm-act">CI ↗</span>
+          </a>
+
+          <a class="comm-btn" href="https://github.com/TomorrowX6/AliceHub" target="_blank" rel="noopener" data-cursor="SRC">
+            <span class="comm-k" data-i18n="download.source">开源仓库</span>
+            <strong class="comm-v">GPL-2.0</strong>
+            <span class="comm-act">STAR ↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div class="footer-brand">
+        <div class="footer-logo">
+          <img src="assets/alice-icon.png" alt="AliceHub" width="42" height="42" />
+          <div>
+            <strong>ALICEHUB</strong>
+            <span data-i18n="footer.tagline">AliceSoft System 1–4 Native Multi-Platform Launcher</span>
+          </div>
+        </div>
+        <p class="footer-license" data-i18n="footer.license">基于 GNU General Public License v2.0 (GPL-2.0) 协议开源。不含游戏本体。</p>
+      </div>
+
+      <div class="footer-credits">
+        <span class="credits-label" data-i18n="footer.credits">CORE UPSTREAM CREDITS</span>
+        <div class="credits-links">
+          <a href="https://github.com/nunuhara/xsystem4" target="_blank" rel="noopener">nunuhara/xsystem4</a>
+          <a href="https://github.com/nunuhara/libsys4" target="_blank" rel="noopener">nunuhara/libsys4</a>
+          <a href="https://github.com/kichikuou/system3-sdl2" target="_blank" rel="noopener">kichikuou/system3-sdl2</a>
+          <a href="https://github.com/kichikuou/xsystem35-sdl2" target="_blank" rel="noopener">kichikuou/xsystem35-sdl2</a>
+          <a href="https://github.com/kichikuou/xsystem4-android" target="_blank" rel="noopener">kichikuou/xsystem4-android</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="site.js" defer></script>
+</body>
+</html>
