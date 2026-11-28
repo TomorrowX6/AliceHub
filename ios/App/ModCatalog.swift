@@ -2,6 +2,13 @@ import Foundation
 
 enum AliceHubCDN {
     static let origin = "https://alicehub.000.moe"
+    static let legacyDownloadRouteKey = "hub.downloadRoute"
+
+    static func clearLegacyPreferences(defaults: UserDefaults = .standard) {
+        if defaults.object(forKey: legacyDownloadRouteKey) != nil {
+            defaults.removeObject(forKey: legacyDownloadRouteKey)
+        }
+    }
 
     static func gameBaseURLString(for id: String) -> String {
         origin + "/" + id
@@ -13,6 +20,47 @@ enum AliceHubCDN {
         let rest = String(raw.dropFirst(prefix.count))
         let canonicalRest = rest.hasPrefix("cn/") ? String(rest.dropFirst(3)) : rest
         return prefix + canonicalRest
+    }
+
+    static func fetchData(from url: URL, timeoutInterval: TimeInterval = 20, maxAttempts: Int = 3,
+                          acceptJSON: Bool = false) async throws -> (Data, HTTPURLResponse) {
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = timeoutInterval
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+
+        let attempts = max(1, maxAttempts)
+        var lastError: Error?
+        for attempt in 0..<attempts {
+            try Task.checkCancellation()
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeoutInterval)
+            request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
+            request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+            if acceptJSON {
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+            }
+            do {
+                let (data, response) = try await session.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw URLError(.badServerResponse)
+                }
+                let retryable = http.statusCode == 408 || http.statusCode == 429 || (500...599).contains(http.statusCode)
+                if !retryable || attempt + 1 >= attempts {
+                    return (data, http)
+                }
+                lastError = URLError(.badServerResponse)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                if Task.isCancelled { throw CancellationError() }
+                lastError = error
+                if attempt + 1 >= attempts { throw error }
+            }
+            try await Task.sleep(nanoseconds: UInt64(attempt + 1) * 600_000_000)
+        }
+        throw lastError ?? URLError(.badServerResponse)
     }
 }
 
@@ -440,9 +488,10 @@ enum ModCatalog {
             let summary = sanitizeParenFree(modString(row, "summary"), multiline: false)
             let changelog = sanitizeParenFree(modString(row, "changelog"), multiline: true)
             let encoded = key.components(separatedBy: "/").map { $0.addingPercentEncoding(withAllowedCharacters: allowed)! }.joined(separator: "/")
+            let canonicalBase = AliceHubCDN.canonicalURL(cdnBaseURL).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             releases.append(ModReleaseEntry(fileId: modInt(row, "fileId", fallback: 1000 - index), version: version, fileName: file,
                 summary: summary, changelog: changelog.isEmpty ? summary : changelog, uploadedAt: modString(row, "uploadedAt"),
-                downloadUrl: cdnBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/files/" + encoded,
+                downloadUrl: canonicalBase + "/files/" + encoded,
                 isPatch: row["isPatch"] as? Bool ?? (version.contains("补丁") || file.contains("补丁")),
                 expectedSize: (row["size"] as? NSNumber)?.int64Value ?? -1, expectedSha256: modString(row, "sha256").nonempty,
                 group: sanitizeParenFree(modString(row, "group"), multiline: false)))
@@ -457,11 +506,12 @@ enum ModCatalog {
     }
 
     static func fetchModCatalog(for game: ModGameDescriptor) async throws -> [ModReleaseEntry] {
-        var request = URLRequest(url: URL(string: game.overlayURL + "/" + game.catalogPath)!)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ModError.message(hubText("获取失败，请检查网络")) }
-        return try parseModCatalog(data, cdnBaseURL: game.overlayURL)
+        let base = AliceHubCDN.canonicalURL(game.overlayURL).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: base + "/" + game.catalogPath) else {
+            throw ModError.message(hubText("获取失败，请检查网络"))
+        }
+        let (data, response) = try await AliceHubCDN.fetchData(from: url, timeoutInterval: 20, maxAttempts: 3, acceptJSON: true)
+        guard response.statusCode == 200 else { throw ModError.message(hubText("获取失败，请检查网络")) }
+        return try parseModCatalog(data, cdnBaseURL: base)
     }
 }

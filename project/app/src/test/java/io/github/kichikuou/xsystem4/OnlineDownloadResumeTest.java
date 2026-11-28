@@ -56,6 +56,7 @@ public class OnlineDownloadResumeTest {
     private final Map<String, byte[]> payloads = new ConcurrentHashMap<>();
     private final Map<String, String> redirects = new ConcurrentHashMap<>();
     private final Map<String, String> etags = new ConcurrentHashMap<>();
+    private final Map<String, java.util.concurrent.atomic.AtomicInteger> failOnce503 = new ConcurrentHashMap<>();
     private final List<Map<String, String>> recordedRequests = Collections.synchronizedList(new ArrayList<>());
 
     @Before
@@ -107,6 +108,13 @@ public class OnlineDownloadResumeTest {
         if (redir != null) {
             String resp = "HTTP/1.1 302 Found\r\nLocation: " + redir + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
             out.write(resp.getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            return;
+        }
+
+        java.util.concurrent.atomic.AtomicInteger remaining503 = failOnce503.get(path);
+        if (remaining503 != null && remaining503.getAndDecrement() > 0) {
+            out.write("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
             out.flush();
             return;
         }
@@ -243,5 +251,65 @@ public class OnlineDownloadResumeTest {
                 .orElseThrow(AssertionError::new);
         assertEquals("bytes=1024-", assetReq.get("range"));
         assertNull("Stale ETag from previous URL must not be sent as If-Range", assetReq.get("if-range"));
+    }
+
+    @Test
+    public void clearLegacyDownloadRoutePrefRemovesRouteAndMigratesLegacySizeKeys() {
+        Context ctx = RuntimeEnvironment.getApplication();
+        android.content.SharedPreferences sp = ctx.getSharedPreferences("alicehub_settings", Context.MODE_PRIVATE);
+        sp.edit()
+                .putString("download_route", "cn")
+                .putBoolean("online_install_enabled", true)
+                .putInt("download_concurrency", 6)
+                .putLong("base_size_https://alicehub.000.moe/cn/evenicle2", 3399000111L)
+                .putLong("base_size_https://alicehub.000.moe/cn/rance10", 1111111111L)
+                .putLong("base_size_https://alicehub.000.moe/rance10", 4028000222L)
+                .commit();
+
+        AppSettings.clearLegacyDownloadRoutePref(ctx);
+
+        assertFalse(sp.contains("download_route"));
+        assertFalse(sp.contains("base_size_https://alicehub.000.moe/cn/evenicle2"));
+        assertFalse(sp.contains("base_size_https://alicehub.000.moe/cn/rance10"));
+        assertEquals(3399000111L, sp.getLong("base_size_https://alicehub.000.moe/evenicle2", -1L));
+        assertEquals(4028000222L, sp.getLong("base_size_https://alicehub.000.moe/rance10", -1L));
+        assertTrue(AppSettings.INSTANCE.isOnlineInstallEnabled(ctx));
+        assertEquals(6, AppSettings.getDownloadConcurrency(ctx));
+    }
+
+    @Test
+    public void catalogAndUncensoredManifestFetchRetryTransientServerError() throws Exception {
+        String modCatalogJson = "{\"releases\":[{\"fileId\":1,\"version\":\"v1.0\",\"fileName\":\"mod.zip\",\"key\":\"mods/mod.zip\",\"size\":1024}]}";
+        payloads.put("/game/files/mods/index.json", modCatalogJson.getBytes(StandardCharsets.UTF_8));
+        failOnce503.put("/game/files/mods/index.json", new java.util.concurrent.atomic.AtomicInteger(1));
+
+        List<ModReleaseEntry> releases = OnlineInstaller.INSTANCE.fetchModCatalog(localUrl("/game"), "files/mods/index.json");
+        assertEquals(1, releases.size());
+        long modHits = recordedRequests.stream().filter(h -> "/game/files/mods/index.json".equals(h.get("_path"))).count();
+        assertEquals(2L, modHits);
+
+        String hash = sha256("uncensored".getBytes(StandardCharsets.UTF_8));
+        String uncJson = "{\"version\":\"1.0\",\"gameId\":\"rance10\",\"title\":\"Patch\",\"summary\":\"ok\","
+                + "\"fileName\":\"AliceHubUncensoredCG.afa\",\"key\":\"uncensored/AliceHubUncensoredCG.afa\","
+                + "\"size\":4096,\"sha256\":\"" + hash + "\",\"cgCount\":10}";
+        payloads.put("/game/files/uncensored/manifest.json", uncJson.getBytes(StandardCharsets.UTF_8));
+        failOnce503.put("/game/files/uncensored/manifest.json", new java.util.concurrent.atomic.AtomicInteger(1));
+
+        UncensoredPatchManifest manifest = UncensoredPatchManager.INSTANCE.fetchManifest(localUrl("/game"));
+        assertEquals("AliceHubUncensoredCG.afa", manifest.getFileName());
+        long uncHits = recordedRequests.stream().filter(h -> "/game/files/uncensored/manifest.json".equals(h.get("_path"))).count();
+        assertEquals(2L, uncHits);
+
+        // Non-retryable 404 must fail on the first attempt without retrying.
+        boolean threw = false;
+        try {
+            OnlineInstaller.INSTANCE.fetchModCatalog(localUrl("/missing"), "files/mods/index.json");
+        } catch (Exception expected) {
+            assertTrue(expected instanceof java.io.IOException);
+            threw = true;
+        }
+        assertTrue(threw);
+        long missingHits = recordedRequests.stream().filter(h -> "/missing/files/mods/index.json".equals(h.get("_path"))).count();
+        assertEquals(1L, missingHits);
     }
 }

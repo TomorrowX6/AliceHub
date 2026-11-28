@@ -17,6 +17,7 @@ object AppSettings {
     private const val KEY_LANGUAGE = "app_language"
     private const val KEY_GAME_SORT = "game_sort"
     private const val KEY_ONLINE_INSTALL = "online_install_enabled"
+    private const val KEY_LEGACY_DOWNLOAD_ROUTE = "download_route"
     private const val KEY_CHECK_FOR_UPDATES = "check_for_updates"
     private const val KEY_DOWNLOAD_CONCURRENCY = "download_concurrency"
     private const val KEY_BASE_SIZE_PREFIX = "base_size_"
@@ -358,6 +359,38 @@ object AppSettings {
     @JvmStatic
     fun setDownloadConcurrency(context: Context, concurrency: Int) {
         prefs(context).edit().putInt(KEY_DOWNLOAD_CONCURRENCY, normalizeDownloadConcurrency(concurrency)).apply()
+    }
+
+    /** Removes deprecated pre-PR#108 China-route preferences and migrates any legacy /cn/ size cache keys. */
+    @JvmStatic
+    fun clearLegacyDownloadRoutePref(context: Context) {
+        val sp = prefs(context)
+        val hasLegacyRoute = sp.contains(KEY_LEGACY_DOWNLOAD_ROUTE)
+        val legacySizePrefix = KEY_BASE_SIZE_PREFIX + CDN_CN_PREFIX
+        val legacySizeKeys = sp.all.keys.filter { it.startsWith(legacySizePrefix) }
+        if (!hasLegacyRoute && legacySizeKeys.isEmpty()) return
+        val editor = sp.edit()
+        if (hasLegacyRoute) {
+            editor.remove(KEY_LEGACY_DOWNLOAD_ROUTE)
+        }
+        for (legacyKey in legacySizeKeys) {
+            val saved = try {
+                sp.getLong(legacyKey, -1L)
+            } catch (_: ClassCastException) {
+                -1L
+            }
+            val canonicalKey = KEY_BASE_SIZE_PREFIX + canonicalCdnUrl(legacyKey.removePrefix(KEY_BASE_SIZE_PREFIX))
+            val existingCanonical = try {
+                sp.getLong(canonicalKey, -1L)
+            } catch (_: ClassCastException) {
+                -1L
+            }
+            if (saved > 0L && existingCanonical <= 0L) {
+                editor.putLong(canonicalKey, saved)
+            }
+            editor.remove(legacyKey)
+        }
+        editor.apply()
     }
 
     /** Strips any legacy route prefix (/cn/) to recover the canonical game CDN URL for cache keys and install identity. */

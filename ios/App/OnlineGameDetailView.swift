@@ -35,10 +35,21 @@ struct OnlineGameDetailView: View {
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.modifier(HubCard())
-                if loading && onlineInstall {
+                if selected && download.running {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("正在下载", systemImage: "arrow.down.circle").font(.headline)
+                        ProgressView(value: Double(download.completed), total: Double(max(1, download.total)))
+                        Text("\(ModCatalog.formatSize(download.completed)) / \(ModCatalog.formatSize(download.total))")
+                            .font(.subheadline.monospacedDigit())
+                        Text(download.progressText).font(.footnote).foregroundColor(HubTheme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("取消下载", role: .destructive) { confirmCancel = true }
+                    }.modifier(HubCard())
+                }
+                if loading && onlineInstall && !(selected && download.running) {
                     HStack { ProgressView(); Text("正在获取游戏清单…") }.frame(maxWidth: .infinity).modifier(HubCard())
                 }
-                if let failure, onlineInstall {
+                if let failure, onlineInstall && !(selected && download.running) {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("无法获取游戏信息", systemImage: "wifi.exclamationmark").font(.headline)
                         Text(failure).font(.footnote).foregroundColor(HubTheme.secondary)
@@ -52,17 +63,7 @@ struct OnlineGameDetailView: View {
                         LabeledContentRow(title: "大小", value: ModCatalog.formatSize(manifest.totalBytes))
                         LabeledContentRow(title: "文件", value: "\(manifest.files.count)")
                     }.modifier(HubCard())
-                    if selected && download.running {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label("正在下载", systemImage: "arrow.down.circle").font(.headline)
-                            ProgressView(value: Double(download.completed), total: Double(max(1, download.total)))
-                            Text("\(ModCatalog.formatSize(download.completed)) / \(ModCatalog.formatSize(download.total))")
-                                .font(.subheadline.monospacedDigit())
-                            Text(download.progressText).font(.footnote).foregroundColor(HubTheme.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Button("取消下载", role: .destructive) { confirmCancel = true }
-                        }.modifier(HubCard())
-                    } else if !installed {
+                    if !(selected && download.running) && !installed {
                         if selected, let error = download.failure {
                             Text(error).font(.footnote).foregroundColor(.orange)
                                 .fixedSize(horizontal: false, vertical: true).modifier(HubCard())

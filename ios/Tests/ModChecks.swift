@@ -61,6 +61,16 @@ struct ModChecks {
         precondition(AliceHubCDN.canonicalURL("https://alicehub.000.moe/rance10/files/a.bin") == "https://alicehub.000.moe/rance10/files/a.bin")
         precondition(AliceHubCDN.canonicalURL("https://alicehub.000.moe/cn/rance10/files/a.bin") == "https://alicehub.000.moe/rance10/files/a.bin")
         precondition(AliceHubCDN.canonicalURL("http://127.0.0.1:8080/rance10") == "http://127.0.0.1:8080/rance10")
+        let legacySuite = "AliceHub.LegacyRouteCheck.\(UUID().uuidString)"
+        let legacyDefaults = UserDefaults(suiteName: legacySuite)!
+        legacyDefaults.set("cn", forKey: AliceHubCDN.legacyDownloadRouteKey)
+        legacyDefaults.set(true, forKey: OnlineInstall.storageKey)
+        AliceHubCDN.clearLegacyPreferences(defaults: legacyDefaults)
+        precondition(legacyDefaults.object(forKey: AliceHubCDN.legacyDownloadRouteKey) == nil)
+        precondition(legacyDefaults.bool(forKey: OnlineInstall.storageKey))
+        legacyDefaults.removePersistentDomain(forName: legacySuite)
+        let cnBaseReleases = try ModCatalog.parseModCatalog(Data(json.utf8), cdnBaseURL: "https://alicehub.000.moe/cn/rance10")
+        precondition(cnBaseReleases[0].downloadUrl == "https://alicehub.000.moe/rance10/files/mods/%E4%B8%AD%E6%96%87%20%232.zip")
         precondition(ModGameDescriptor.supported[0].overlayURL == "https://alicehub.000.moe/rance10")
         for invalid in [#"{}"#, #"{"releases":[]}"#, #"{"releases":[{"key":"a","fileName":"bad.exe","version":"v1"}]}"#] {
             do { _ = try ModCatalog.parseModCatalog(Data(invalid.utf8), cdnBaseURL: "https://example.test"); preconditionFailure("Accepted invalid catalog") } catch {}

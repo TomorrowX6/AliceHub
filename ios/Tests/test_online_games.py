@@ -27,11 +27,21 @@ MANIFEST = {
                "extract": path.endswith(".zip")} for path, data in PAYLOADS.items()],
 }
 RANGES = []
+FLAKY_MANIFEST_HITS = 0
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/manifest.json":
+        global FLAKY_MANIFEST_HITS
+        if self.path == "/flaky/manifest.json":
+            FLAKY_MANIFEST_HITS += 1
+            if FLAKY_MANIFEST_HITS == 1:
+                self.send_response(503)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            data = json.dumps(MANIFEST).encode()
+        elif self.path == "/manifest.json":
             data = json.dumps(MANIFEST).encode()
         else:
             name = self.path.removeprefix("/files/Fixture/")
@@ -110,6 +120,7 @@ with tempfile.TemporaryDirectory() as directory:
     thread.start()
     try:
         subprocess.run([str(work / "checks"), str(work), f"http://127.0.0.1:{server.server_port}/"], check=True)
+        assert FLAKY_MANIFEST_HITS == 2, f"Expected manifest fetch retry after 503, got {FLAKY_MANIFEST_HITS} hits"
         assert RANGES[0] == 64 and len(RANGES) == 4 and RANGES[1] == 0 and RANGES[2] > 0 and RANGES[3] == 0, RANGES
         print("PASS: Android catalog parity and HTTP Range continuation after cancellation")
         print("PASS: iOS library ordering, installation grouping and PE artwork")

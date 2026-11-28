@@ -1205,97 +1205,126 @@ object OnlineInstaller {
         }
     }
 
+    private class NonRetryableCatalogException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+    private fun isRetryableHttpStatus(code: Int): Boolean =
+        code == 408 || code == 429 || code in 500..599
+
     fun fetchModCatalog(
         cdnBaseUrl: String = RANCE10_CDN_URL,
         catalogRelPath: String = "files/mods/index.json"
     ): List<ModReleaseEntry> {
-        val base = cdnBaseUrl.trimEnd('/')
+        val base = AppSettings.canonicalCdnUrl(cdnBaseUrl)
         val cleanRel = catalogRelPath.trimStart('/')
-        var conn: HttpURLConnection? = null
-        try {
-            conn = openFollowingRedirects(
-                initialUrl = "$base/$cleanRel",
-                headers = mapOf(
-                    "User-Agent" to DEFAULT_USER_AGENT,
-                    "Accept" to "application/json",
-                    "Accept-Encoding" to "identity"
-                )
-            )
-            val code = conn.responseCode
-            if (code != HttpURLConnection.HTTP_OK) {
-                throw IOException("MOD catalog HTTP $code from $base")
-            }
-            val raw = readBoundedUtf8(conn.inputStream, MAX_JSON_RESPONSE_BYTES)
-            val root = MiniJson.parseObject(raw)
-            val arr = MiniJson.optList(root, "releases")
-                ?: throw IOException("No MOD releases array in catalog")
-            val rawRows = ArrayList<ModReleaseEntry>(arr.size)
-            for (i in arr.indices) {
-                val obj = MiniJson.asObject(arr[i]) ?: continue
-                val key = MiniJson.optString(obj, "key", "").trim()
-                val fileName = MiniJson.optString(obj, "fileName", "").trim()
-                val version = sanitizeParenFree(MiniJson.optString(obj, "version", ""), multiline = false)
-                if (key.isEmpty() || !isSafeRemoteKey(key) || fileName.isEmpty() || version.isEmpty()) continue
-                if (!ArchiveExtractor.isSupportedArchiveName(fileName)) continue
-                val hasSize = obj.containsKey("size") && obj["size"] != null
-                val rawSize = if (hasSize) MiniJson.optLong(obj, "size", -1L) else -1L
-                if (hasSize && rawSize < 0L) continue
-                val fileId = MiniJson.optInt(obj, "fileId", 1000 - i)
-                val group = sanitizeParenFree(MiniJson.optString(obj, "group", ""), multiline = false)
-                val summary = sanitizeParenFree(MiniJson.optString(obj, "summary", ""), multiline = false)
-                val changelog = sanitizeParenFree(MiniJson.optString(obj, "changelog", ""), multiline = true)
-                    .ifEmpty { summary }
-                val uploadedAt = MiniJson.optString(obj, "uploadedAt", "").trim()
-                val isPatch = MiniJson.optBoolean(
-                    obj,
-                    "isPatch",
-                    version.contains("补丁") || fileName.contains("补丁")
-                )
-                val encodedKey = encodeUrlPathKey(key)
-                val fileUrl = "$base/files/$encodedKey"
-                rawRows.add(
-                    ModReleaseEntry(
-                        fileId = fileId,
-                        version = version,
-                        fileName = fileName,
-                        summary = summary,
-                        changelog = changelog,
-                        uploadedAt = uploadedAt,
-                        downloadUrl = fileUrl,
-                        isPatch = isPatch,
-                        baseFileId = null,
-                        baseVersion = null,
-                        expectedSize = rawSize,
-                        expectedSha256 = MiniJson.optString(obj, "sha256", "").trim().takeIf { it.isNotEmpty() },
-                        group = group
+        var lastErr: IOException? = null
+        for (attempt in 0 until 3) {
+            var conn: HttpURLConnection? = null
+            try {
+                conn = openFollowingRedirects(
+                    initialUrl = "$base/$cleanRel",
+                    headers = mapOf(
+                        "User-Agent" to DEFAULT_USER_AGENT,
+                        "Accept" to "application/json",
+                        "Accept-Encoding" to "identity"
                     )
                 )
-            }
-            if (rawRows.isEmpty()) {
-                throw IOException("No MOD releases found")
-            }
-            val resolved = ArrayList<ModReleaseEntry>(rawRows.size)
-            for (i in rawRows.indices) {
-                val item = rawRows[i]
-                if (!item.isPatch) {
-                    resolved.add(item)
-                } else {
-                    val baseEntry = (i + 1 until rawRows.size).map { rawRows[it] }
-                        .firstOrNull { !it.isPatch && sameReleaseGroup(item, it) }
-                    resolved.add(
-                        item.copy(
-                            baseFileId = baseEntry?.fileId,
-                            baseVersion = baseEntry?.version
+                val code = conn.responseCode
+                if (code != HttpURLConnection.HTTP_OK) {
+                    val msg = "MOD catalog HTTP $code from $base"
+                    if (isRetryableHttpStatus(code)) {
+                        throw IOException(msg)
+                    }
+                    throw NonRetryableCatalogException(msg)
+                }
+                val raw = readBoundedUtf8(conn.inputStream, MAX_JSON_RESPONSE_BYTES)
+                val root = try {
+                    MiniJson.parseObject(raw)
+                } catch (e: Exception) {
+                    throw NonRetryableCatalogException("Invalid MOD catalog JSON", e)
+                }
+                val arr = MiniJson.optList(root, "releases")
+                    ?: throw NonRetryableCatalogException("No MOD releases array in catalog")
+                val rawRows = ArrayList<ModReleaseEntry>(arr.size)
+                for (i in arr.indices) {
+                    val obj = MiniJson.asObject(arr[i]) ?: continue
+                    val key = MiniJson.optString(obj, "key", "").trim()
+                    val fileName = MiniJson.optString(obj, "fileName", "").trim()
+                    val version = sanitizeParenFree(MiniJson.optString(obj, "version", ""), multiline = false)
+                    if (key.isEmpty() || !isSafeRemoteKey(key) || fileName.isEmpty() || version.isEmpty()) continue
+                    if (!ArchiveExtractor.isSupportedArchiveName(fileName)) continue
+                    val hasSize = obj.containsKey("size") && obj["size"] != null
+                    val rawSize = if (hasSize) MiniJson.optLong(obj, "size", -1L) else -1L
+                    if (hasSize && rawSize < 0L) continue
+                    val fileId = MiniJson.optInt(obj, "fileId", 1000 - i)
+                    val group = sanitizeParenFree(MiniJson.optString(obj, "group", ""), multiline = false)
+                    val summary = sanitizeParenFree(MiniJson.optString(obj, "summary", ""), multiline = false)
+                    val changelog = sanitizeParenFree(MiniJson.optString(obj, "changelog", ""), multiline = true)
+                        .ifEmpty { summary }
+                    val uploadedAt = MiniJson.optString(obj, "uploadedAt", "").trim()
+                    val isPatch = MiniJson.optBoolean(
+                        obj,
+                        "isPatch",
+                        version.contains("补丁") || fileName.contains("补丁")
+                    )
+                    val encodedKey = encodeUrlPathKey(key)
+                    val fileUrl = "$base/files/$encodedKey"
+                    rawRows.add(
+                        ModReleaseEntry(
+                            fileId = fileId,
+                            version = version,
+                            fileName = fileName,
+                            summary = summary,
+                            changelog = changelog,
+                            uploadedAt = uploadedAt,
+                            downloadUrl = fileUrl,
+                            isPatch = isPatch,
+                            baseFileId = null,
+                            baseVersion = null,
+                            expectedSize = rawSize,
+                            expectedSha256 = MiniJson.optString(obj, "sha256", "").trim().takeIf { it.isNotEmpty() },
+                            group = group
                         )
                     )
                 }
+                if (rawRows.isEmpty()) {
+                    throw NonRetryableCatalogException("No MOD releases found")
+                }
+                val resolved = ArrayList<ModReleaseEntry>(rawRows.size)
+                for (i in rawRows.indices) {
+                    val item = rawRows[i]
+                    if (!item.isPatch) {
+                        resolved.add(item)
+                    } else {
+                        val baseEntry = (i + 1 until rawRows.size).map { rawRows[it] }
+                            .firstOrNull { !it.isPatch && sameReleaseGroup(item, it) }
+                        resolved.add(
+                            item.copy(
+                                baseFileId = baseEntry?.fileId,
+                                baseVersion = baseEntry?.version
+                            )
+                        )
+                    }
+                }
+                return resolved
+            } catch (e: NonRetryableCatalogException) {
+                throw e
+            } catch (e: IOException) {
+                lastErr = e
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep(600L * (attempt + 1))
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw e
+                    }
+                }
+            } catch (t: Throwable) {
+                throw IOException("No MOD releases found", t)
+            } finally {
+                conn?.disconnect()
             }
-            return resolved
-        } catch (t: Throwable) {
-            throw (t as? IOException) ?: IOException("No MOD releases found", t)
-        } finally {
-            conn?.disconnect()
         }
+        throw lastErr ?: IOException("No MOD releases found")
     }
 
     @JvmOverloads
@@ -3167,7 +3196,7 @@ object OnlineInstaller {
     }
 
     fun fetchManifestTotalBytes(cdnBaseUrl: String): Long {
-        val cleanBaseUrl = cdnBaseUrl.trimEnd('/')
+        val cleanBaseUrl = AppSettings.canonicalCdnUrl(cdnBaseUrl)
         return fetchManifest(cleanBaseUrl, null) {}.totalBytes
     }
 

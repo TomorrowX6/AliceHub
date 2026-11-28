@@ -294,7 +294,7 @@ object UncensoredPatchManager {
         val encodedKey = key.split('/').joinToString("/") { seg ->
             URLEncoder.encode(seg, "UTF-8").replace("+", "%20")
         }
-        val base = cdnBaseUrl.trimEnd('/')
+        val base = AppSettings.canonicalCdnUrl(cdnBaseUrl)
         val downloadUrl = "$base/files/$encodedKey"
         return UncensoredPatchManifest(
             version = version,
@@ -311,45 +311,75 @@ object UncensoredPatchManager {
         )
     }
 
+    private class NonRetryableManifestException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+    private fun isRetryableHttpStatus(code: Int): Boolean =
+        code == 408 || code == 429 || code in 500..599
+
     @Throws(IOException::class)
     fun fetchManifest(cdnBaseUrl: String): UncensoredPatchManifest {
-        val base = cdnBaseUrl.trimEnd('/')
-        var conn: HttpURLConnection? = null
-        try {
-            conn = OnlineInstaller.openFollowingRedirects(
-                initialUrl = "$base/$MANIFEST_REL_PATH",
-                headers = mapOf(
-                    "User-Agent" to OnlineInstaller.DEFAULT_USER_AGENT,
-                    "Accept" to "application/json",
-                    "Accept-Encoding" to "identity"
-                ),
-                readTimeoutMs = 15_000
-            )
-            val code = conn.responseCode
-            if (code != HttpURLConnection.HTTP_OK) {
-                throw IOException("HTTP $code")
-            }
-            val raw = conn.inputStream.use { input ->
-                val maxBytes = 1024 * 1024
-                val buf = ByteArray(8192)
-                val out = java.io.ByteArrayOutputStream()
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    if (out.size() + n > maxBytes) {
-                        throw IOException("Uncensored patch manifest too large")
-                    }
-                    out.write(buf, 0, n)
-                }
-                out.toString(Charsets.UTF_8.name())
-            }
-            return parseManifest(raw, base)
-        } finally {
+        val base = AppSettings.canonicalCdnUrl(cdnBaseUrl)
+        var lastErr: IOException? = null
+        for (attempt in 0 until 3) {
+            var conn: HttpURLConnection? = null
             try {
-                conn?.disconnect()
-            } catch (_: Throwable) {
+                conn = OnlineInstaller.openFollowingRedirects(
+                    initialUrl = "$base/$MANIFEST_REL_PATH",
+                    headers = mapOf(
+                        "User-Agent" to OnlineInstaller.DEFAULT_USER_AGENT,
+                        "Accept" to "application/json",
+                        "Accept-Encoding" to "identity"
+                    ),
+                    readTimeoutMs = 15_000
+                )
+                val code = conn.responseCode
+                if (code != HttpURLConnection.HTTP_OK) {
+                    if (isRetryableHttpStatus(code)) {
+                        throw IOException("HTTP $code")
+                    }
+                    throw NonRetryableManifestException("HTTP $code")
+                }
+                val raw = conn.inputStream.use { input ->
+                    val maxBytes = 1024 * 1024
+                    val buf = ByteArray(8192)
+                    val out = java.io.ByteArrayOutputStream()
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        if (out.size() + n > maxBytes) {
+                            throw NonRetryableManifestException("Uncensored patch manifest too large")
+                        }
+                        out.write(buf, 0, n)
+                    }
+                    out.toString(Charsets.UTF_8.name())
+                }
+                return try {
+                    parseManifest(raw, base)
+                } catch (e: IOException) {
+                    throw NonRetryableManifestException(e.message ?: "Invalid uncensored patch manifest", e)
+                } catch (e: Exception) {
+                    throw NonRetryableManifestException("Invalid uncensored patch manifest", e)
+                }
+            } catch (e: NonRetryableManifestException) {
+                throw e
+            } catch (e: IOException) {
+                lastErr = e
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep(600L * (attempt + 1))
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw e
+                    }
+                }
+            } finally {
+                try {
+                    conn?.disconnect()
+                } catch (_: Throwable) {
+                }
             }
         }
+        throw lastErr ?: IOException("Failed to fetch uncensored patch manifest")
     }
 
     @JvmOverloads
@@ -492,7 +522,7 @@ object UncensoredPatchManager {
                     }
 
                     OnlineInstaller.downloadFileWithResume(
-                        url = manifest.downloadUrl,
+                        url = AppSettings.canonicalCdnUrl(manifest.downloadUrl),
                         destPartFile = partFile,
                         expectedSize = manifest.size,
                         expectedSha256 = manifest.sha256,

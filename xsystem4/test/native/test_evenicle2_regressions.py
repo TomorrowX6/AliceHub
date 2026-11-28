@@ -65,6 +65,23 @@ def _ex_list(items: list[tuple[int, bytes]]) -> bytes:
     return bytes(out)
 
 
+def _ex_table(
+    fields: list[tuple[int, bytes, int]],
+    rows: list[list[tuple[int, bytes]]],
+) -> bytes:
+    out = bytearray(struct.pack("<I", len(fields)))
+    for ft, fname, is_index in fields:
+        out.extend(struct.pack("<I", ft))
+        out.extend(_ex_pstr(fname))
+        out.extend(struct.pack("<II", 0, is_index))
+    out.extend(struct.pack("<II", len(fields), len(rows)))
+    for row in rows:
+        for cell_type, payload in row:
+            out.extend(struct.pack("<I", cell_type))
+            out.extend(payload)
+    return bytes(out)
+
+
 def _ex_block(name: bytes, val_type: int, payload: bytes) -> bytes:
     body = _ex_pstr(name) + payload
     return struct.pack("<II", val_type, len(body)) + body
@@ -3251,6 +3268,248 @@ int main(void) {{
 """
         out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
         self.assertEqual(out.strip(), "OK")
+
+    def test_s3de_ex_hidden_and_non_renderable_emitters_never_hijack_camera(self):
+        pos_fields = [
+            (1, _sjis("フレーム"), 0),
+            (1, _sjis("補間"), 0),
+            (2, _sjis("Ｘ"), 0),
+            (2, _sjis("Ｙ"), 0),
+            (2, _sjis("Ｚ"), 0),
+        ]
+        pos_rows = [
+            [
+                (1, struct.pack("<i", 0)),
+                (1, struct.pack("<i", 1)),
+                (2, struct.pack("<f", 0.0)),
+                (2, struct.pack("<f", 0.01)),
+                (2, struct.pack("<f", 0.0)),
+            ],
+            [
+                (1, struct.pack("<i", 159)),
+                (1, struct.pack("<i", 1)),
+                (2, struct.pack("<f", 0.0)),
+                (2, struct.pack("<f", 0.01)),
+                (2, struct.pack("<f", 0.0)),
+            ],
+        ]
+        pos_table = _ex_table(pos_fields, pos_rows)
+
+        def make_emitter(name: str, kind: int, visible: int, with_pos: bool = True) -> bytes:
+            children = [
+                _ex_leaf(_sjis("エミッタ名"), 3, _ex_pstr(_sjis(name))),
+                _ex_leaf(_sjis("種類"), 1, struct.pack("<i", kind)),
+                _ex_leaf(_sjis("表示フラグ"), 1, struct.pack("<i", visible)),
+            ]
+            if with_pos:
+                children.append(_ex_leaf(_sjis("位置リスト"), 4, pos_table))
+            return _ex_tree(_sjis(name), children)
+
+        mixed_ex = build_extf([
+            _ex_block(_sjis("ループ開始フレーム"), 1, struct.pack("<i", 0)),
+            _ex_block(_sjis("ループ終了フレーム"), 1, struct.pack("<i", 159)),
+            _ex_block(
+                _sjis("エミッタリスト"),
+                6,
+                _ex_tree(_sjis("エミッタリスト"), [
+                    make_emitter("火", kind=0, visible=0, with_pos=True),
+                    make_emitter("子エミッタ", kind=2, visible=1, with_pos=True),
+                    make_emitter("グループ", kind=6, visible=1, with_pos=True),
+                    make_emitter("煙", kind=0, visible=1, with_pos=True),
+                    make_emitter("岩", kind=1, visible=1, with_pos=True),
+                ]),
+            ),
+        ])
+
+        all_hidden_ex = build_extf([
+            _ex_block(_sjis("ループ開始フレーム"), 1, struct.pack("<i", 0)),
+            _ex_block(_sjis("ループ終了フレーム"), 1, struct.pack("<i", 60)),
+            _ex_block(
+                _sjis("エミッタリスト"),
+                6,
+                _ex_tree(_sjis("エミッタリスト"), [
+                    make_emitter("非表示", kind=0, visible=0, with_pos=True),
+                    make_emitter("参照", kind=2, visible=1, with_pos=True),
+                ]),
+            ),
+        ])
+
+        camera_text_3de = (
+            'オブジェクト "カメラトラック" = {\n'
+            "\t種類 = カメラ\n"
+            "\t位置リスト = { 0, 1.5, 2.5, -3.5, 線形 }, { 60, 1.5, 2.5, -3.5, 線形 }\n"
+            "}\n"
+        ).encode("cp932")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            td = Path(tmpdir)
+            (td / "mixed.3de").write_bytes(mixed_ex)
+            (td / "all_hidden.3de").write_bytes(all_hidden_ex)
+            (td / "cam_track.3de").write_bytes(camera_text_3de)
+
+            harness = r"""
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <cglm/cglm.h>
+
+#include "system4.h"
+#include "xsystem4.h"
+#include "3d_internal.h"
+#include "audio.h"
+#include "system4/archive.h"
+#include "system4/file.h"
+#include "system4/utfsjis.h"
+
+struct config config;
+static const char *g_dir = NULL;
+
+void glDeleteTextures(GLsizei n, const GLuint *textures) { (void)n; (void)textures; }
+int wav_get_unused_channel(void) { return -1; }
+int wav_prepare_from_archive_data(int id, int metadata_no, struct archive_data *dfile) {
+    (void)id; (void)metadata_no; (void)dfile; return 0;
+}
+int wav_play(int id) { (void)id; return 0; }
+int wav_stop(int id) { (void)id; return 0; }
+int wav_unprepare(int id) { (void)id; return 0; }
+int wav_seek(int id, int pos) { (void)id; (void)pos; return 0; }
+void model_free(struct model *m) { (void)m; }
+void model_reset_gl(struct model *m, struct archive *aar, enum RE_plugin_version v) {
+    (void)m; (void)aar; (void)v;
+}
+struct model *model_load(struct archive *aar, const char *path, enum RE_plugin_version v) {
+    (void)aar; (void)path; (void)v; return NULL;
+}
+void RE_instance_update_local_transform(struct RE_instance *inst) {
+    glm_translate_make(inst->local_transform, inst->pos);
+    inst->local_transform_needs_update = false;
+}
+const char *RE_path_basename(const char *path) {
+    const char *p = strrchr(path, '\\');
+    const char *q = strrchr(path, '/');
+    if (q && (!p || q > p)) p = q;
+    return p ? p + 1 : path;
+}
+char *RE_path_dirname(const char *path) {
+    const char *p = strrchr(path, '\\');
+    const char *q = strrchr(path, '/');
+    if (q && (!p || q > p)) p = q;
+    if (!p) return xstrdup("");
+    char *r = xmalloc((size_t)(p - path) + 1);
+    memcpy(r, path, (size_t)(p - path));
+    r[p - path] = '\0';
+    return r;
+}
+GLuint RE_load_aar_texture(struct archive *aar, const char *dir, const char *name,
+        const char **exts, int nr_exts, bool *has_alpha_out) {
+    (void)aar; (void)dir; (void)name; (void)exts; (void)nr_exts;
+    if (has_alpha_out) *has_alpha_out = true;
+    return 1;
+}
+
+static void dummy_free_data(struct archive_data *d) {
+    if (d) { free(d->data); free(d->name); free(d); }
+}
+static struct archive_ops dummy_ops = { .free_data = dummy_free_data };
+static struct archive dummy_archive = { .ops = &dummy_ops };
+
+struct archive_data *RE_get_aar_entry(struct archive *aar, const char *dir, const char *name, const char *ext) {
+    (void)aar; (void)dir;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s%s", g_dir, name, ext ? ext : "");
+    size_t sz = 0;
+    uint8_t *buf = file_read(path, &sz);
+    if (!buf) return NULL;
+    struct archive_data *d = xcalloc(1, sizeof(*d));
+    d->data = buf;
+    d->size = sz;
+    d->name = xstrdup(name);
+    d->archive = &dummy_archive;
+    return d;
+}
+
+int main(int argc, char **argv) {
+    assert(argc == 2);
+    g_dir = argv[1];
+
+    struct RE_plugin plugin = {0};
+    struct motion mot = { .state = RE_MOTION_STATE_LOOP, .current_frame = 10.0f };
+    struct RE_instance inst = {0};
+    inst.plugin = &plugin;
+    inst.motion = &mot;
+    inst.pos[0] = 11.754f;
+    inst.pos[1] = -0.480f;
+    inst.pos[2] = 183.380f;
+    inst.local_transform_needs_update = true;
+
+    // 1. Mixed .txtex.ex: hidden billboard + kind 2 sub-emitter + kind 6 group must be skipped;
+    //    only visible billboard and polygon emitters remain, and camera override stays inactive.
+    struct s3de *mixed = s3de_load(&dummy_archive, "ParticleEffect\\mixed");
+    assert(mixed != NULL);
+    assert(mixed->nr_objects == 2);
+    assert(mixed->objects[0].type == S3DE_OBJ_BILLBOARD);
+    assert(mixed->objects[1].type == S3DE_OBJ_POLYGON);
+
+    struct s3de_effect *mixed_eff = s3de_effect_create(mixed, &dummy_archive);
+    assert(mixed_eff != NULL);
+    inst.s3de_effect = mixed_eff;
+    plugin.camera.override_active = false;
+    s3de_effect_update(&inst);
+    assert(plugin.camera.override_active == false);
+    s3de_effect_free(mixed_eff);
+    s3de_free(mixed);
+
+    // 2. All-hidden/unsupported .txtex.ex: nr_objects == 0, NULL-safe create/update/free, no hijack.
+    struct s3de *hidden = s3de_load(&dummy_archive, "ParticleEffect\\all_hidden");
+    assert(hidden != NULL);
+    assert(hidden->nr_objects == 0);
+    assert(hidden->objects == NULL);
+
+    struct s3de_effect *hidden_eff = s3de_effect_create(hidden, &dummy_archive);
+    assert(hidden_eff != NULL);
+    assert(hidden_eff->objects == NULL);
+    inst.s3de_effect = hidden_eff;
+    plugin.camera.override_active = false;
+    s3de_effect_update(&inst);
+    assert(plugin.camera.override_active == false);
+    s3de_effect_free(hidden_eff);
+    s3de_free(hidden);
+
+    // 3. Text .3de real "カメラ" track (Rance 9) still activates camera override properly.
+    struct s3de *cam = s3de_load(&dummy_archive, "Effect\\cam_track");
+    assert(cam != NULL);
+    assert(cam->nr_objects == 1);
+    assert(cam->objects[0].type == S3DE_OBJ_CAMERA);
+
+    struct s3de_effect *cam_eff = s3de_effect_create(cam, &dummy_archive);
+    assert(cam_eff != NULL);
+    inst.s3de_effect = cam_eff;
+    inst.pos[0] = 0.0f; inst.pos[1] = 0.0f; inst.pos[2] = 0.0f;
+    inst.local_transform_needs_update = true;
+    plugin.camera.override_active = false;
+    s3de_effect_update(&inst);
+    assert(plugin.camera.override_active == true);
+    assert(fabsf(plugin.camera.override_pos[0] - 1.5f) < 1e-4f);
+    assert(fabsf(plugin.camera.override_pos[1] - 2.5f) < 1e-4f);
+    assert(fabsf(plugin.camera.override_pos[2] - 3.5f) < 1e-4f);
+    s3de_effect_free(cam_eff);
+    s3de_free(cam);
+
+    puts("OK");
+    return 0;
+}
+"""
+            out = compile_and_run(
+                harness,
+                [ROOT / "src/3d/s3de.c", ROOT / "src/3d/parser.c", *LIBSYS4_CORE],
+                [f"-I{ROOT / 'src/3d'}", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections", "-lz", "-lm"],
+                [str(td)],
+            )
+            self.assertEqual(out.strip(), "OK")
 
 
 def _extract_c_fn(rel_path: str, signature_prefix: str) -> str:
