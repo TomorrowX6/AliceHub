@@ -121,33 +121,87 @@ internal object ErrorReportKit {
         }
     }
 
+    /**
+     * Advances the seen-crash watermark to cover any existing crash logs after a storage root
+     * switch or migration (where FUSE copy may reset file mtime to "now"). Never runs while a
+     * game process is active so genuine live crashes are not masked.
+     */
+    fun markExistingCrashesSeen(context: Context) {
+        if (isGameProcessRunning(context)) return
+        val now = System.currentTimeMillis()
+        val seen = readSeenCrashMtime(context)
+        var maxObserved = 0L
+        for (f in collectCrashLogCandidates(context)) {
+            if (f.isFile && f.length() > 0L) {
+                val m = minOf(f.lastModified(), now + 60_000L)
+                if (m > maxObserved) maxObserved = m
+            }
+        }
+        writeSeenCrashMtime(context, maxOf(seen, now, maxObserved))
+    }
+
+    fun parseEmbeddedTimestampUpperBoundMs(file: File): Long? {
+        val header = readFileHeadUtf8(file, 2048)
+        if (header.isEmpty()) return null
+        val rawTs = extractHeaderField(header, "Timestamp")?.takeIf { it.isNotBlank() } ?: return null
+        if (rawTs.startsWith("epoch:", ignoreCase = true)) {
+            val sec = rawTs.substring(6).trim().toLongOrNull() ?: return null
+            return if (sec > 0L) sec * 1000L + 999L else null
+        }
+        if (rawTs.equals("unknown", ignoreCase = true)) return null
+        return try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply {
+                isLenient = false
+            }
+            val parsed = sdf.parse(rawTs) ?: return null
+            if (parsed.time > 0L) parsed.time + 999L else null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    fun effectiveCrashTimeMs(file: File): Long {
+        val fileMtime = file.lastModified()
+        if (fileMtime <= 0L) return 0L
+        val embeddedUpper = parseEmbeddedTimestampUpperBoundMs(file)
+        return if (embeddedUpper != null) minOf(fileMtime, embeddedUpper) else fileMtime
+    }
+
+    fun selectPendingCrashFile(candidates: Collection<File>, seenMtime: Long): Pair<File, Long>? {
+        var newestFile: File? = null
+        var newestEffectiveTime = 0L
+        for (f in candidates) {
+            if (f.isFile && f.length() > 0L) {
+                val effective = effectiveCrashTimeMs(f)
+                if (effective > seenMtime && effective > newestEffectiveTime) {
+                    newestEffectiveTime = effective
+                    newestFile = f
+                }
+            }
+        }
+        val targetFile = newestFile ?: return null
+        return targetFile to newestEffectiveTime
+    }
+
+    fun findPendingCrashFile(context: Context): Pair<File, Long>? {
+        val marker = File(context.filesDir, SEEN_MTIME_FILE)
+        if (!marker.exists()) {
+            writeSeenCrashMtime(context, System.currentTimeMillis())
+            return null
+        }
+        val seenMtime = readSeenCrashMtime(context)
+        return selectPendingCrashFile(collectCrashLogCandidates(context), seenMtime)
+    }
+
     fun checkAndShowPendingCrash(activity: Activity) {
         if (activity.isFinishing || activity.isDestroyed) return
         if (activeStandaloneDialog?.isShowing == true) return
         if (isGameProcessRunning(activity)) return
 
-        val marker = File(activity.filesDir, SEEN_MTIME_FILE)
-        if (!marker.exists()) {
-            writeSeenCrashMtime(activity, System.currentTimeMillis())
-            return
-        }
+        val (targetFile, newestEffectiveTime) = findPendingCrashFile(activity) ?: return
+        val now = System.currentTimeMillis()
         val seenMtime = readSeenCrashMtime(activity)
-        val candidates = collectCrashLogCandidates(activity)
-        var newestFile: File? = null
-        var newestMtime = 0L
-        for (f in candidates) {
-            if (f.isFile && f.length() > 0L) {
-                val m = f.lastModified()
-                if (m > newestMtime) {
-                    newestMtime = m
-                    newestFile = f
-                }
-            }
-        }
-        val targetFile = newestFile ?: return
-        if (newestMtime <= seenMtime) return
-
-        writeSeenCrashMtime(activity, maxOf(System.currentTimeMillis(), newestMtime))
+        writeSeenCrashMtime(activity, maxOf(seenMtime, now, minOf(newestEffectiveTime, now + 60_000L)))
         val report = buildFromLogFile(activity, targetFile)
         showReportDialog(activity, report)
     }
@@ -188,17 +242,17 @@ internal object ErrorReportKit {
         val mentionsSavedCrash = rawMessage.contains("Crash log saved to:", ignoreCase = true)
         val freshFile = crashCandidates
             .filter { it.isFile && it.length() > 0L }
-            .maxByOrNull { it.lastModified() }
+            .maxByOrNull { effectiveCrashTimeMs(it) }
             ?.takeIf { f ->
-                val m = f.lastModified()
+                val m = effectiveCrashTimeMs(f)
                 (mentionsSavedCrash && abs(now - m) < 60_000L) ||
                     (m > seenMtime && abs(now - m) < 15_000L)
             }
 
         val maxObservedMtime = crashCandidates
             .filter { it.isFile }
-            .maxOfOrNull { it.lastModified() } ?: 0L
-        writeSeenCrashMtime(lctx, maxOf(now + 1500L, maxObservedMtime))
+            .maxOfOrNull { minOf(effectiveCrashTimeMs(it), now + 60_000L) } ?: 0L
+        writeSeenCrashMtime(lctx, maxOf(seenMtime, now + 1500L, maxObservedMtime))
 
         val gameTitle = resolveGameDisplayLabel(lctx, gameRoot, saveDir)
 
@@ -1180,6 +1234,26 @@ internal object ErrorReportKit {
         try {
             File(context.filesDir, SEEN_MTIME_FILE).writeText(mtime.toString(), Charsets.UTF_8)
         } catch (_: Throwable) {
+        }
+    }
+
+    private fun readFileHeadUtf8(file: File, maxBytes: Int): String {
+        return try {
+            val len = file.length()
+            if (len <= 0L) return ""
+            val toRead = minOf(len, maxBytes.toLong()).toInt()
+            val buf = ByteArray(toRead)
+            RandomAccessFile(file, "r").use { raf ->
+                var off = 0
+                while (off < toRead) {
+                    val n = raf.read(buf, off, toRead - off)
+                    if (n <= 0) break
+                    off += n
+                }
+                String(buf, 0, off, Charsets.UTF_8)
+            }
+        } catch (_: Throwable) {
+            ""
         }
     }
 

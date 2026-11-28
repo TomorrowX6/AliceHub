@@ -103,6 +103,7 @@ internal object SharedStorageMigration {
                 Log.w("SharedStorageMigration", "Could not prepare shared storage", e)
                 false
             }
+            ErrorReportKit.markExistingCrashesSeen(context)
             handler.post {
                 running = null
                 onFinished()

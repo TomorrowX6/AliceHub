@@ -90,6 +90,10 @@ public class Rance10InstanceSwitchTest {
         Files.write(new File(src, ".mod_installed_files.txt").toPath(),
                 "Rance10MODCG.afa\nRance10.ain\n".getBytes(StandardCharsets.UTF_8));
         Files.write(new File(src, ".mod_apply_123.tmp").toPath(), new byte[]{1, 2, 3});
+        Files.write(new File(src, "crash.log").toPath(),
+                "Timestamp   : 2026-11-17 23:09:58\nCrash Type  : FATAL SIGNAL\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(new File(src, "crash_history.log").toPath(),
+                "old crash history\n".getBytes(StandardCharsets.UTF_8));
 
         Rance10InstanceManager.CopyPlan cleanPlan =
                 Rance10InstanceManager.INSTANCE.planCopy(src, true);
@@ -110,14 +114,18 @@ public class Rance10InstanceSwitchTest {
         assertFalse(new File(dst, ".mod_version.json").exists());
         assertFalse(new File(dst, ".mod_installed_files.txt").exists());
         assertFalse(new File(dst, ".mod_apply_123.tmp").exists());
+        assertFalse(new File(dst, "crash.log").exists());
+        assertFalse(new File(dst, "crash_history.log").exists());
         assertFalse(Item.Companion.detectInstalledMod(dst, null));
 
         // Source MOD directory must remain untouched
         assertArrayEquals(modAin, Files.readAllBytes(new File(src, "Rance10.ain").toPath()));
         assertTrue(new File(src, "Rance10MODCG.afa").isFile());
         assertTrue(new File(src, "Rance10.ain.vanilla.bak").isFile());
+        assertTrue(new File(src, "crash.log").isFile());
+        assertTrue(new File(src, "crash_history.log").isFile());
 
-        // Non-clean clone preserves MOD files & backups but still skips .tmp
+        // Non-clean clone preserves MOD files & backups but still skips .tmp and stale crash logs
         Rance10InstanceManager.CopyPlan fullPlan =
                 Rance10InstanceManager.INSTANCE.planCopy(src, false);
         assertFalse(fullPlan.getCleanVanilla());
@@ -128,6 +136,8 @@ public class Rance10InstanceSwitchTest {
         assertTrue(new File(dstMod, "Rance10MODCG.afa").isFile());
         assertTrue(new File(dstMod, "Rance10.ain.vanilla.bak").isFile());
         assertFalse(new File(dstMod, ".mod_apply_123.tmp").exists());
+        assertFalse(new File(dstMod, "crash.log").exists());
+        assertFalse(new File(dstMod, "crash_history.log").exists());
     }
 
     @Test

@@ -177,7 +177,9 @@ class SettingsActivity : ThemedActivity() {
 
     private fun applyStoragePermission() {
         refreshStorageLabel()
-        LauncherActivity.showStorageMigration(this, retry = true, onComplete = ::refreshStorageLabel)
+        if (!LauncherActivity.showStorageMigration(this, retry = true, onComplete = ::refreshStorageLabel)) {
+            ErrorReportKit.markExistingCrashesSeen(this)
+        }
     }
 
     private fun refreshStorageLabel() {
@@ -202,7 +204,11 @@ class SettingsActivity : ThemedActivity() {
                 val usePublic = selected == R.id.storage_option_public
                 AppSettings.setPublicStorage(this, usePublic)
                 refreshStorageLabel()
-                if (usePublic && !requestSharedStorageAccess()) applyStoragePermission()
+                if (usePublic) {
+                    if (!requestSharedStorageAccess()) applyStoragePermission()
+                } else {
+                    ErrorReportKit.markExistingCrashesSeen(this)
+                }
             }
             .show())
     }

@@ -158,6 +158,7 @@ class OnboardingActivity : ThemedActivity() {
         if (publicSelected &&
             LauncherActivity.showStorageMigration(this, onComplete = ::showOnlinePage)
         ) return
+        ErrorReportKit.markExistingCrashesSeen(this)
         showOnlinePage()
     }
 

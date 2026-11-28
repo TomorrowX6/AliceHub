@@ -111,7 +111,10 @@ object Rance10InstanceManager {
     }
 
     private fun isTransientFile(name: String): Boolean {
-        return name.endsWith(".vanilla.bak.tmp") ||
+        val lower = name.lowercase(Locale.ROOT)
+        return lower == "crash.log" ||
+            lower == "crash_history.log" ||
+            name.endsWith(".vanilla.bak.tmp") ||
             (name.startsWith(".mod_apply_") && name.endsWith(".tmp")) ||
             (name.startsWith(".restore_") && name.endsWith(".tmp")) ||
             name == "${Item.NON_VANILLA_BASELINE_MARKER}.tmp"
