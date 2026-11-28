@@ -22,7 +22,7 @@ enum ArchiveExtractor {
     private static let cp932 = CFStringConvertEncodingToNSStringEncoding(CFStringConvertWindowsCodepageToEncoding(932))
 
     static func isSupportedArchiveName(_ name: String) -> Bool {
-        [".zip", ".rar", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".iso", ".mdf"]
+        [".zip", ".rar", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".iso", ".mdf", ".fdi"]
             .contains { name.lowercased().hasSuffix($0) }
     }
 
@@ -181,6 +181,10 @@ enum ArchiveExtractor {
         if try Iso9660Extractor.isDiscImage(source) {
             return try Iso9660Extractor.extract(source, to: destination, shouldSkip: shouldSkip,
                                                 checkCancelled: checkCancelled, onProgress: onProgress)
+        }
+        if Pc98FloppyExtractor.isFloppyImage(source) {
+            return try Pc98FloppyExtractor.extract(source, to: destination, shouldSkip: shouldSkip,
+                                                   checkCancelled: checkCancelled, onProgress: onProgress)
         }
         let state = ArchiveExtractionState(root: destination, skip: shouldSkip, cancel: checkCancelled, progress: onProgress)
         let fd = open(source.path, O_RDONLY | O_CLOEXEC)

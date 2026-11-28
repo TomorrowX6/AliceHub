@@ -180,7 +180,8 @@ object GameSortMetadata {
         GameCatalog.ID_DPSSG2AKAI to GameSortInfo("1991-04-15", 58.1, "https://vndb.org/v8668", "https://vndb.org/v8668"),
         GameCatalog.ID_DPSSG3RABBIT to GameSortInfo("1991-12-15", 59.4, "https://vndb.org/v8669", "https://vndb.org/v8669"),
         GameCatalog.ID_DPSSG3SHINKON to GameSortInfo("1991-12-15", 59.4, "https://vndb.org/v8669", "https://vndb.org/v8669"),
-        GameCatalog.ID_DPSSG3SOTSUGYOU to GameSortInfo("1991-12-15", 59.4, "https://vndb.org/v8669", "https://vndb.org/v8669")
+        GameCatalog.ID_DPSSG3SOTSUGYOU to GameSortInfo("1991-12-15", 59.4, "https://vndb.org/v8669", "https://vndb.org/v8669"),
+        GameCatalog.ID_FUKEI to GameSortInfo("1989-07-15", null, null, "https://vndb.org/v1414")
     )
 
     fun forGame(id: String): GameSortInfo? = games[id]

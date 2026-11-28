@@ -252,6 +252,9 @@ enum LocalGameImport {
             try mergeInstallData(output, searchRoot: output, all: directories(output), rules: rules)
         }
         try GameLibrary.normalizeRance06DungeonData(output)
+        if primary.engine == .legacySystem3 {
+            Pc98FloppyExtractor.copyCompanionFontIfNeeded(searchRoot: source, into: output)
+        }
         guard GameLibrary.isGame(output) else { throw LibraryError.notGame }
     }
 
@@ -388,6 +391,9 @@ enum LocalGameImport {
             }
         }
         try GameLibrary.normalizeRance06DungeonData(root)
+        if (try? GameLibrary.launchInfo(root).engine) == .legacySystem3 {
+            Pc98FloppyExtractor.copyCompanionFontIfNeeded(searchRoot: work, into: root)
+        }
         try prune(root, rules: LocalImportCleanup(root: root))
     }
 

@@ -404,7 +404,7 @@ int main(void)
 """,
                 sources=[
                     HUB / "model.c", HUB / "fs_util.c", HUB / "install_transaction.c",
-                    HUB / "local_import.c", HUB / "import_zip.c", HUB / "import_iso.c",
+                    HUB / "local_import.c", HUB / "import_zip.c", HUB / "import_iso.c", HUB / "import_fdi.c",
                 ],
                 includes=[HUB],
                 libs=_zlib_flags(),

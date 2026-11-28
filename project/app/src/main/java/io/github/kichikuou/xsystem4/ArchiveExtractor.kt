@@ -59,7 +59,8 @@ object ArchiveExtractor {
             lower.endsWith(".tar.xz") ||
             lower.endsWith(".txz") ||
             lower.endsWith(".iso") ||
-            lower.endsWith(".mdf")
+            lower.endsWith(".mdf") ||
+            lower.endsWith(".fdi")
     }
 
     fun decodeBestCjkText(rawBytes: ByteArray, preferGbkOnTie: Boolean = true): String {
@@ -312,6 +313,17 @@ object ArchiveExtractor {
                 onProgress = onProgress
             )
         }
+        if (Pc98FloppyExtractor.isFdiName(archiveFile.name) || Pc98FloppyExtractor.isFdiFile(archiveFile)) {
+            return Pc98FloppyExtractor.extractFileToDirectory(
+                fdiFile = archiveFile,
+                outDir = destDir,
+                shouldSkip = shouldSkip,
+                throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                checkCancelled = checkCancelled,
+                onEntryAccepted = onEntryAccepted,
+                onProgress = onProgress
+            )
+        }
         ensureLoaded()
         val trackingCallback = createTrackingCallback(
             destDir = destDir,
@@ -384,6 +396,36 @@ object ArchiveExtractor {
                         onProgress = onProgress
                     )
                 }
+                val isFdi = try {
+                    ParcelFileDescriptor.dup(directPfd.fileDescriptor).use { dup ->
+                        FileInputStream(dup.fileDescriptor).use { fis ->
+                            Pc98FloppyExtractor.isFdiChannel(fis.channel)
+                        }
+                    }
+                } catch (_: Throwable) {
+                    false
+                }
+                if (!isFdi) {
+                    try {
+                        Os.lseek(directPfd.fileDescriptor, 0L, OsConstants.SEEK_SET)
+                    } catch (_: Throwable) {
+                    }
+                }
+                if (isFdi) {
+                    directPfd.close()
+                    directPfd = null
+                    return Pc98FloppyExtractor.extractUriToDirectory(
+                        context = context,
+                        uri = uri,
+                        outDir = destDir,
+                        tempScratchParent = tempScratchParent,
+                        shouldSkip = shouldSkip,
+                        throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                        checkCancelled = checkCancelled,
+                        onEntryAccepted = onEntryAccepted,
+                        onProgress = onProgress
+                    )
+                }
                 ensureLoaded()
                 if (nativeIsFdSeekable(directPfd.fd)) {
                     val trackingCallback = createTrackingCallback(
@@ -430,6 +472,17 @@ object ArchiveExtractor {
             if (Iso9660Extractor.isIsoOrMdfFile(stagedFile)) {
                 return Iso9660Extractor.extractFileToDirectory(
                     isoFile = stagedFile,
+                    outDir = destDir,
+                    shouldSkip = shouldSkip,
+                    throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,
+                    checkCancelled = checkCancelled,
+                    onEntryAccepted = onEntryAccepted,
+                    onProgress = onProgress
+                )
+            }
+            if (Pc98FloppyExtractor.isFdiFile(stagedFile)) {
+                return Pc98FloppyExtractor.extractFileToDirectory(
+                    fdiFile = stagedFile,
                     outDir = destDir,
                     shouldSkip = shouldSkip,
                     throwInstallFailureOnNoSpace = throwInstallFailureOnNoSpace,

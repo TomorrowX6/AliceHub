@@ -72,7 +72,7 @@ public class Wave7RetroClassicsCatalogTest {
     @Test
     public void descriptorsCdnUrlsSizesAndSortMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(170, order.size());
+        assertEquals(171, order.size());
         for (String id : WAVE7_IDS) {
             assertTrue("Missing from builtInSelectOrder: " + id, order.contains(id));
             GameDescriptor desc = GameCatalog.INSTANCE.descriptorForWithResolver(id, null, resId -> id);

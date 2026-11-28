@@ -68,7 +68,8 @@ static bool read_files(void)
             regular = S_ISREG(st.st_mode);
         }
         if (!folder && !(regular && (import_suffix(e->d_name, ".zip") ||
-                         import_suffix(e->d_name, ".iso") || import_suffix(e->d_name, ".mdf"))))
+                         import_suffix(e->d_name, ".iso") || import_suffix(e->d_name, ".mdf") ||
+                         import_suffix(e->d_name, ".fdi"))))
             continue;
         if (screen.count == capacity) {
             size_t next = capacity ? capacity * 2 : 32;

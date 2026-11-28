@@ -1575,6 +1575,49 @@ class GameList(activity: Activity) {
                     continue
                 }
 
+                val fdis = currentStageDir.walkTopDown()
+                    .filter { it.isFile && Pc98FloppyExtractor.isFdiName(it.name) }
+                    .sortedByDescending { it.length() }
+                    .toList()
+                val chosenFdi = fdis.firstOrNull {
+                    Pc98FloppyExtractor.containsGameRoot(it, expectedAinName, targetGameId, checkCancelled)
+                } ?: if (expectedAinName.isNullOrBlank() &&
+                    (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM))
+                ) {
+                    fdis.firstOrNull { Pc98FloppyExtractor.containsGameRoot(it, null, null, checkCancelled) }
+                } else {
+                    null
+                }
+                if (chosenFdi == null && fdis.any { Pc98FloppyExtractor.containsGameRoot(it, null, null, checkCancelled) }) {
+                    throw InstallFailureException(R.string.import_wrong_game)
+                }
+                if (chosenFdi != null) {
+                    val nextDir = File(tempDir, "stage$stage")
+                    ArchiveExtractor.extractFileToDirectory(
+                        archiveFile = chosenFdi,
+                        destDir = nextDir,
+                        shouldSkip = { rel ->
+                            shouldSkipBaseInstallEntry(rel)
+                        },
+                        throwInstallFailureOnNoSpace = true,
+                        checkCancelled = checkCancelled,
+                        onProgress = { totalBytes, entryPath ->
+                            progressCallback(
+                                context.getString(
+                                    R.string.import_extract_progress,
+                                    totalBytes / (1024L * 1024L),
+                                    entryPath
+                                )
+                            )
+                        }
+                    )
+                    for (f in fdis) f.delete()
+                    currentStageDir = nextDir
+                    srcDir = preferCnRootOverInstallData(findGameRootDir(currentStageDir, expectedAinName, targetGameId))
+                    stage++
+                    continue
+                }
+
                 val archives = currentStageDir.walkTopDown()
                     .filter {
                         val rel = it.relativeTo(currentStageDir).path.replace('\\', '/')
@@ -1660,6 +1703,9 @@ class GameList(activity: Activity) {
                 throw InstallFailureException(R.string.import_wrong_game)
             }
             overlayPatchUpdatesIfPresent(listOf(tempDir), srcDir, checkCancelled)
+            if (legacySystem3) {
+                Pc98FloppyExtractor.copyCompanionFontIfNeeded(listOf(tempDir), srcDir)
+            }
             val isRance02 = isRance02Target ||
                 GameCatalog.classifyDirectory(srcDir, srcDir.name) == GameCatalog.ID_RANCE02
             if (!legacySystem3) {
@@ -1849,6 +1895,7 @@ class GameList(activity: Activity) {
                 classifiedId == GameCatalog.ID_DPSSG3RABBIT -> "DpsSg3Rabbit"
                 classifiedId == GameCatalog.ID_DPSSG3SHINKON -> "DpsSg3Shinkon"
                 classifiedId == GameCatalog.ID_DPSSG3SOTSUGYOU -> "DpsSg3Sotsugyou"
+                classifiedId == GameCatalog.ID_FUKEI -> "FukeiSanVX"
                 classifiedId == GameCatalog.ID_RANCE5D -> "Rance5D"
                 classifiedId == GameCatalog.ID_RANCE06 -> "Rance06"
                 classifiedId == GameCatalog.ID_GALZOO -> "GALZOO"

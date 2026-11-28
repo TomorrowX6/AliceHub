@@ -27,6 +27,7 @@ uint32_t import_le32(const unsigned char *);
 
 bool import_zip(const char *source, const char *dest, const ImportCallbacks *);
 bool import_iso(const char *source, const char *dest, const ImportCallbacks *);
+bool import_fdi(const char *source, const char *dest, const ImportCallbacks *);
 void hub_register_local_import(HubApp *);
 
 #endif

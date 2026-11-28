@@ -1564,7 +1564,8 @@ object GameModifierBridge {
         GameCatalog.ID_DPSSG2AKAI,
         GameCatalog.ID_DPSSG3RABBIT,
         GameCatalog.ID_DPSSG3SHINKON,
-        GameCatalog.ID_DPSSG3SOTSUGYOU -> true
+        GameCatalog.ID_DPSSG3SOTSUGYOU,
+        GameCatalog.ID_FUKEI -> true
         else -> false
     }
 

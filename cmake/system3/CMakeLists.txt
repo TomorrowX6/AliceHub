@@ -1157,8 +1157,19 @@ file(READ "${orig_nact_cpp}" patched_nact_cpp)
 alicehub_patch_replace(patched_nact_cpp
   [=[extern SDL_Window* g_window;]=]
   [=[extern SDL_Window* g_window;
-void system3_reset_input_state();]=]
+void system3_reset_input_state();
+bool ags_pc98_font_is_gb2312();]=]
   "NACT input state reset decl")
+alicehub_patch_replace(patched_nact_cpp
+  [=[	ags = new AGS(config, game_id);]=]
+  [=[	ags = new AGS(config, game_id);
+	if (ags_pc98_font_is_gb2312() && game_id.language != ENGLISH) {
+		if (strings.back == encoding->fromUtf8(u8"戻る"))
+			strings.back = "\x8c\x54\x8e\x77";
+		if (strings.next_page == encoding->fromUtf8(u8"次のページ"))
+			strings.next_page = "\x98\x61\x99\xb9\x99\xb1";
+	}]=]
+  "NACT::NACT Chinese PC-98 FONT.bmp default menu strings")
 alicehub_patch_replace(patched_nact_cpp
   [=[	platform_initialize();]=]
   [=[	system3_reset_input_state();
@@ -1350,6 +1361,141 @@ set(orig_ags_text "${src}/sys/ags_text.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_ags_text}")
 file(READ "${orig_ags_text}" patched_ags_text)
 alicehub_patch_replace(patched_ags_text
+  [=[#include "encoding.h"
+#include "texthook.h"
+
+namespace {]=]
+  [=[#include "encoding.h"
+#include "fileio.h"
+#include "texthook.h"
+#include <string.h>
+#include <vector>
+
+namespace {
+
+struct Pc98BitmapFont {
+	static constexpr int WIDTH = 2048;
+	static constexpr int HEIGHT = 2048;
+	static constexpr int ROW_BYTES = WIDTH / 8;
+	bool loaded = false;
+	bool is_gb2312 = false;
+	std::vector<uint8_t> bits;
+
+	bool pixel(int x, int y) const {
+		if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT)
+			return false;
+		return (bits[static_cast<size_t>(y) * ROW_BYTES + (x >> 3)] & (0x80 >> (x & 7))) != 0;
+	}
+};
+
+Pc98BitmapFont g_pc98_font;
+
+uint16_t rd_le16(const uint8_t* p) {
+	return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+
+uint32_t rd_le32(const uint8_t* p) {
+	return static_cast<uint32_t>(p[0]) |
+	       (static_cast<uint32_t>(p[1]) << 8) |
+	       (static_cast<uint32_t>(p[2]) << 16) |
+	       (static_cast<uint32_t>(p[3]) << 24);
+}
+
+bool is_utf8_encoding_name(const char* enc) {
+	if (!enc)
+		return false;
+	auto eq_ci = [](const char* a, const char* b) {
+		while (*a && *b) {
+			unsigned char ca = static_cast<unsigned char>(*a++);
+			unsigned char cb = static_cast<unsigned char>(*b++);
+			if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
+			if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
+			if (ca != cb) return false;
+		}
+		return *a == '\0' && *b == '\0';
+	};
+	return eq_ci(enc, "UTF-8") || eq_ci(enc, "UTF8");
+}
+
+bool pc98_cell_nonempty(int cx, int ry) {
+	int gx = cx * 16;
+	int gy = ry * 16;
+	for (int dy = 0; dy < 16; dy++) {
+		size_t row_off = static_cast<size_t>(gy + dy) * Pc98BitmapFont::ROW_BYTES + (gx >> 3);
+		if (g_pc98_font.bits[row_off] != 0 || g_pc98_font.bits[row_off + 1] != 0)
+			return true;
+	}
+	return false;
+}
+
+bool ank_to_zenkaku_jis(uint8_t b, bool is_gb2312, int& j1, int& j2) {
+	if (b == 0x20) {
+		j1 = 0x21;
+		j2 = 0x21;
+		return true;
+	}
+	if (b >= 0x21 && b <= 0x7e) {
+		if (is_gb2312 ||
+		    (b >= '0' && b <= '9') ||
+		    (b >= 'A' && b <= 'Z') ||
+		    (b >= 'a' && b <= 'z')) {
+			j1 = 0x23;
+			j2 = b;
+			return true;
+		}
+		return false;
+	}
+	switch (b) {
+	case 0xa1: j1 = 0x21; j2 = 0x23; return true; // 。
+	case 0xa2: j1 = 0x21; j2 = is_gb2312 ? 0x38 : 0x56; return true; // 「
+	case 0xa3: j1 = 0x21; j2 = is_gb2312 ? 0x39 : 0x57; return true; // 」
+	case 0xa4: j1 = 0x21; j2 = 0x22; return true; // 、
+	case 0xa5: j1 = 0x21; j2 = is_gb2312 ? 0x24 : 0x26; return true; // ・ / ·
+	default: break;
+	}
+	if (b >= 0xa6 && b <= 0xdf) {
+		static const uint16_t kana_jis[58] = {
+			0x2472, 0x2421, 0x2423, 0x2425, 0x2427, 0x2429, 0x2463, 0x2465,
+			0x2467, 0x2443, 0x213c, 0x2422, 0x2424, 0x2426, 0x2428, 0x242a,
+			0x242b, 0x242d, 0x242f, 0x2431, 0x2433, 0x2435, 0x2437, 0x2439,
+			0x243b, 0x243d, 0x243f, 0x2441, 0x2444, 0x2446, 0x2448, 0x244a,
+			0x244b, 0x244c, 0x244d, 0x244e, 0x244f, 0x2452, 0x2455, 0x2458,
+			0x245b, 0x245e, 0x245f, 0x2460, 0x2461, 0x2462, 0x2464, 0x2466,
+			0x2468, 0x2469, 0x246a, 0x246b, 0x246c, 0x246d, 0x246f, 0x2473,
+			0x212b, 0x212c,
+		};
+		uint16_t jis = kana_jis[b - 0xa6];
+		j1 = jis >> 8;
+		j2 = jis & 0xff;
+		return true;
+	}
+	return false;
+}
+
+void draw_pc98_glyph(uint8_t (*vram)[640], int dest_x, int dest_y,
+                     int src_x, int src_y, int src_w, int src_h,
+                     int dst_w, int dst_h, uint8 color) {
+	if (dst_w <= 0 || dst_h <= 0)
+		return;
+	for (int y = std::max(0, -dest_y); y < dst_h && dest_y + y < 480; y++) {
+		int sy = src_y + (y * src_h) / dst_h;
+		for (int x = std::max(0, -dest_x); x < dst_w && dest_x + x < 640; x++) {
+			int sx = src_x + (x * src_w) / dst_w;
+			if (g_pc98_font.pixel(sx, sy))
+				vram[dest_y + y][dest_x + x] = color;
+		}
+	}
+}
+
+bool gaiji_has_bitmap(const uint8_t bitmap[32]) {
+	for (int i = 0; i < 32; i++) {
+		if (bitmap[i] != 0)
+			return true;
+	}
+	return false;
+}]=]
+  "AGS PC-98 FONT.bmp helpers")
+alicehub_patch_replace(patched_ags_text
   [=[	TTF_Font* font = NULL;
 	switch (ctx.font_size) {
 	case 16: font = hFont16; break;
@@ -1358,7 +1504,70 @@ alicehub_patch_replace(patched_ags_text
 	case 48: font = hFont48; break;
 	case 64: font = hFont64; break;
 	}]=]
-  [=[	TTF_Font* font = hFont16;
+  [=[	if (g_pc98_font.loaded && !is_utf8_encoding_name(g_nact->game_id.encoding)) {
+		const int size = ctx.font_size > 0 ? ctx.font_size : 16;
+		const int half_size = std::max(1, size / 2);
+		const int base_y = ctx.pos.y;
+		while (!string.empty()) {
+			uint8_t b1 = static_cast<uint8_t>(string[0]);
+			bool is_space = (b1 == ' ');
+			if (((b1 >= 0x81 && b1 <= 0x9f) || (b1 >= 0xe0 && b1 <= 0xfc)) && string.size() >= 2) {
+				uint8_t b2 = static_cast<uint8_t>(string[1]);
+				if (b2 >= 0x40 && b2 <= 0xfc && b2 != 0x7f) {
+					string.remove_prefix(2);
+					uint16_t sjis = static_cast<uint16_t>((b1 << 8) | b2);
+					int gaiji_idx = -1;
+					if (sjis >= 0xeb9f && sjis <= 0xebfc)
+						gaiji_idx = sjis - 0xeb9f;
+					else if (sjis >= 0xec40 && sjis <= 0xec9e)
+						gaiji_idx = sjis - 0xec40 + 94;
+					if (gaiji_idx >= 0 && gaiji_idx < 188 && gaiji_has_bitmap(gaiji[gaiji_idx])) {
+						draw_gaiji(screen, dest_x, base_y, gaiji[gaiji_idx], size, ctx.font_color);
+					} else {
+						int j1 = (b1 - (b1 <= 0x9f ? 0x81 : 0xc1)) * 2 + 0x21;
+						int j2;
+						if (b2 >= 0x9f) {
+							j1 += 1;
+							j2 = b2 - 0x7e;
+						} else {
+							j2 = b2 - (b2 < 0x7f ? 0x1f : 0x20);
+						}
+						if (j1 >= 0x21 && j1 <= 0x7e && j2 >= 0x21 && j2 <= 0x7e) {
+							draw_pc98_glyph(vram[screen], dest_x, base_y, (j1 - 0x20) * 16, j2 * 16, 16, 16, size, size, ctx.font_color);
+						}
+					}
+					dest_x += size;
+					if (!draw_menu && text_wait) {
+						if (screen == 0)
+							invalidate_screen(ctx.pos.x, base_y, dest_x - ctx.pos.x, size);
+						ctx.pos.x = dest_x;
+						g_nact->text_wait();
+					}
+					continue;
+				}
+			}
+			string.remove_prefix(1);
+			int j1 = 0, j2 = 0;
+			if (!draw_hankaku && ank_to_zenkaku_jis(b1, g_pc98_font.is_gb2312, j1, j2)) {
+				draw_pc98_glyph(vram[screen], dest_x, base_y, (j1 - 0x20) * 16, j2 * 16, 16, 16, size, size, ctx.font_color);
+				dest_x += size;
+			} else {
+				draw_pc98_glyph(vram[screen], dest_x, base_y, static_cast<int>(b1) * 8, 0, 8, 16, half_size, size, ctx.font_color);
+				dest_x += half_size;
+			}
+			if (!draw_menu && text_wait && !is_space) {
+				if (screen == 0)
+					invalidate_screen(ctx.pos.x, base_y, dest_x - ctx.pos.x, size);
+				ctx.pos.x = dest_x;
+				g_nact->text_wait();
+			}
+		}
+		if (!draw_menu && !text_wait && screen == 0)
+			invalidate_screen(ctx.pos.x, base_y, dest_x - ctx.pos.x, size);
+		ctx.pos.x = dest_x;
+		return;
+	}
+	TTF_Font* font = hFont16;
 	switch (ctx.font_size) {
 	case 16: font = hFont16; break;
 	case 24: font = hFont24; break;
@@ -1367,7 +1576,93 @@ alicehub_patch_replace(patched_ags_text
 	case 64: font = hFont64; break;
 	default: font = hFont16; break;
 	}]=]
-  "AGS::draw_text default font fallback")
+  "AGS::draw_text PC-98 FONT.bmp path and default font fallback")
+alicehub_patch_replace(patched_ags_text
+  [=[extern "C" {
+
+void EMSCRIPTEN_KEEPALIVE ags_setAntialiasedStringMode(int on) {
+	antialias = on != 0;
+}
+
+}]=]
+  [=[void ags_pc98_font_unload()
+{
+	g_pc98_font.bits.clear();
+	g_pc98_font.bits.shrink_to_fit();
+	g_pc98_font.loaded = false;
+	g_pc98_font.is_gb2312 = false;
+}
+
+bool ags_pc98_font_is_gb2312()
+{
+	return g_pc98_font.loaded && g_pc98_font.is_gb2312;
+}
+
+void ags_pc98_font_load()
+{
+	ags_pc98_font_unload();
+	auto fio = FILEIO::open("FONT.BMP", FILEIO_READ_BINARY);
+	if (!fio)
+		return;
+	uint8_t hdr[62];
+	if (!fio->read(hdr, sizeof(hdr)))
+		return;
+	if (hdr[0] != 'B' || hdr[1] != 'M')
+		return;
+	uint32_t data_off = rd_le32(hdr + 10);
+	uint32_t dib_size = rd_le32(hdr + 14);
+	int32_t width = static_cast<int32_t>(rd_le32(hdr + 18));
+	int32_t height = static_cast<int32_t>(rd_le32(hdr + 22));
+	uint16_t planes = rd_le16(hdr + 26);
+	uint16_t bpp = rd_le16(hdr + 28);
+	uint32_t compression = rd_le32(hdr + 30);
+	if (dib_size < 40 || width != Pc98BitmapFont::WIDTH ||
+	    (height != Pc98BitmapFont::HEIGHT && height != -Pc98BitmapFont::HEIGHT) ||
+	    planes != 1 || bpp != 1 || compression != 0 || data_off < 14 + dib_size + 8)
+		return;
+	uint8_t pal[8];
+	fio->seek(static_cast<long>(14 + dib_size), SEEK_SET);
+	if (!fio->read(pal, sizeof(pal)))
+		return;
+	int lum0 = pal[2] * 30 + pal[1] * 59 + pal[0] * 11;
+	int lum1 = pal[6] * 30 + pal[5] * 59 + pal[4] * 11;
+	bool invert = lum0 < lum1;
+	std::vector<uint8_t> raw(static_cast<size_t>(Pc98BitmapFont::ROW_BYTES) * Pc98BitmapFont::HEIGHT);
+	fio->seek(static_cast<long>(data_off), SEEK_SET);
+	if (!fio->read(raw.data(), raw.size()))
+		return;
+	g_pc98_font.bits.resize(raw.size());
+	bool top_down = height < 0;
+	for (int y = 0; y < Pc98BitmapFont::HEIGHT; y++) {
+		int src_y = top_down ? y : (Pc98BitmapFont::HEIGHT - 1 - y);
+		const uint8_t* sp = raw.data() + static_cast<size_t>(src_y) * Pc98BitmapFont::ROW_BYTES;
+		uint8_t* dp = g_pc98_font.bits.data() + static_cast<size_t>(y) * Pc98BitmapFont::ROW_BYTES;
+		if (invert) {
+			for (int x = 0; x < Pc98BitmapFont::ROW_BYTES; x++)
+				dp[x] = static_cast<uint8_t>(~sp[x]);
+		} else {
+			memcpy(dp, sp, Pc98BitmapFont::ROW_BYTES);
+		}
+	}
+	int gb2312_ext_cells = 0;
+	for (int cx = 85; cx <= 87; cx++) {
+		for (int ry = 0x21; ry <= 0x7e; ry++) {
+			if (pc98_cell_nonempty(cx, ry))
+				gb2312_ext_cells++;
+		}
+	}
+	g_pc98_font.is_gb2312 = gb2312_ext_cells >= 32;
+	g_pc98_font.loaded = true;
+}
+
+extern "C" {
+
+void EMSCRIPTEN_KEEPALIVE ags_setAntialiasedStringMode(int on) {
+	antialias = on != 0;
+}
+
+}]=]
+  "AGS PC-98 FONT.bmp loader and lifecycle")
 alicehub_patch_replace(patched_ags_text
   [=[	SDL_Surface* fs = TTF_RenderGlyph_Solid(font, code, white);
 
@@ -1411,6 +1706,23 @@ set(orig_ags_cpp "${src}/sys/ags.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_ags_cpp}")
 file(READ "${orig_ags_cpp}" patched_ags_cpp)
 alicehub_patch_replace(patched_ags_cpp
+  [=[extern SDL_Window* g_window;
+extern SDL_Renderer* g_renderer;]=]
+  [=[extern SDL_Window* g_window;
+extern SDL_Renderer* g_renderer;
+void ags_pc98_font_load();
+void ags_pc98_font_unload();]=]
+  "AGS PC-98 FONT.bmp decls")
+alicehub_patch_replace(patched_ags_cpp
+  [=[	fio.reset();
+
+	// SYSTEM3 初期化]=]
+  [=[	fio.reset();
+	ags_pc98_font_load();
+
+	// SYSTEM3 初期化]=]
+  "AGS::AGS load PC-98 FONT.bmp")
+alicehub_patch_replace(patched_ags_cpp
   [=[	if (config.no_antialias)
 		ags_setAntialiasedStringMode(0);]=]
   [=[	ags_setAntialiasedStringMode(!config.no_antialias);]=]
@@ -1433,7 +1745,8 @@ alicehub_patch_replace(patched_ags_cpp
 	}
 
 	SDL_DestroyTexture(sdlTexture);]=]
-  [=[	// フォント開放
+  [=[	ags_pc98_font_unload();
+	// フォント開放
 	if (rw_font) {
 		TTF_CloseFont(hFont16);
 		TTF_CloseFont(hFont24);
