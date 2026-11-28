@@ -2391,9 +2391,10 @@ static enum opcode execute_instruction(enum opcode opcode)
 	case A_FREE: {
 		int array = stack_pop_var()->i;
 		if (page_index_valid(array) && heap[array].page) {
-			delete_page_vars(heap[array].page);
-			free_page(heap[array].page);
+			struct page *p = heap[array].page;
 			heap_set_page(array, NULL);
+			delete_page_vars(p);
+			free_page(p);
 		}
 		break;
 	}

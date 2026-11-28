@@ -818,6 +818,237 @@ int main(void)
     // 7. Standard SJIS mode (non-GBK) passes straight through to CP932 decoding.
     sys4_set_text_gbk(false);
     check_decode("sjis_mode", esca_cp932, sizeof(esca_cp932) - 1, esca_utf8);
+
+    // 8. Longinus CHS.TBL remap mode (sys4_mai_active=true, e.g. Oyakorankan):
+    //    Untranslated CP932 system dialogs (return-to-title, quit with GBK GameName,
+    //    save failure, invalid char ID) must NOT be corrupted by CHS.TBL kanji remapping,
+    //    while translated CHS.TBL dialogs remain decoded through CHS.TBL.
+    uint16_t chs_tbl[65536];
+    memset(chs_tbl, 0, sizeof(chs_tbl));
+    // Exact Oyakorankan CHS.TBL mappings that caused 戻->裁, 失->惘, 終->扔, 了->赧, 正->暴, 保->腹, 存->汪, 敗->秋
+    chs_tbl[0x96df] = 0xb2c3; // 戻 -> 裁
+    chs_tbl[0x8eb8] = 0xe3af; // 失 -> 惘
+    chs_tbl[0x8f49] = 0xc8d3; // 終 -> 扔
+    chs_tbl[0x97b9] = 0xf4f6; // 了 -> 赧
+    chs_tbl[0x90b3] = 0xb1a9; // 正 -> 暴
+    chs_tbl[0x95db] = 0xb8b9; // 保 -> 腹
+    chs_tbl[0x91b6] = 0xcdf4; // 存 -> 汪
+    chs_tbl[0x9473] = 0xc7ef; // 敗 -> 秋
+    // Translated Chinese alert ("移动目标超出范围" encoded as CP932 倍廓目煽涼出暴鍬)
+    chs_tbl[0x947b] = 0xd2c6; // 倍 -> 移
+    chs_tbl[0x8a73] = 0xb6af; // 廓 -> 动
+    chs_tbl[0x96da] = 0xc4bf; // 目 -> 目
+    chs_tbl[0x90f5] = 0xb1ea; // 煽 -> 标
+    chs_tbl[0x97c1] = 0xb3ac; // 涼 -> 超
+    chs_tbl[0x8f6f] = 0xb3f6; // 出 -> 出
+    chs_tbl[0x965c] = 0xb7b6; // 暴 -> 范 (distinct test slot)
+    chs_tbl[0x8c4c] = 0xcea7; // 鍬 -> 围
+    assert(sys4_load_chs_tbl_mem(chs_tbl, sizeof(chs_tbl)));
+
+    // 8a. Exact Oyakorankan return-to-title confirmation popup (full-width ？ and ASCII ?).
+    const uint8_t oyako_title[] = {
+        // タイトルに戻りますか？\n\n※セーブされていないデータは失われます
+        0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b, 0x82, 0xc9, 0x96, 0xdf,
+        0x82, 0xe8, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x0a, 0x0a,
+        0x81, 0xa6, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x82, 0xb3, 0x82, 0xea,
+        0x82, 0xc4, 0x82, 0xa2, 0x82, 0xc8, 0x82, 0xa2, 0x83, 0x66, 0x81, 0x5b,
+        0x83, 0x5e, 0x82, 0xcd, 0x8e, 0xb8, 0x82, 0xed, 0x82, 0xea, 0x82, 0xdc, 0x82, 0xb7, 0x00
+    };
+    check_decode("oyako_chs_return_title", oyako_title, sizeof(oyako_title) - 1,
+        "\xe3\x82\xbf\xe3\x82\xa4\xe3\x83\x88\xe3\x83\xab\xe3\x81\xab\xe6\x88\xbb\xe3\x82\x8a\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f\n\n"
+        "\xe2\x80\xbb\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x81\x95\xe3\x82\x8c\xe3\x81\xa6\xe3\x81\x84\xe3\x81\xaa\xe3\x81\x84"
+        "\xe3\x83\x87\xe3\x83\xbc\xe3\x82\xbf\xe3\x81\xaf\xe5\xa4\xb1\xe3\x82\x8f\xe3\x82\x8c\xe3\x81\xbe\xe3\x81\x99");
+
+    // 8b. Exact Oyakorankan quit dialog embedding GBK GameName "母娘乱館" inside CP932 『%s』.
+    const uint8_t oyako_quit[] = {
+        0x81, 0x77, 0xc4, 0xb8, 0xc4, 0xef, 0xc2, 0xd2, 0xf0, 0x5e, 0x81, 0x78,
+        0x82, 0xf0, 0x8f, 0x49, 0x97, 0xb9, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x00
+    };
+    check_decode("oyako_chs_quit_gbk_gamename", oyako_quit, sizeof(oyako_quit) - 1,
+        "\xe3\x80\x8e\xe6\xaf\x8d\xe5\xa8\x98\xe4\xb9\xb1\xe9\xa4\xa8\xe3\x80\x8f"
+        "\xe3\x82\x92\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
+
+    // 8c. Untranslated CP932 error dialogs under CHS.TBL stay clean CP932.
+    check_decode("oyako_chs_save_error", esca_cp932, sizeof(esca_cp932) - 1, esca_utf8);
+    const uint8_t oyako_invalid_id[] = {
+        // キャラＩＤが不正です
+        0x83, 0x4c, 0x83, 0x83, 0x83, 0x89, 0x82, 0x68, 0x82, 0x63,
+        0x82, 0xaa, 0x95, 0x73, 0x90, 0xb3, 0x82, 0xc5, 0x82, 0xb7, 0x00
+    };
+    check_decode("oyako_chs_invalid_id", oyako_invalid_id, sizeof(oyako_invalid_id) - 1,
+        "\xe3\x82\xad\xe3\x83\xa3\xe3\x83\xa9\xef\xbc\xa9\xef\xbc\xa4\xe3\x81\x8c\xe4\xb8\x8d\xe6\xad\xa3\xe3\x81\xa7\xe3\x81\x99");
+
+    // 8d. Translated CHS.TBL Chinese dialog MUST still decode through CHS.TBL.
+    const uint8_t oyako_cn_alert[] = {
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x97, 0xc1, 0x8f, 0x6f, 0x96, 0x5c, 0x8c, 0x4c, 0x00
+    };
+    check_decode("oyako_chs_translated_cn", oyako_cn_alert, sizeof(oyako_cn_alert) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe8\xb6\x85\xe5\x87\xba\xe8\x8c\x83\xe5\x9b\xb4");
+
+    // 8e. Translated CHS.TBL dialog with an embedded hiragana nickname (no JP dialog grammar) stays Chinese.
+    const uint8_t oyako_cn_with_hira_nick[] = {
+        // 移动目标おつゆ
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x82, 0xa8, 0x82, 0xc2, 0x82, 0xe4, 0x00
+    };
+    check_decode("oyako_chs_cn_with_hira_nick", oyako_cn_with_hira_nick, sizeof(oyako_cn_with_hira_nick) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe3\x81\x8a\xe3\x81\xa4\xe3\x82\x86");
+
+    // 8f. Translated CHS.TBL dialog containing a literal katakana keyword ("セーブ") must NOT bypass CHS.TBL.
+    const uint8_t oyako_cn_with_katakana_kw[] = {
+        // 移动目标超出范围 セーブ
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x97, 0xc1, 0x8f, 0x6f, 0x96, 0x5c, 0x8c, 0x4c,
+        ' ', 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x00
+    };
+    check_decode("oyako_chs_cn_with_katakana_kw", oyako_cn_with_katakana_kw,
+        sizeof(oyako_cn_with_katakana_kw) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe8\xb6\x85\xe5\x87\xba\xe8\x8c\x83\xe5\x9b\xb4 "
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96");
+
+    // 8g. Translated CHS.TBL dialog with both hiragana nickname ("おつゆ") and katakana keyword ("セーブ").
+    const uint8_t oyako_cn_with_nick_and_kw[] = {
+        // 移动目标超出范围おつゆセーブ
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x97, 0xc1, 0x8f, 0x6f, 0x96, 0x5c, 0x8c, 0x4c,
+        0x82, 0xa8, 0x82, 0xc2, 0x82, 0xe4, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x00
+    };
+    check_decode("oyako_chs_cn_with_nick_and_kw", oyako_cn_with_nick_and_kw,
+        sizeof(oyako_cn_with_nick_and_kw) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe8\xb6\x85\xe5\x87\xba\xe8\x8c\x83\xe5\x9b\xb4"
+        "\xe3\x81\x8a\xe3\x81\xa4\xe3\x82\x86\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96");
+
+    // 8h. Multiline untranslated CP932 dialog: continuation lines lacking recognized phrases
+    //     must still decode as CP932 so remapped kanji (保存終了/戻失) do not become mojibake.
+    const uint8_t oyako_multiline_cont[] = {
+        // セーブに失敗しました\n保存終了\n戻失
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x0a,
+        0x95, 0xdb, 0x91, 0xb6, 0x8f, 0x49, 0x97, 0xb9, 0x0a,
+        0x96, 0xdf, 0x8e, 0xb8, 0x00
+    };
+    check_decode("oyako_chs_multiline_cont", oyako_multiline_cont, sizeof(oyako_multiline_cont) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\n"
+        "\xe4\xbf\x9d\xe5\xad\x98\xe7\xb5\x82\xe4\xba\x86\n"
+        "\xe6\x88\xbb\xe5\xa4\xb1");
+
+    // 8i. Multiline untranslated CP932 error with GBK Chinese path on continuation line.
+    const uint8_t oyako_multiline_gbk_path[] = {
+        // エラーが発生しました。\nC:\Users\中文\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 'U', 's', 'e', 'r', 's', '\\', 0xd6, 0xd0, 0xce, 0xc4, '\\',
+        's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_multiline_gbk_path", oyako_multiline_gbk_path,
+        sizeof(oyako_multiline_gbk_path) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\Users\\\xe4\xb8\xad\xe6\x96\x87\\save.asd");
+
+    // 8j. Untranslated CP932 dialog using katakana noun + Japanese particle without verb ending.
+    const uint8_t oyako_noun_particle[] = {
+        // タイトルに戻る
+        0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b, 0x82, 0xc9, 0x96, 0xdf, 0x82, 0xe9, 0x00
+    };
+    check_decode("oyako_chs_noun_particle", oyako_noun_particle, sizeof(oyako_noun_particle) - 1,
+        "\xe3\x82\xbf\xe3\x82\xa4\xe3\x83\x88\xe3\x83\xab\xe3\x81\xab\xe6\x88\xbb\xe3\x82\x8b");
+
+    // 8k. Half-width katakana runs (e.g. ｴﾗｰ / ﾌｧｲﾙ) inside untranslated CP932 dialogs under CHS.TBL
+    //     must stay half-width katakana and never partially pair into GBK (e.g. ｴ装).
+    const uint8_t oyako_hw_err_dot[] = {
+        // ｴﾗｰ.asd の保存に失敗しました
+        0xb4, 0xd7, 0xb0, '.', 'a', 's', 'd', ' ',
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8,
+        0x94, 0x73, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("oyako_chs_hw_kana_err_dot", oyako_hw_err_dot, sizeof(oyako_hw_err_dot) - 1,
+        "\xef\xbd\xb4\xef\xbe\x97\xef\xbd\xb0.asd "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    const uint8_t oyako_hw_err_kana[] = {
+        // セーブ ｴﾗｰが発生しました
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ',
+        0xb4, 0xd7, 0xb0, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("oyako_chs_hw_kana_err_before_kana", oyako_hw_err_kana, sizeof(oyako_hw_err_kana) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xef\xbd\xb4\xef\xbe\x97\xef\xbd\xb0"
+        "\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    const uint8_t oyako_hw_file[] = {
+        // ﾌｧｲﾙの保存に失敗しました
+        0xcc, 0xa7, 0xb2, 0xd9, 0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9,
+        0x8e, 0xb8, 0x94, 0x73, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("oyako_chs_hw_kana_file", oyako_hw_file, sizeof(oyako_hw_file) - 1,
+        "\xef\xbe\x8c\xef\xbd\xa7\xef\xbd\xb2\xef\xbe\x99"
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    // 8l. Embedded GBK path containing an ASCII-range GBK trail byte (遊 = DF 5B) inside a
+    //     multiline CP932 error dialog must stay GBK ("中文遊戲" / "遊戲"), not half-width kana.
+    const uint8_t oyako_gbk_path_ascii_trail[] = {
+        // エラーが発生しました。\nC:\Users\中文遊戲\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 'U', 's', 'e', 'r', 's', '\\',
+        0xd6, 0xd0, 0xce, 0xc4, 0xdf, 0x5b, 0x91, 0xf2, '\\',
+        's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_gbk_path_ascii_trail", oyako_gbk_path_ascii_trail,
+        sizeof(oyako_gbk_path_ascii_trail) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\Users\\\xe4\xb8\xad\xe6\x96\x87\xe9\x81\x8a\xe6\x88\xb2\\save.asd");
+
+    const uint8_t oyako_gbk_path_youxi_only[] = {
+        // エラーが発生しました。\nC:\Users\遊戲\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 'U', 's', 'e', 'r', 's', '\\',
+        0xdf, 0x5b, 0x91, 0xf2, '\\',
+        's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_gbk_path_youxi_only", oyako_gbk_path_youxi_only,
+        sizeof(oyako_gbk_path_youxi_only) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\Users\\\xe9\x81\x8a\xe6\x88\xb2\\save.asd");
+
+    // 8m. Quit prompt with a long kanji-heavy CP932 GameName inside 『...』 must still classify
+    //     the outer Japanese suffix as CP932 so "終了" is never corrupted by CHS.TBL.
+    const uint8_t oyako_long_cp932_title_quit[] = {
+        // 『母娘乱館特別完全収録版』を終了しますか？
+        0x81, 0x77,
+        0x95, 0xea, 0x96, 0xba, 0x97, 0x90, 0x8a, 0xd9, 0x93, 0xc1, 0x95, 0xca,
+        0x8a, 0xae, 0x91, 0x53, 0x8e, 0xfb, 0x98, 0x5e, 0x94, 0xc5,
+        0x81, 0x78,
+        0x82, 0xf0, 0x8f, 0x49, 0x97, 0xb9, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x00
+    };
+    check_decode("oyako_chs_long_cp932_title_quit", oyako_long_cp932_title_quit,
+        sizeof(oyako_long_cp932_title_quit) - 1,
+        "\xe3\x80\x8e\xe6\xaf\x8d\xe5\xa8\x98\xe4\xb9\xb1\xe9\xa4\xa8\xe7\x89\xb9\xe5\x88\xa5"
+        "\xe5\xae\x8c\xe5\x85\xa8\xe5\x8f\x8e\xe9\x8c\xb2\xe7\x89\x88\xe3\x80\x8f"
+        "\xe3\x82\x92\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
+
+    // 8n. Odd-length half-width katakana followed by ASCII letter or backslash (e.g. ﾗﾝｽX / \ﾗﾝｽ\)
+    //     must NOT swallow the ASCII byte into a GBK pair.
+    const uint8_t oyako_hw_title_quit[] = {
+        // 『ﾗﾝｽX』を終了しますか？
+        0x81, 0x77, 0xd7, 0xdd, 0xbd, 'X', 0x81, 0x78,
+        0x82, 0xf0, 0x8f, 0x49, 0x97, 0xb9, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x00
+    };
+    check_decode("oyako_chs_hw_title_ascii_suffix", oyako_hw_title_quit,
+        sizeof(oyako_hw_title_quit) - 1,
+        "\xe3\x80\x8e\xef\xbe\x97\xef\xbe\x9d\xef\xbd\xbd" "X\xe3\x80\x8f"
+        "\xe3\x82\x92\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
+
+    const uint8_t oyako_hw_dir_path[] = {
+        // エラーが発生しました。\nC:\ﾗﾝｽ\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 0xd7, 0xdd, 0xbd, '\\', 's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_hw_dir_backslash", oyako_hw_dir_path,
+        sizeof(oyako_hw_dir_path) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\\xef\xbe\x97\xef\xbe\x9d\xef\xbd\xbd\\save.asd");
+
+    sys4_reset_mai_word_table();
     return 0;
 }
 """

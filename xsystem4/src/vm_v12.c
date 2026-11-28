@@ -486,6 +486,99 @@ static bool array_hll_ref_ret_is_two_slot(int parameter)
 		|| parameter == AIN_ENUM || parameter == AIN_IFACE;
 }
 
+static bool array_arg_is_owned_value_temp(struct ain_hll_function *f, int arg_idx, int parameter)
+{
+	if (arg_idx < 1 || arg_idx >= f->nr_arguments)
+		return false;
+	if (f->arguments[arg_idx].type.data != AIN_HLL_PARAM)
+		return false;
+	if (ain->version >= 14) {
+		int hi = (parameter >> 16) & 0xffff;
+		int lo = parameter & 0xffff;
+		return hi == 0 && lo == 2;
+	}
+	return parameter == AIN_STRUCT || parameter == AIN_ARRAY || parameter == AIN_DELEGATE;
+}
+
+static bool type_may_run_destructor(enum ain_data_type data, int struc,
+		const struct ain_type *sub, int depth)
+{
+	if (depth > 16)
+		return true;
+	switch (data) {
+	case AIN_STRUCT:
+	case AIN_ARRAY_STRUCT: {
+		if (!ain || struc < 0 || struc >= ain->nr_structures)
+			return true;
+		struct ain_struct *s = &ain->structures[struc];
+		if (s->destructor > 0)
+			return true;
+		for (int i = 0; i < s->nr_members; i++) {
+			const struct ain_type *mt = &s->members[i].type;
+			if (type_may_run_destructor(mt->data, mt->struc, mt->array_type, depth + 1))
+				return true;
+		}
+		return false;
+	}
+	case AIN_ARRAY:
+	case AIN_OPTION:
+		if (!sub)
+			return true;
+		return type_may_run_destructor(sub->data, sub->struc, sub->array_type, depth + 1);
+	default:
+		return false;
+	}
+}
+
+static bool can_move_array_value_temp(struct ain_hll_function *f, int arg_idx, int parameter,
+		int array_slot, const struct ain_type *type, int val_slot)
+{
+	if (!array_arg_is_owned_value_temp(f, arg_idx, parameter))
+		return false;
+	if (type_stride(type) != 1 || val_slot < 0 || val_slot == array_slot)
+		return false;
+	if (!page_index_valid(val_slot) || heap[val_slot].ref != 1 || !heap[val_slot].page)
+		return false;
+	struct page *vp = heap[val_slot].page;
+	switch (type->data) {
+	case AIN_STRUCT:
+		return vp->type == STRUCT_PAGE
+			&& (type->struc < 0 || vp->index == type->struc)
+			&& !type_may_run_destructor(AIN_STRUCT, vp->index, NULL, 0);
+	case AIN_ARRAY:
+	case AIN_ARRAY_TYPE: {
+		if (vp->type != ARRAY_PAGE)
+			return false;
+		struct ain_type elem = element_type(vp);
+		return !type_may_run_destructor(elem.data, elem.struc, elem.array_type, 0);
+	}
+	case AIN_DELEGATE:
+		return vp->type == DELEGATE_PAGE;
+	default:
+		return false;
+	}
+}
+
+static void move_insert_element(int slot, int index, int val_slot)
+{
+	struct page *p = heap_get_page(slot);
+	struct ain_type type = element_type(p);
+	int width = type_stride(&type), size = v12_array_length(p);
+	if (unlikely(index < 0 || index > size)) {
+		static unsigned int warn_count = 0;
+		if (warn_count++ < 64)
+			WARNING("Array.Insert index out of bounds: %d (size=%d)", index, size);
+		index = index < 0 ? 0 : size;
+	}
+	resize_array_mode(slot, size + 1, false);
+	p = heap_get_page(slot);
+	elem_value_fini(&p->values[size * width], &type, true);
+	p = heap_get_page(slot);
+	memmove(p->values + (index + 1) * width, p->values + index * width,
+		(size - index) * width * sizeof(*p->values));
+	p->values[index * width].i = val_slot;
+}
+
 static void cleanup_array_value_args(struct ain_hll_function *f, int parameter, union vm_value args[8][3])
 {
 	// Value arguments are compiler-created temporaries. Reference arguments
@@ -605,9 +698,19 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 		else stack_push(count == size);
 	} else if (!strcmp(name, "PushBack") || !strcmp(name, "Add") || !strcmp(name, "EmplaceBack")) {
 		bool is_emplace = !strcmp(name, "EmplaceBack");
+		struct ain_type elem_t = element_type(p);
+		bool can_move = !is_emplace && can_move_array_value_temp(f, 1, parameter, slot, &elem_t, args[1][0].i);
 		resize_array_mode(slot, size + 1, is_emplace);
 		if (!is_emplace) {
-			set_element(slot, size, args[1]);
+			if (can_move) {
+				p = heap_get_page(slot);
+				elem_value_fini(&p->values[size], &elem_t, true);
+				p = heap_get_page(slot);
+				p->values[size].i = args[1][0].i;
+				args[1][0].i = -1;
+			} else {
+				set_element(slot, size, args[1]);
+			}
 		} else {
 			p = heap_get_page(slot);
 			struct ain_type type = element_type(p);
@@ -618,7 +721,13 @@ static bool array_call(struct ain_hll_function *f, int parameter)
 			return_element(slot, size);
 		}
 	} else if (!strcmp(name, "Insert")) {
-		insert_element(slot, args[1][0].i, args[2]);
+		struct ain_type elem_t = element_type(p);
+		if (can_move_array_value_temp(f, 2, parameter, slot, &elem_t, args[2][0].i)) {
+			move_insert_element(slot, args[1][0].i, args[2][0].i);
+			args[2][0].i = -1;
+		} else {
+			insert_element(slot, args[1][0].i, args[2]);
+		}
 	} else if (!strcmp(name, "PopBack")) {
 		if (size) resize_array(slot, size - 1);
 	} else if (!strcmp(name, "Duplicate")) {
