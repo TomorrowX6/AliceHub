@@ -793,6 +793,8 @@ int save_text_gbk_bias(const char *s)
 		return 0;
 	int gb2312_pairs = 0;
 	int gbk_low_trail = 0;
+	int sjis_jis1_kanji = 0;
+	int sjis_non_jis1 = 0;
 	for (const uint8_t *r = (const uint8_t *)s; *r;) {
 		if (*r < 0x80) {
 			r++;
@@ -803,6 +805,11 @@ int save_text_gbk_bias(const char *s)
 			gbk_low_trail++;
 			r += 2;
 		} else if (r[1]) {
+			uint16_t code = ((uint16_t)r[0] << 8) | r[1];
+			if (code >= 0x889f && code <= 0x9872 && ((r[1] >= 0x40 && r[1] <= 0x7e) || (r[1] >= 0x80 && r[1] <= 0xfc)))
+				sjis_jis1_kanji++;
+			else
+				sjis_non_jis1++;
 			r += 2;
 		} else {
 			break;
@@ -870,6 +877,8 @@ int save_text_gbk_bias(const char *s)
 	}
 	if (gbk_plausible && (gb2312_pairs >= 2 || halfwidth_kana == 0))
 		bias += gb2312_pairs * 4;
+	if (!gbk_plausible && ok_s && sjis_jis1_kanji > 0 && sjis_non_jis1 == 0)
+		bias -= sjis_jis1_kanji * 6;
 	if (!gbk_plausible && bias > 0)
 		bias = 0;
 	free(us);

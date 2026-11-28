@@ -226,6 +226,8 @@ int main(void) {{
     assert(save_text_gbk_bias("\\xb1\\xb2") <= 0);
     // Traditional Chinese GBK-extension string '儲檔' (83 A6 99 6E) must NOT vote -100 Shift-JIS!
     assert(save_text_gbk_bias("\\x83\\xa6\\x99\\x6e") == 0);
+    // Japanese Shift-JIS kanji-only save text '山田' (8E 52 93 63) MUST have negative Shift-JIS bias!
+    assert(save_text_gbk_bias("\\x8e\\x52\\x93\\x63") < 0);
     // Real GBK Chinese save comment ('存档一：开始') MUST have positive GBK bias!
     assert(save_text_gbk_bias("\\xb4\\xe6\\xb5\\xb5\\xd2\\xbb\\xa3\\xba\\xbf\\xaa\\xca\\xbc") > 0);
     // Real Shift-JIS save comment ('セーブ１') MUST have negative GBK bias!
@@ -270,8 +272,9 @@ int main(void) {
     assert(cjk_looks_like_gbk((const uint8_t *)"\xb1\xb2") == false);
     assert(cjk_looks_like_gbk((const uint8_t *)"\xb9\xde\xb0\xd1\xbd\xc0\xb0\xc4") == false);
     assert(cjk_looks_like_gbk((const uint8_t *)"\xb1\xb2\xb3\xb4\xb5\xb6\xb7\xb8") == false);
-    // 3. Real GBK sentence MUST trigger cjk_looks_like_gbk()!
+    // 3. Real GBK sentences (including '开始冒险。' where '冒' = C3 B0) MUST trigger cjk_looks_like_gbk()!
     assert(cjk_looks_like_gbk((const uint8_t *)"\xbf\xaa\xca\xbc\xd3\xce\xcf\xb7\xa1\xa3") == true);
+    assert(cjk_looks_like_gbk((const uint8_t *)"\xbf\xaa\xca\xbc\xc3\xb0\xcf\xd5\xa1\xa3") == true);
 
     // 4. UTF-8 mode display width & hankaku/zenkaku detection
     assert(cjk_display_width("Caf\xc3\xa9", UTF8) == 4);
@@ -506,8 +509,9 @@ int main() {
             ini_file = tdp / "Custom.ini"
             long_val = "A" * 70000
             ini_file.write_text(
-                f'codename = Data\\Rance10_EN.ain ; English patch\n'
-                f'ViewWidth = 1280 ; comment\n'
+                f'codename = Data\\Rance10_EN.ain ; English, v2\n'
+                f'ViewWidth = 1280 ; width, in pixels\n'
+                f'ViewHeight = 720 // height, in pixels\n'
                 f'UseJoypad = true\n'
                 f'LongKey = "{long_val}"\n',
                 encoding="utf-8",
@@ -524,13 +528,14 @@ int main() {
 int main(void) {{
     int n = 0;
     struct ini_entry *entries = ini_parse("{ini_file.as_posix()}", &n);
-    assert(entries != NULL && n == 4);
+    assert(entries != NULL && n == 5);
     assert(strcasecmp(entries[0].name->text, "CodeName") == 0);
     assert(entries[0].value.type == INI_STRING);
     assert(strcmp(entries[0].value.s->text, "Data\\\\Rance10_EN.ain") == 0);
     assert(entries[1].value.type == INI_INTEGER && entries[1].value.i == 1280);
-    assert(entries[2].value.type == INI_BOOLEAN && entries[2].value.i == 1);
-    assert(entries[3].value.type == INI_STRING && entries[3].value.s->size == 65535);
+    assert(entries[2].value.type == INI_INTEGER && entries[2].value.i == 720);
+    assert(entries[3].value.type == INI_BOOLEAN && entries[3].value.i == 1);
+    assert(entries[4].value.type == INI_STRING && entries[4].value.s->size == 65535);
     for (int i = 0; i < n; i++) ini_free_entry(&entries[i]);
     free(entries);
     puts("OK");

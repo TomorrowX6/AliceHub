@@ -55,7 +55,11 @@ static bool is_cp1252_punct_or_accented(unsigned char b)
 
 static bool is_english_contraction_after_apostrophe(const unsigned char *s, size_t len, size_t idx)
 {
-    if (idx < 2 || !is_ascii_letter(s[idx - 1]) || !is_ascii_letter(s[idx - 2]) || idx + 1 >= len)
+    if (idx < 1 || !is_ascii_letter(s[idx - 1]) || idx + 1 >= len)
+        return false;
+    bool has_two_letters = idx >= 2 && is_ascii_letter(s[idx - 2]);
+    bool is_standalone_i = s[idx - 1] == 'I' && (idx == 1 || !is_ascii_letter(s[idx - 2]));
+    if (!has_two_letters && !is_standalone_i)
         return false;
     unsigned char n1 = s[idx + 1];
     unsigned char l1 = (n1 >= 'A' && n1 <= 'Z') ? (unsigned char)(n1 + 32) : n1;
@@ -64,6 +68,15 @@ static bool is_english_contraction_after_apostrophe(const unsigned char *s, size
     int n3 = idx + 3 < len ? (int)s[idx + 3] : -1;
     bool n2_not_letter = n2 < 0 || !is_ascii_letter((unsigned char)n2);
     bool n3_not_letter = n3 < 0 || !is_ascii_letter((unsigned char)n3);
+    if (is_standalone_i) {
+        if (l1 == 'm' || l1 == 'd')
+            return n2_not_letter;
+        if (l1 == 'v')
+            return l2 == 'e' && n3_not_letter;
+        if (l1 == 'l')
+            return l2 == 'l' && n3_not_letter;
+        return false;
+    }
     if (l1 == 's' || l1 == 't' || l1 == 'd' || l1 == 'm')
         return n2_not_letter;
     if (l1 == 'r' || l1 == 'v')
@@ -124,7 +137,9 @@ static bool looks_like_cp1252(const unsigned char *s, size_t len, const char *sj
                 byte_ok = is_cp1252_punct_or_accented(b);
         } else if (b >= 0xe0 && b <= 0xef) {
             size_t stem = stem_ascii_letters_around(s, len, i);
-            byte_ok = stem >= 2 && (
+            bool next_ok = next < 0 || (next >= 'a' && next <= 'z') || next == ' ' ||
+                           next == '.' || next == '-' || next == '_' || next == '/' || next == '\\';
+            byte_ok = next_ok && stem >= 2 && (
                 (prev >= 0 && is_ascii_letter((unsigned char)prev)) ||
                 (next >= 'a' && next <= 'z' && i + 2 < len && is_ascii_letter(s[i + 2]))
             );

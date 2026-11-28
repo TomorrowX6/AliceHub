@@ -38,8 +38,11 @@ enum ArchiveExtractor {
     }
 
     private static func isEnglishContractionAfterApostrophe(_ rawBytes: [UInt8], at idx: Int) -> Bool {
-        guard idx >= 2, isAsciiLetter(rawBytes[idx - 1]), isAsciiLetter(rawBytes[idx - 2]),
-              idx + 1 < rawBytes.count else { return false }
+        guard idx >= 1, isAsciiLetter(rawBytes[idx - 1]), idx + 1 < rawBytes.count else { return false }
+        let prev = rawBytes[idx - 1]
+        let hasTwoLetters = idx >= 2 && isAsciiLetter(rawBytes[idx - 2])
+        let isStandaloneI = prev == 0x49 && (idx == 1 || !isAsciiLetter(rawBytes[idx - 2]))
+        guard hasTwoLetters || isStandaloneI else { return false }
         let n1 = rawBytes[idx + 1]
         let l1 = (0x41...0x5A).contains(n1) ? n1 + 32 : n1
         let n2: Int = idx + 2 < rawBytes.count ? Int(rawBytes[idx + 2]) : -1
@@ -47,6 +50,14 @@ enum ArchiveExtractor {
         let n3: Int = idx + 3 < rawBytes.count ? Int(rawBytes[idx + 3]) : -1
         let n2NotLetter = n2 < 0 || !isAsciiLetter(UInt8(n2))
         let n3NotLetter = n3 < 0 || !isAsciiLetter(UInt8(n3))
+        if isStandaloneI {
+            switch l1 {
+            case 0x6D, 0x64: return n2NotLetter // m, d
+            case 0x76: return l2 == 0x65 && n3NotLetter // ve
+            case 0x6C: return l2 == 0x6C && n3NotLetter // ll
+            default: return false
+            }
+        }
         switch l1 {
         case 0x73, 0x74, 0x64, 0x6D: return n2NotLetter // s, t, d, m
         case 0x72, 0x76: return l2 == 0x65 && n3NotLetter // re, ve
@@ -107,7 +118,9 @@ enum ArchiveExtractor {
                 }
             } else if (0xE0...0xEF).contains(b) {
                 let stemLetters = stemAsciiLettersAround(rawBytes, at: i)
-                byteOk = stemLetters >= 2 && (
+                let nextOk = next < 0 || (0x61...0x7A).contains(next) || next == 0x20 ||
+                    next == 0x2E || next == 0x2D || next == 0x5F || next == 0x2F || next == 0x5C
+                byteOk = nextOk && stemLetters >= 2 && (
                     (prev >= 0 && isAsciiLetter(UInt8(prev))) ||
                         ((0x61...0x7A).contains(next) && i + 2 < rawBytes.count && isAsciiLetter(rawBytes[i + 2]))
                 )

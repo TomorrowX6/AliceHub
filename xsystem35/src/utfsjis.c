@@ -419,7 +419,7 @@ bool cjk_looks_like_gbk(const uint8_t *src) {
 		return false;
 
 	int sjis_kana = 0, gb2312_valid = 0, gbk_low_trail = 0;
-	int hankaku_kata_marks = 0, gb2312_punct = 0;
+	int hankaku_voiced = 0, hankaku_kata_marks = 0, gb2312_punct = 0;
 	const uint8_t *p = src;
 	uint8_t prev = 0;
 	while (*p) {
@@ -438,8 +438,10 @@ bool cjk_looks_like_gbk(const uint8_t *src) {
 			if (b == 0xb0 && prev >= 0xb1 && prev <= 0xdf) {
 				hankaku_kata_marks++;
 			} else if (b == 0xde && (prev == 0xb3 || (prev >= 0xb6 && prev <= 0xc4) || (prev >= 0xca && prev <= 0xce))) {
+				hankaku_voiced++;
 				hankaku_kata_marks++;
 			} else if (b == 0xdf && prev >= 0xca && prev <= 0xce) {
+				hankaku_voiced++;
 				hankaku_kata_marks++;
 			} else if (b == 0xaf && prev >= 0xb1 && prev <= 0xdd && p[1] >= 0xb1 && p[1] <= 0xdd) {
 				hankaku_kata_marks++;
@@ -476,10 +478,10 @@ bool cjk_looks_like_gbk(const uint8_t *src) {
 		return false;
 	if (sjis_err <= gbk_err) {
 		// Pure GB2312 sentences whose bytes fall in 0xA1..0xDF parse as 1-byte halfwidth katakana in SJIS
-		// with sjis_err == 0; only flip on a tie when GB2312 punctuation is present and zero halfwidth
-		// katakana markers (voiced ﾞ/ﾟ, prolonged ｰ, geminate ｯ) appear.
+		// with sjis_err == 0; accept on a tie when GB2312 punctuation is present, no voiced halfwidth
+		// katakana (ﾞ/ﾟ) appear, and isolated apparent marks (e.g. '冒' = C3 B0) stay rare.
 		return gbk_err == 0 && sjis_kana == 0 && gb2312_valid >= 4 &&
-			hankaku_kata_marks == 0 && gb2312_punct > 0;
+			gb2312_punct > 0 && hankaku_voiced == 0 && hankaku_kata_marks < gb2312_valid / 2;
 	}
 	if (gbk_err > 0 && (gb2312_valid < 4 || sjis_err <= gbk_err * 2))
 		return false;

@@ -249,5 +249,13 @@ public class MultiLangImportAndBadgeTest {
         assertEquals("Map\u5730.ain", ArchiveExtractor.INSTANCE.decodeBestCjkText(new byte[]{
                 0x4D, 0x61, 0x70, (byte) 0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E
         }, false));
+        // "Map顴.ain" (E9 41 = 顴, uppercase trail byte 'A') must NOT become "MapéA.ain"
+        assertEquals("Map\u9874.ain", ArchiveExtractor.INSTANCE.decodeBestCjkText(new byte[]{
+                0x4D, 0x61, 0x70, (byte) 0xE9, 0x41, 0x2E, 0x61, 0x69, 0x6E
+        }, false));
+        // Standalone "I’m Ready.txt" (49 92 6D) MUST decode as CP1252 English contraction
+        assertEquals("I\u2019m Ready.txt", ArchiveExtractor.INSTANCE.decodeBestCjkText(new byte[]{
+                0x49, (byte) 0x92, 0x6D, 0x20, 0x52, 0x65, 0x61, 0x64, 0x79, 0x2E, 0x74, 0x78, 0x74
+        }, false));
     }
 }

@@ -32,13 +32,15 @@ char *string_buf_ptr;
 
 unsigned long yini_line = 1;
 
-static int parse_unquoted_rhs(const char *text, size_t len)
+static int parse_unquoted_rhs(const char *text, size_t len, int *started_comment)
 {
     size_t end = len;
+    *started_comment = 0;
     for (size_t i = 0; i < len; i++) {
         if (text[i] == ';' || (text[i] == '/' && i + 1 < len && text[i + 1] == '/') ||
             (text[i] == '#' && (i == 0 || text[i - 1] == ' ' || text[i - 1] == '\t'))) {
             end = i;
+            *started_comment = 1;
             break;
         }
     }
@@ -89,6 +91,7 @@ static int parse_unquoted_rhs(const char *text, size_t len)
 
 %x str
 %x rhs
+%x linecomment
 
 %%
 
@@ -111,6 +114,11 @@ Formation                 return FORMATION;
 
 \"      string_buf_ptr = string_buf; BEGIN(str);
 
+<linecomment>{
+    [^\n]*                ;
+    \n                    yini_line++; BEGIN(INITIAL);
+}
+
 <rhs>{
     [ \t\r]+              ;
     \/\/[^\n]*            BEGIN(INITIAL);
@@ -118,9 +126,11 @@ Formation                 return FORMATION;
     \n                    yini_line++; BEGIN(INITIAL);
     \"                    string_buf_ptr = string_buf; BEGIN(str);
     \{                    BEGIN(INITIAL); return '{';
-    [^ \t\r\n,\"\{\};][^\r\n,}]* {
-        BEGIN(INITIAL);
-        return parse_unquoted_rhs(yini_text, (size_t)yini_leng);
+    [^ \t\r\n,\"\{\};][^\r\n,};]* {
+        int started_comment = 0;
+        int tok = parse_unquoted_rhs(yini_text, (size_t)yini_leng, &started_comment);
+        BEGIN(started_comment ? linecomment : INITIAL);
+        return tok;
     }
 }
 

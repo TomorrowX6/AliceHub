@@ -99,9 +99,13 @@ object ArchiveExtractor {
             (b in 0xC0..0xFF && b != 0xD7 && b != 0xF7)
 
     private fun isEnglishContractionAfterApostrophe(rawBytes: ByteArray, idx: Int): Boolean {
-        if (idx < 2 || !isAsciiLetter(rawBytes[idx - 1].toInt() and 0xFF) || !isAsciiLetter(rawBytes[idx - 2].toInt() and 0xFF)) {
+        if (idx < 1 || !isAsciiLetter(rawBytes[idx - 1].toInt() and 0xFF)) {
             return false
         }
+        val prev = rawBytes[idx - 1].toInt() and 0xFF
+        val hasTwoLetters = idx >= 2 && isAsciiLetter(rawBytes[idx - 2].toInt() and 0xFF)
+        val isStandaloneI = prev == 'I'.code && (idx == 1 || !isAsciiLetter(rawBytes[idx - 2].toInt() and 0xFF))
+        if (!hasTwoLetters && !isStandaloneI) return false
         val n1 = if (idx + 1 < rawBytes.size) (rawBytes[idx + 1].toInt() and 0xFF) else return false
         val l1 = if (n1 in 'A'.code..'Z'.code) n1 + 32 else n1
         val n2 = if (idx + 2 < rawBytes.size) (rawBytes[idx + 2].toInt() and 0xFF) else -1
@@ -109,6 +113,14 @@ object ArchiveExtractor {
         val n3 = if (idx + 3 < rawBytes.size) (rawBytes[idx + 3].toInt() and 0xFF) else -1
         val n2NotLetter = n2 < 0 || !isAsciiLetter(n2)
         val n3NotLetter = n3 < 0 || !isAsciiLetter(n3)
+        if (isStandaloneI) {
+            return when (l1) {
+                'm'.code, 'd'.code -> n2NotLetter
+                'v'.code -> l2 == 'e'.code && n3NotLetter
+                'l'.code -> l2 == 'l'.code && n3NotLetter
+                else -> false
+            }
+        }
         return when (l1) {
             's'.code, 't'.code, 'd'.code, 'm'.code -> n2NotLetter
             'r'.code, 'v'.code -> l2 == 'e'.code && n3NotLetter
@@ -170,7 +182,9 @@ object ArchiveExtractor {
                 }
                 b in 0xE0..0xEF -> {
                     val stemLetters = stemAsciiLettersAround(rawBytes, i)
-                    stemLetters >= 2 && (
+                    val nextOk = next < 0 || next in 'a'.code..'z'.code || next == ' '.code ||
+                        next == '.'.code || next == '-'.code || next == '_'.code || next == '/'.code || next == '\\'.code
+                    nextOk && stemLetters >= 2 && (
                         (prev >= 0 && isAsciiLetter(prev)) ||
                             (next in 'a'.code..'z'.code && i + 2 < rawBytes.size && isAsciiLetter(rawBytes[i + 2].toInt() and 0xFF))
                         )

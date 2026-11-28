@@ -184,7 +184,7 @@ enum LocalGameImport {
 
     static func stageFolder(_ source: URL, to output: URL) throws {
         var primary: (url: URL, engine: GameEngine, names: Set<String>)?
-        var fallbackPrimary: (url: URL, engine: GameEngine, names: Set<String>)?
+        var weakSystem4Candidates = [(url: URL, names: Set<String>)]()
         var sources = [(url: URL, data: Bool, engine: GameEngine?, names: Set<String>)]()
         var patches = [URL]()
         var pending = [(source, 0)]
@@ -211,8 +211,8 @@ enum LocalGameImport {
                 if engine == .system4 { patches += children.filter { directory($0) && leaf($0) == "patchcn" } }
                 if depth == 0 { break }
             } else {
-                if engine == .system4 && !system4Code(local).isEmpty && fallbackPrimary == nil {
-                    fallbackPrimary = (root, engine, local)
+                if engine == .system4 && !system4Code(local).isEmpty {
+                    weakSystem4Candidates.append((root, local))
                 }
                 if depth > 0 && isCompanionData(root, names: local) {
                     sources.append((root, true, engine, local))
@@ -224,7 +224,18 @@ enum LocalGameImport {
                 }
             }
         }
-        guard let primary = primary ?? fallbackPrimary else { throw LibraryError.notGame }
+        if primary == nil, let first = weakSystem4Candidates.first {
+            primary = (first.url, .system4, first.names)
+        }
+        guard let primary else { throw LibraryError.notGame }
+        if primary.engine == .system4 {
+            for candidate in weakSystem4Candidates where candidate.url.path != primary.url.path {
+                if matchesDisc(engine: .system4, names: candidate.names, primaryEngine: primary.engine,
+                               primaryNames: primary.names) {
+                    sources.append((candidate.url, false, .system4, candidate.names))
+                }
+            }
+        }
         let rules = try LocalImportCleanup(root: primary.url)
         if rules.game == .ixseal {
             for patch in patches {

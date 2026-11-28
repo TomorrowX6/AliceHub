@@ -188,6 +188,23 @@ struct OnlineGameChecks {
         precondition(ArchiveExtractor.decodeBestCjkText(Data([0x47, 0x72, 0x6F, 0xDF, 0x65, 0x20, 0x53, 0x74, 0x72, 0x61, 0xDF, 0x65, 0x2E, 0x74, 0x78, 0x74])) == "Gro\u{00DF}e Stra\u{00DF}e.txt")
         precondition(ArchiveExtractor.decodeBestCjkText(Data([0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E]), preferGbkOnTie: false) == "地.ain")
         precondition(ArchiveExtractor.decodeBestCjkText(Data([0x4D, 0x61, 0x70, 0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E]), preferGbkOnTie: false) == "Map地.ain")
+        precondition(ArchiveExtractor.decodeBestCjkText(Data([0x4D, 0x61, 0x70, 0xE9, 0x41, 0x2E, 0x61, 0x69, 0x6E]), preferGbkOnTie: false) == "Map顴.ain")
+        precondition(ArchiveExtractor.decodeBestCjkText(Data([0x49, 0x92, 0x6D, 0x20, 0x52, 0x65, 0x61, 0x64, 0x79, 0x2E, 0x74, 0x78, 0x74]), preferGbkOnTie: false) == "I\u{2019}m Ready.txt")
+
+        // Multi-disc bare .ain folder import merges sibling disc assets
+        let bareDiscBundle = root.appendingPathComponent("BareDiscBundle")
+        let bareDisc1 = bareDiscBundle.appendingPathComponent("Disc 1")
+        let bareDisc2 = bareDiscBundle.appendingPathComponent("Disc 2")
+        let bareStaged = root.appendingPathComponent("BareDiscStaged")
+        try files.createDirectory(at: bareDisc1, withIntermediateDirectories: true)
+        try files.createDirectory(at: bareDisc2, withIntermediateDirectories: true)
+        try Data("code".utf8).write(to: bareDisc1.appendingPathComponent("Demo.ain"))
+        try Data("cg".utf8).write(to: bareDisc1.appendingPathComponent("DemoCG.afa"))
+        try Data("code".utf8).write(to: bareDisc2.appendingPathComponent("Demo.ain"))
+        try Data("wa".utf8).write(to: bareDisc2.appendingPathComponent("DemoWA.afa"))
+        try LocalGameImport.stageFolder(bareDiscBundle, to: bareStaged)
+        precondition(files.fileExists(atPath: bareStaged.appendingPathComponent("DemoCG.afa").path))
+        precondition(files.fileExists(atPath: bareStaged.appendingPathComponent("DemoWA.afa").path))
 
         // Patch folder with bare .ain must NOT displace complete game folder with INI + assets
         let bundleRoot = root.appendingPathComponent("BundleWithPatch")

@@ -325,6 +325,7 @@ int main(int argc, char **argv)
             (b"\x83\x5c\\System40.ini", b"codename = \x95\x5c.ain ; unquoted\n", 0),
             (b"\x83\x5c\\\x95\x5c.ain", b"code", 0),
             (b"\x83\x5c\\\x92n.ain", b"kanji_chi", 0),
+            (b"\x83\x5c\\Map\xe9A.ain", b"kanji_upper", 0),
             (b"\x83\x5c\\.xsys4rc", b"font=ok", 0),
             (b"__MACOSX/._weird:name", b"appledouble", 0),
         ]))
@@ -332,19 +333,22 @@ int main(int argc, char **argv)
         installed = self.library / "xsystem4/games/ソ"
         self.assertEqual((installed / "表.ain").read_bytes(), b"code")
         self.assertEqual((installed / "地.ain").read_bytes(), b"kanji_chi")
+        self.assertEqual((installed / "Map顴.ain").read_bytes(), b"kanji_upper")
         self.assertEqual((installed / ".xsys4rc").read_bytes(), b"font=ok")
         self.assertFalse((installed / "__MACOSX").exists())
 
-        # 2. Non-UTF-8 CP1252 European ZIP ('Café\Rance’s Guide.txt')
+        # 2. Non-UTF-8 CP1252 European ZIP ('Café\Rance’s Guide.txt', 'Café\I’m Ready.txt')
         cp1252_zip = self.sd / "eu_cp1252.zip"
         cp1252_zip.write_bytes(make_raw_zip([
             (b"Caf\xe9\\System40.ini", b"codename = RanceVI.ain\n", 0),
             (b"Caf\xe9\\RanceVI.ain", b"code", 0),
             (b"Caf\xe9\\Rance\x92s Guide.txt", b"readme", 0),
+            (b"Caf\xe9\\I\x92m Ready.txt", b"ready", 0),
         ]))
         self.assertEqual(self.run_import(cp1252_zip), "local:xsystem4:Café")
         installed_eu = self.library / "xsystem4/games/Café"
         self.assertEqual((installed_eu / "Rance\u2019s Guide.txt").read_bytes(), b"readme")
+        self.assertEqual((installed_eu / "I\u2019m Ready.txt").read_bytes(), b"ready")
 
         # 3. Multi-disc System 4 with both AliceCN.ain and Rance10.ain on Disc 1 merges Rance10Sound.afa from Disc 2
         images = self.sd / "multidisc_en"
