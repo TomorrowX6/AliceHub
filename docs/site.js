@@ -73,73 +73,73 @@
     zh: {
       'nav.engines': '三核引擎',
       'nav.platforms': '三端实机',
-      'nav.features': '功能详解',
+      'nav.features': '功能',
       'nav.catalog': '作品滚轴',
       'nav.download': '下载',
       'nav.cta': '获取版本',
-      'hero.badge': 'ZERO WINE · ZERO WINLATOR · PURE NATIVE SDL2',
+      'hero.badge': 'NATIVE SDL2 · ZERO WINE',
       'hero.sub': '原生运行 System 1–4',
-      'hero.lead': '在 <strong>Android、iOS / iPadOS 与 Nintendo Switch</strong> 上通过三套原生引擎直接运行 AliceSoft 经典作品，无需模拟转译，保持 60fps 流畅响应与完整存档生态。',
+      'hero.lead': '<strong>Android、iOS 与 Switch</strong> 三端直跑 AliceSoft 经典作品，零转译 60fps，存档全互通。',
       'hero.ctaPrimary': '下载最新版',
-      'hero.ctaSecondary': '浏览完整功能',
-      'hero.m1': '原生引擎 · Sys 1–4',
-      'hero.m2': 'Android · iOS · Switch',
-      'hero.m3': '内置目录 · 含 54+ 汉化',
-      'hero.m4': '指令转译损耗',
-      'hero.hint': '移动光标观察瞳孔追踪与 3D 视差 · 点击触发光波涟漪',
+      'hero.ctaSecondary': '功能一览',
+      'hero.m1': '原生引擎',
+      'hero.m2': '三端直跑',
+      'hero.m3': '内置目录',
+      'hero.m4': '转译损耗',
+      'hero.hint': '移动光标追踪视差 · 点击触发脉冲',
       'engines.kicker': '01 / TRIPLE NATIVE KERNEL',
-      'engines.title': '三套独立原生内核',
-      'engines.sub': '自动识别游戏根目录标记并路由至对应引擎——从 1989 年的早期 DAT 作品到现代 3D 骨骼与粒子动画，一套启动器全部原生运行。',
-      'engines.markersLabel': '自动识别标记',
+      'engines.title': '三套原生内核',
+      'engines.sub': '自动识别目录标记并路由引擎，覆盖 1989 至今全世代作品。',
+      'engines.markersLabel': '识别标记',
       'engines.samplesLabel': '代表作品',
-      'platforms.kicker': '02 / MULTI-PLATFORM RUNTIME',
+      'platforms.kicker': '02 / MULTI-PLATFORM',
       'platforms.title': '三端原生，一致体验',
-      'platforms.sub': 'Android、iOS / iPadOS 与 Nintendo Switch 同步构建并统一发布，全平台均提供 PC 兼容存档导出、启动入口切换与应用内更新检查。',
-      'platforms.deckTitle': '交互操控预览 · 点击测试按键',
-      'platforms.deckInitial': '点击下方按键或 » Ctrl，测试原生手势与手柄映射反馈。',
-      'hb.tabControls': '触控与手柄映射表',
-      'hb.tabWorkflow': '四步快速上手',
-      'hb.tabStorage': '存储目录与同步机制',
-      'features.kicker': '03 / COMPLETE FEATURE SET',
-      'features.title': '面向实机游玩的完整功能体系',
-      'features.sub': '从多格式导入、在线断点续传、无损 MOD 与编码兼容，到 PC 双向存档互通、局内工具与崩溃诊断，覆盖完整游玩生命周期。',
-      'feat.f1.title': 'PC ⇄ 移动端双向无损存档互通与自动备份',
-      'feat.f1.desc': '按游戏目录隔离存档，导入覆盖前自动备份并支持一键恢复；导出 PC 兼容存档时自动读取对应 .ain 结构定义，将移动端 X4SS 无损转换并修复为 Windows 原版 GD\\x01\\x01 / .gsave / .rsm 格式，同时支持 <memory> 虚拟内存存档隔离。',
+      'platforms.sub': '同步构建发布，均支持 PC 存档导出、启动入口切换与更新检查。',
+      'platforms.deckTitle': '交互操控测试',
+      'platforms.deckInitial': '点击按键或 » Ctrl，预览原生手势与手柄反馈。',
+      'hb.tabControls': '操控映射',
+      'hb.tabWorkflow': '四步上手',
+      'hb.tabStorage': '存储与同步',
+      'features.kicker': '03 / FEATURES',
+      'features.title': '完整实机功能体系',
+      'features.sub': '导入、MOD、编码、存档互通与局内工具，一站配齐。',
+      'feat.f1.title': 'PC ⇄ 移动端双向存档互通',
+      'feat.f1.desc': '按目录隔离并自动备份；按 .ain 结构将 X4SS 无损转为 PC 原版 GD\\x01\\x01 / .gsave / .rsm，支持 <memory> 隔离。',
       'feat.f2.title': '全格式直读与多碟合并',
-      'feat.f2.desc': '内置流式解压与 ISO9660 / Joliet 提取器，直读 .zip / .rar / .7z（含固实与大字典）及 .iso / .mdf（2048/2352/2448 扇区），自动合并 Disk1/Disk2、覆盖随附补丁并修复文件名乱码。',
-      'feat.f3.title': '60fps 稳帧调度与后台恢复',
-      'feat.f3.desc': '高优先级渲染（-8）与混音（-16）线程、Android 12+ ADPF 动态提频、Android 15+ 16KB 页对齐与 EGLContext 丢失后纹理/FBO/3D 迷宫自动重建，切后台自动挂起音频与 MIDI。',
-      'feat.f4.title': '无损 MOD、汉化与去码补丁',
-      'feat.f4.desc': '在线目录支持更新日志、体积预展示与基础包+增量补丁组合安装，本地导入自动规范版本号；覆盖前自动原子备份原版文件，一键卸载还原，独立去码补丁可单独管理。',
-      'feat.f5.title': '全编码重映射与多轨音频',
-      'feat.f5.desc': '原生支持 Shift-JIS / GBK / Unicode 及 CHS.TBL / UIF / word.mai 汉化重映射，智能识别未汉化 CP932 弹窗；内置 Ogg Vorbis / Opus 语音、xsystem35 原生 MIDI 合成与 playlist.txt 虚拟 CD 音轨。',
-      'feat.f6.title': '流式在线安装与后台保活',
-      'feat.f6.desc': '在线安装默认关闭，同意条款后按需开启；支持精确包体预展示、HTTP Range 断点续传与逐文件 SHA-256 校验，无需双倍暂存空间；Android 前台服务与 iOS 26 后台任务持续下载解压。',
-      'feat.f7.title': '多实例目录、启动入口与存储同步',
-      'feat.f7.desc': '《兰斯 10》支持多目录实例独立保留各版本存档与 MOD；三端均支持单游戏 System 4 启动入口切换（AliceStart.ini / .CHS）；Android 支持共享目录迁移，iOS 支持 iCloud Drive 同步。',
-      'feat.f8.title': '离线编辑、局内修改与崩溃诊断',
-      'feat.f8.desc': '部分作品支持离线存档编辑、全解锁存档导入还原、局内实时数值调节/锁定与主播模式；运行异常或崩溃触发结构化诊断卡片，一键复制/导出 .txt 日志；支持简/日/英三语与自动亮暗主题。',
-      'feat.f9.title': '全屏虚拟手柄编辑器、物理手柄映射与实时字号缩放',
-      'feat.f9.desc': '内置 GAL / RPG 布局预设与可视化拖拽编辑器（支持网格吸附、多步撤销、点按/锁定模式、组合键与截图快捷键），即插即用 Xbox / PlayStation / Switch Pro 手柄；支持 PartsEngine 字体 75%–160% 防溢出缩放与滚动条 100%–300% 加宽。',
-      'feat.f9.preview': '兰斯 10 · 局内字体实时无损重排',
-      'catalog.kicker': '04 / 171+ CATALOG · 36 FEATURED ON REEL',
-      'catalog.title': '跨越四十年作品滚轴',
-      'catalog.sub': '内置 171+ 部作品识别目录（含 54+ 部汉化标识），同时支持自由导入目录之外的任意 AliceSoft System 1–4 作品。悬停暂停滚轴，点击任意封面查看适配详情。',
+      'feat.f2.desc': '内置流式解压与 ISO9660，直读 .zip/.rar/.7z/.iso/.mdf，自动合碟与修复乱码。',
+      'feat.f3.title': '60fps 稳帧与后台恢复',
+      'feat.f3.desc': '高优渲染/混音线程、ADPF 提频、16KB 页对齐与 EGL 纹理/3D 迷宫自动重建。',
+      'feat.f4.title': '无损 MOD 与补丁管理',
+      'feat.f4.desc': '支持在线/本地 MOD、汉化与去码补丁；覆盖前自动原子备份，一键还原原版。',
+      'feat.f5.title': '多编码映射与多轨音频',
+      'feat.f5.desc': '兼容 SJIS/GBK/UTF-8 与 CHS.TBL/UIF/word.mai；内置 Opus、原生 MIDI 与 CD 音轨。',
+      'feat.f6.title': '流式在线安装与续传',
+      'feat.f6.desc': '默认关闭按需开启；HTTP Range 断点续传、SHA-256 校验与后台保活，免双倍空间。',
+      'feat.f7.title': '多实例、入口切换与同步',
+      'feat.f7.desc': '《兰斯 10》多实例隔离、AliceStart.CHS 入口切换，支持共享目录与 iCloud 同步。',
+      'feat.f8.title': '修改器、存档编辑与诊断',
+      'feat.f8.desc': '离线存档编辑、局内数值锁定与主播模式；崩溃导出 .txt 诊断日志，三语亮暗主题。',
+      'feat.f9.title': '虚拟手柄编辑器与实时字号缩放',
+      'feat.f9.desc': 'GAL/RPG 预设与全屏拖拽编辑，支持主流手柄；PartsEngine 字体 75%–160% 无溢出缩放与滚动条加宽。',
+      'feat.f9.preview': '兰斯 10 · 字体实时无损重排',
+      'catalog.kicker': '04 / 171+ CATALOG · 36 ON REEL',
+      'catalog.title': '作品滚轴',
+      'catalog.sub': '内置 171+ 目录（含 54+ 汉化），自由导入任意 System 1–4 作品。悬停暂停，点击查看特性。',
       'catalog.fAll': '全部 36',
       'catalog.fCn': '汉化标识',
-      'catalog.inspHint': '点击上方滚轴中的任意作品封面，查看其对应的原生引擎与支持特性。',
-      'catalog.notice': 'AliceHub 是纯开源引擎与启动器，安装包不包含任何游戏本体或版权素材。请自行准备您合法拥有使用权的游戏文件。',
+      'catalog.inspHint': '点击上方封面，查看引擎路由与支持特性。',
+      'catalog.notice': '纯开源引擎与启动器，不含任何游戏本体，请自行准备合法游戏文件。',
       'download.kicker': '05 / DEPLOYMENT · GPL-2.0',
-      'download.title': '下载最新版本',
-      'download.sub': 'Android、iOS 与 Nintendo Switch 安装包均托管于 GitHub Releases，并由 GitHub Actions 公开构建。',
-      'download.androidReq': 'Android 8.0+ · arm64-v8a · OpenGL ES 3.0 · 直接安装',
-      'download.iosReq': 'iOS 15.0+ · arm64 · 未签名，使用 AltStore / SideStore / Sideloadly 自签',
-      'download.switchReq': 'Homebrew Menu 应用模式 · 解压将 4 个 NRO 放入 SD 卡 /switch/',
+      'download.title': '下载最新版',
+      'download.sub': '三端安装包由 GitHub Actions 公开构建并托管于 Releases。',
+      'download.androidReq': 'Android 8.0+ · arm64-v8a · 直接安装',
+      'download.iosReq': 'iOS 15+ · arm64 · AltStore / SideStore 自签',
+      'download.switchReq': '应用模式 · 4 个 NRO 解压至 SD /switch/',
       'download.copy': '点击复制',
       'download.allReleases': '历史版本',
       'download.ciBuilds': '持续构建',
       'download.source': '开源仓库',
-      'footer.license': '基于 GNU General Public License v2.0 (GPL-2.0) 协议开源。不含游戏本体。',
+      'footer.license': 'GPL-2.0 协议开源 · 不含游戏本体',
       'footer.credits': 'CORE UPSTREAM CREDITS',
       'toast.qqCopied': '已复制 QQ 群号：383917628',
       'toast.pokes': [
@@ -155,223 +155,223 @@
       'nav.catalog': 'Showcase',
       'nav.download': 'Download',
       'nav.cta': 'Get App',
-      'hero.badge': 'ZERO WINE · ZERO WINLATOR · PURE NATIVE SDL2',
+      'hero.badge': 'NATIVE SDL2 · ZERO WINE',
       'hero.sub': 'Native System 1–4',
-      'hero.lead': 'Run four decades of AliceSoft classics natively on <strong>Android, iOS / iPadOS, and Nintendo Switch</strong> through three native SDL2 engines—zero emulation, smooth 60fps pacing, and full PC save interoperability.',
-      'hero.ctaPrimary': 'Download Latest',
-      'hero.ctaSecondary': 'Explore Features',
-      'hero.m1': 'Native Engines · Sys 1–4',
-      'hero.m2': 'Android · iOS · Switch',
-      'hero.m3': 'Built-in · 54+ CN Tags',
-      'hero.m4': 'Emulation Overhead',
-      'hero.hint': 'Move cursor for eye tracking & 3D tilt · Click anywhere for ripple',
+      'hero.lead': 'Run AliceSoft classics natively on <strong>Android, iOS & Switch</strong>—zero Wine, smooth 60fps, full PC save interop.',
+      'hero.ctaPrimary': 'Download',
+      'hero.ctaSecondary': 'Features',
+      'hero.m1': 'Engines',
+      'hero.m2': 'Platforms',
+      'hero.m3': 'Catalog',
+      'hero.m4': 'Overhead',
+      'hero.hint': 'Move to track · Click for kinetic pulse',
       'engines.kicker': '01 / TRIPLE NATIVE KERNEL',
       'engines.title': 'Three Native Kernels',
-      'engines.sub': 'Automatically detects game-root markers and routes to the right native engine—from 1989 DAT releases to modern 3D skeletal & particle epics.',
-      'engines.markersLabel': 'AUTO-DETECT MARKERS',
-      'engines.samplesLabel': 'REPRESENTATIVE TITLES',
-      'platforms.kicker': '02 / MULTI-PLATFORM RUNTIME',
+      'engines.sub': 'Auto-detects root markers and routes every AliceSoft era to its native engine.',
+      'engines.markersLabel': 'MARKERS',
+      'engines.samplesLabel': 'HIGHLIGHTS',
+      'platforms.kicker': '02 / MULTI-PLATFORM',
       'platforms.title': 'Three Platforms, One Standard',
-      'platforms.sub': 'Android, iOS / iPadOS, and Nintendo Switch ship together in GitHub Releases—all supporting PC-compatible save export, launch entries, and in-app update checks.',
-      'platforms.deckTitle': 'Interactive Control Deck · Click to Test',
-      'platforms.deckInitial': 'Press virtual buttons or » Ctrl below to preview native input responses.',
-      'hb.tabControls': 'Touch & Gamepad Map',
-      'hb.tabWorkflow': '4-Step Quick Start',
-      'hb.tabStorage': 'Storage & Sync Guide',
-      'features.kicker': '03 / COMPLETE FEATURE SET',
-      'features.title': 'Complete Native Feature Architecture',
-      'features.sub': 'Covering multi-format import, resumable installs, atomic MODs, CJK remapping, bidirectional PC saves, floating tools, and crash diagnostics.',
-      'feat.f1.title': 'Bidirectional PC ⇄ Mobile Save Interop & Backups',
-      'feat.f1.desc': 'Isolates saves per game folder with automatic pre-overwrite backups; PC-compatible export reads .ain schemas to convert mobile X4SS and repair GD\\x01\\x01 / .gsave / .rsm files, plus <memory> virtual save isolation.',
-      'feat.f2.title': 'All-Format Import & Multi-Disc Merge',
-      'feat.f2.desc': 'Built-in libarchive + ISO9660/Joliet extractors read .zip / .rar / .7z (including solid/large-dict) and .iso / .mdf (2048/2352/2448 sectors), auto-merge multi-disc sets, apply bundled patches, and fix CJK filenames.',
-      'feat.f3.title': '60fps Pacing & Context Recovery',
-      'feat.f3.desc': 'High-priority render (-8) and audio (-16) threads, Android 12+ ADPF boost, Android 15+ 16 KB page alignment, automatic EGLContext texture/FBO/3D dungeon rebuild, and background audio/MIDI suspension.',
-      'feat.f4.title': 'Non-Destructive MODs & Patches',
-      'feat.f4.desc': 'Online release catalogs with file sizes, changelogs, and base+patch combo installs; local imports normalize versions; atomic vanilla backups enable one-tap restore alongside standalone uncensored patches.',
-      'feat.f5.title': 'Full CJK Remaps & Multi-Track Audio',
-      'feat.f5.desc': 'Native Shift-JIS / GBK / Unicode and CHS.TBL / UIF / word.mai remap tables with smart CP932 system popup detection; Ogg Vorbis / Opus voices, xsystem35 native MIDI synthesis, and playlist.txt CDDA.',
-      'feat.f6.title': 'Streaming Online Install & Resumable Chunks',
-      'feat.f6.desc': 'Off by default until terms are accepted; upfront package sizes, HTTP Range pause/resume, and per-file SHA-256 checks without 2× staging space; Android foreground service & iOS 26 background tasks.',
-      'feat.f7.title': 'Multi-Instance, Launch Entries & Sync',
-      'feat.f7.desc': 'Rance X supports independent folders keeping separate saves and MODs; all three platforms switch System 4 launch entries (AliceStart.ini/.CHS); Android shared storage migration & iOS iCloud Drive sync.',
-      'feat.f8.title': 'Save Editor, Live Modifiers & Diagnostics',
-      'feat.f8.desc': 'Offline save editing, full-unlock save import/restore, live in-game value locks, and streamer mode on supported titles; structured crash cards export .txt logs; tri-lingual UI and Auto/Light/Dark themes.',
-      'feat.f9.title': 'Fullscreen Virtual Pad Editor, Controllers & Live Font Scaling',
-      'feat.f9.desc': 'GAL & RPG presets, visual drag-and-drop editor (grid snap, undo, tap/toggle, combos, shortcuts), plug-and-play Xbox/PS/Switch Pro controllers, 75%–160% PartsEngine text scaling, and 100%–300% scrollbars.',
-      'feat.f9.preview': 'Rance X · Live Non-Overflow PartsEngine Text Scale',
-      'catalog.kicker': '04 / 171+ CATALOG · 36 FEATURED ON REEL',
-      'catalog.title': 'Four-Decade Game Reel',
-      'catalog.sub': '171+ recognized catalog entries (54+ localized), plus unrestricted import for any AliceSoft System 1–4 title. Hover to pause; click any cover to inspect supported capabilities.',
+      'platforms.sub': 'Built together on GitHub Releases with PC save export, boot entries & update checks.',
+      'platforms.deckTitle': 'Interactive Input Deck',
+      'platforms.deckInitial': 'Tap buttons or » Ctrl to preview native input events.',
+      'hb.tabControls': 'Controls',
+      'hb.tabWorkflow': 'Quick Start',
+      'hb.tabStorage': 'Storage & Sync',
+      'features.kicker': '03 / FEATURES',
+      'features.title': 'Built for Real Handheld Play',
+      'features.sub': 'Import, MODs, CJK remaps, PC saves & in-game tools in one launcher.',
+      'feat.f1.title': 'PC ⇄ Mobile Save Interop',
+      'feat.f1.desc': 'Per-game save isolation & auto backups; .ain-guided X4SS conversion to Windows GD\\x01\\x01 / .gsave / .rsm plus <memory> isolation.',
+      'feat.f2.title': 'All-Format Import & Multi-Disc',
+      'feat.f2.desc': 'Streaming libarchive + ISO9660 reads .zip/.rar/.7z/.iso/.mdf, merges multi-disc sets & fixes CJK filenames.',
+      'feat.f3.title': '60fps Pacing & Recovery',
+      'feat.f3.desc': 'High-priority render/audio threads, ADPF boost, 16 KB alignment & automatic EGL texture/3D dungeon rebuild.',
+      'feat.f4.title': 'Atomic MODs & Patches',
+      'feat.f4.desc': 'Online & local MODs, translations, and uncensored patches with automatic vanilla backup & one-tap restore.',
+      'feat.f5.title': 'CJK Remaps & Multi-Track Audio',
+      'feat.f5.desc': 'SJIS/GBK/UTF-8 & CHS.TBL/UIF/word.mai remaps; built-in Ogg Opus voices, native MIDI & virtual CDDA.',
+      'feat.f6.title': 'Streaming Online Install',
+      'feat.f6.desc': 'Off by default; HTTP Range resume, SHA-256 checks & background tasks without 2× staging space.',
+      'feat.f7.title': 'Multi-Instance & Sync',
+      'feat.f7.desc': 'Multi-folder Rance X isolation, AliceStart.CHS launch entries, Android shared storage & iOS iCloud sync.',
+      'feat.f8.title': 'Modifiers, Save Editor & Logs',
+      'feat.f8.desc': 'Offline save editor, live locks & streamer mode; crash cards export .txt logs; tri-lingual & Auto themes.',
+      'feat.f9.title': 'Virtual Pad Editor & Live Font Scaling',
+      'feat.f9.desc': 'GAL/RPG presets, drag-and-drop editor & Xbox/PS/Switch Pro controllers; 75%–160% PartsEngine text scaling.',
+      'feat.f9.preview': 'Rance X · Live Non-Overflow Text Scale',
+      'catalog.kicker': '04 / 171+ CATALOG · 36 ON REEL',
+      'catalog.title': 'Game Reel',
+      'catalog.sub': '171+ catalog entries (54+ CN), plus unrestricted System 1–4 import. Hover to pause; click any cover.',
       'catalog.fAll': 'All 36',
       'catalog.fCn': 'CN Tagged',
-      'catalog.inspHint': 'Click any cover in the reel above to inspect its native engine and supported features.',
-      'catalog.notice': 'AliceHub is purely an open-source launcher and engine runtime. No games or copyrighted assets are included—provide game files you own.',
+      'catalog.inspHint': 'Click any cover above to inspect engine & supported features.',
+      'catalog.notice': 'Pure open-source launcher & engines. No games bundled—provide your own files.',
       'download.kicker': '05 / DEPLOYMENT · GPL-2.0',
-      'download.title': 'Download Latest Release',
-      'download.sub': 'Android, iOS, and Nintendo Switch packages are hosted on GitHub Releases and built transparently by GitHub Actions.',
-      'download.androidReq': 'Android 8.0+ · arm64-v8a · OpenGL ES 3.0 · Direct install',
-      'download.iosReq': 'iOS 15.0+ · arm64 · Unsigned; sign with AltStore / SideStore / Sideloadly',
-      'download.switchReq': 'Homebrew Menu (App Mode) · Extract 4 NROs into SD /switch/',
+      'download.title': 'Download Latest',
+      'download.sub': 'Publicly built by GitHub Actions and hosted on GitHub Releases.',
+      'download.androidReq': 'Android 8.0+ · arm64-v8a · Direct install',
+      'download.iosReq': 'iOS 15+ · arm64 · Sign via AltStore / SideStore',
+      'download.switchReq': 'App Mode · Copy 4 NROs to SD /switch/',
       'download.copy': 'Copy',
       'download.allReleases': 'Releases',
-      'download.ciBuilds': 'Nightly CI',
-      'download.source': 'Source Code',
-      'footer.license': 'Open source under GNU General Public License v2.0 (GPL-2.0). No games bundled.',
+      'download.ciBuilds': 'CI Builds',
+      'download.source': 'Source',
+      'footer.license': 'GPL-2.0 Open Source · No games bundled',
       'footer.credits': 'CORE UPSTREAM CREDITS',
       'toast.qqCopied': 'Copied QQ Group: 383917628',
       'toast.pokes': [
         'Alice // 0% Wine · 100% Native SDL2',
         'Alice // 60fps VSync Locked',
-        'Alice // X4SS ⇄ GD\\x01\\x01 Save Interop Ready',
+        'Alice // X4SS ⇄ GD\\x01\\x01 Ready',
       ],
     },
     ja: {
-      'nav.engines': '3つのエンジン',
+      'nav.engines': 'エンジン',
       'nav.platforms': '対応機種',
-      'nav.features': '機能詳細',
+      'nav.features': '機能',
       'nav.catalog': '作品リール',
       'nav.download': '入手',
-      'nav.cta': 'ダウンロード',
-      'hero.badge': 'ZERO WINE · ZERO WINLATOR · PURE NATIVE SDL2',
+      'nav.cta': '入手する',
+      'hero.badge': 'NATIVE SDL2 · ZERO WINE',
       'hero.sub': 'System 1–4 ネイティブ実行',
-      'hero.lead': '<strong>Android、iOS / iPadOS、Nintendo Switch</strong> でアリスソフトの名作を3つのネイティブエンジンにより直接実行。Wine も命令変換も不要、60fps と PC セーブ互換を両立。',
+      'hero.lead': '<strong>Android・iOS・Switch</strong> でアリスソフト名作を直実行。Wine 不要の 60fps、PC セーブ完全互換。',
       'hero.ctaPrimary': '最新版を入手',
-      'hero.ctaSecondary': '機能一覧を見る',
-      'hero.m1': 'ネイティブエンジン · Sys 1–4',
-      'hero.m2': 'Android · iOS · Switch',
-      'hero.m3': '内蔵カタログ · 54+ 翻訳対応',
-      'hero.m4': '変換オーバーヘッド',
-      'hero.hint': 'カーソルで瞳追従＆3D視差 · クリックで波紋エフェクト',
+      'hero.ctaSecondary': '機能一覧',
+      'hero.m1': 'エンジン',
+      'hero.m2': '対応機種',
+      'hero.m3': '内蔵目録',
+      'hero.m4': '変換負荷',
+      'hero.hint': 'カーソル追従 · クリックでパルス',
       'engines.kicker': '01 / TRIPLE NATIVE KERNEL',
-      'engines.title': '3系統のネイティブコア',
-      'engines.sub': 'ルートフォルダのファイルを自動判別して最適なエンジンへルーティング。1989年の DAT 作品から最新の 3D 演出まで1つで完結します。',
-      'engines.markersLabel': '自動判別マーカー',
-      'engines.samplesLabel': '代表作品',
-      'platforms.kicker': '02 / MULTI-PLATFORM RUNTIME',
+      'engines.title': '3系統ネイティブコア',
+      'engines.sub': 'ルート構成を自動判別し、1989年から最新作まで最適エンジンへルーティング。',
+      'engines.markersLabel': '判別マーカー',
+      'engines.samplesLabel': '代表作',
+      'platforms.kicker': '02 / MULTI-PLATFORM',
       'platforms.title': '3プラットフォーム統一体験',
-      'platforms.sub': 'Android・iOS / iPadOS・Nintendo Switch を同時配布。全機種で PC 互換セーブ出力・起動エントリ切替・アップデート確認に対応。',
-      'platforms.deckTitle': '操作プレビュー · ボタンをクリック',
-      'platforms.deckInitial': '下の仮想キーや » Ctrl をクリックして入力応答を確認できます。',
-      'hb.tabControls': 'タッチ＆コントローラー対応表',
-      'hb.tabWorkflow': '4ステップ導入ガイド',
-      'hb.tabStorage': '保存先と同期の仕組み',
-      'features.kicker': '03 / COMPLETE FEATURE SET',
-      'features.title': '携帯機プレイのための全機能体系',
-      'features.sub': 'アーカイブ直展開、レジューム導入、非破壊 MOD、PC 双方向セーブ、仮想パッド編集、診断ログ出力まで実機プレイを全面支援。',
-      'feat.f1.title': 'PC ⇄ モバイル双方向セーブ互換＆自動バックアップ',
-      'feat.f1.desc': '作品ごとにセーブを分離管理し、上書き前の自動バックアップと復元に対応。PC 互換出力時は .ain を参照し X4SS 変換や GD\\x01\\x01/.gsave/.rsm 修復、<memory> セーブ分離も実行。',
-      'feat.f2.title': '全形式直接展開＆複数ディスク統合',
-      'feat.f2.desc': 'libarchive + ISO9660/Joliet 展開器を内蔵。.zip/.rar/.7z（ソリッド対応）と .iso/.mdf（2048/2352/2448 セクタ）を直読し、複数ディスク統合・パッチ適用・文字化け修復を自動化。',
-      'feat.f3.title': '60fps ペーシング＆復帰時再構築',
-      'feat.f3.desc': '高優先度描画（-8）/ 音声（-16）スレッド、Android 12+ ADPF、16KB ページ整列、EGLContext 消失時のテクスチャ/FBO/3D 迷宮自動再構築、バックグラウンド音声自動一時停止。',
-      'feat.f4.title': '非破壊 MOD・翻訳＆修正解除パッチ',
-      'feat.f4.desc': '更新履歴・容量付きオンラインカタログ、差分パッチ適用、ローカル導入に対応。上書き前の自動バックアップによりワンタップで初期状態へ復元できます。',
-      'feat.f5.title': '多文字コード置換＆マルチトラック音声',
-      'feat.f5.desc': 'Shift-JIS / GBK / Unicode・CHS.TBL / UIF / word.mai と未翻訳 CP932 ダイアログ判定に対応。Ogg Vorbis / Opus 音声、xsystem35 MIDI 合成、playlist.txt 仮想 CD 音源を内蔵。',
-      'feat.f6.title': 'ストリーミング導入＆バックグラウンド継続',
-      'feat.f6.desc': '規約同意後に有効化。事前容量表示・HTTP Range レジューム・SHA-256 検証で2倍の一時領域不要。Android フォアグラウンドサービスと iOS 26 バックグラウンド継続に対応。',
-      'feat.f7.title': '複数インスタンス・起動エントリ・柔軟な同期',
-      'feat.f7.desc': 'ランス10はフォルダごとにセーブと MOD を独立管理。全機種で System 4 起動エントリ（AliceStart.ini/.CHS）切替、Android 共有フォルダ移行、iOS iCloud Drive 同期に対応。',
-      'feat.f8.title': 'セーブ編集・リアルタイム補助・クラッシュ診断',
-      'feat.f8.desc': '対応作品でオフラインセーブ編集、全開放セーブ導入、数値ロック、配信者モードを搭載。異常終了時は構造化診断カードと .txt ログ出力、日/中/英 UI・テーマ切替に対応。',
-      'feat.f9.title': 'フルスクリーン仮想パッド編集・コントローラー・リアルタイム文字拡大',
-      'feat.f9.desc': 'GAL / RPG プリセット＆ドラッグ編集（グリッドスナップ・アンドゥ・トグル・同時押し）、Xbox / PS / Switch Pro 即時対応、PartsEngine 文字 75%–160%・スクロールバー 100%–300% 拡大。',
-      'feat.f9.preview': 'ランス10・PartsEngine 文字サイズをリアルタイム再配置',
-      'catalog.kicker': '04 / 171+ CATALOG · 36 FEATURED ON REEL',
-      'catalog.title': '40年を横断する作品リール',
-      'catalog.sub': '171 作品以上の内蔵カタログに加え、カタログ外のあらゆる System 1–4 作品も自由に導入可能。ホバーで一時停止、クリックで対応エンジンと機能を表示。',
+      'platforms.sub': '同時配布。全機種で PC 互換セーブ出力・起動エントリ切替・更新確認に対応。',
+      'platforms.deckTitle': '操作テスト',
+      'platforms.deckInitial': 'ボタンまたは » Ctrl を押して入力応答を確認。',
+      'hb.tabControls': '操作対応表',
+      'hb.tabWorkflow': '導入4手順',
+      'hb.tabStorage': '保存と同期',
+      'features.kicker': '03 / FEATURES',
+      'features.title': '実機プレイ向け完全機能',
+      'features.sub': '導入・MOD・文字コード・PC セーブ互換・補助ツールを統合。',
+      'feat.f1.title': 'PC ⇄ モバイル双方向セーブ互換',
+      'feat.f1.desc': '作品別分離＆自動バックアップ。.ain 参照で X4SS を PC 版 GD\\x01\\x01 / .gsave / .rsm へ無劣化変換。',
+      'feat.f2.title': '全形式直展開＆複数ディスク統合',
+      'feat.f2.desc': 'libarchive + ISO9660 内蔵。.zip/.rar/.7z/.iso/.mdf を直読し統合＆文字化け修復。',
+      'feat.f3.title': '60fps 制御＆復帰再構築',
+      'feat.f3.desc': '高優先度描画/音声、ADPF、16KB 整列、EGL テクスチャ＆3D 迷宮の自動再構築。',
+      'feat.f4.title': '非破壊 MOD＆パッチ管理',
+      'feat.f4.desc': 'オンライン/ローカル MOD・翻訳・修正解除に対応。上書き前自動退避で即復元。',
+      'feat.f5.title': '多文字コード＆マルチ音声',
+      'feat.f5.desc': 'SJIS/GBK/UTF-8・CHS.TBL/UIF/word.mai 対応。Opus 音声・MIDI・仮想 CD 音源内蔵。',
+      'feat.f6.title': 'ストリーミング導入＆レジューム',
+      'feat.f6.desc': '同意後に有効化。HTTP Range 再開・SHA-256 検証・バックグラウンド継続で省容量。',
+      'feat.f7.title': '複数インスタンス＆同期',
+      'feat.f7.desc': 'ランス10分離管理、AliceStart.CHS 切替、Android 共有領域＆iOS iCloud 同期対応。',
+      'feat.f8.title': '改造・セーブ編集・診断ログ',
+      'feat.f8.desc': 'オフライン編集・数値ロック・配信モード搭載。異常終了時は .txt 診断出力。',
+      'feat.f9.title': '仮想パッド編集＆リアルタイム文字拡大',
+      'feat.f9.desc': 'GAL/RPG プリセット＆ドラッグ編集、主要コントローラー対応。PartsEngine 文字 75%–160% 拡大。',
+      'feat.f9.preview': 'ランス10・リアルタイム文字拡大',
+      'catalog.kicker': '04 / 171+ CATALOG · 36 ON REEL',
+      'catalog.title': '作品リール',
+      'catalog.sub': '171+ 内蔵目録に加え任意の System 1–4 作品を導入可能。ホバーで停止、クリックで詳細。',
       'catalog.fAll': 'すべて 36',
       'catalog.fCn': '中国語対応',
-      'catalog.inspHint': '上のリールから任意のジャケットをクリックすると対応エンジンと機能を確認できます。',
-      'catalog.notice': 'AliceHub は純粋なオープンソースランチャー＆エンジンです。ゲーム本体は同梱されません。利用権のあるデータをご用意ください。',
+      'catalog.inspHint': '上のジャケットをクリックすると対応エンジンと機能を表示します。',
+      'catalog.notice': '純粋なオープンソースランチャーです。ゲーム本体は各自ご用意ください。',
       'download.kicker': '05 / DEPLOYMENT · GPL-2.0',
-      'download.title': '最新リリースを入手',
-      'download.sub': 'Android・iOS・Switch 全パッケージを GitHub Releases で配布し、GitHub Actions で公開ビルドしています。',
-      'download.androidReq': 'Android 8.0+ · arm64-v8a · OpenGL ES 3.0 · そのまま導入可能',
-      'download.iosReq': 'iOS 15.0+ · arm64 · 未署名（AltStore / SideStore / Sideloadly で署名）',
-      'download.switchReq': 'Homebrew Menu アプリモード · 4つの NRO を SD /switch/ へ配置',
+      'download.title': '最新版を入手',
+      'download.sub': 'GitHub Actions で公開ビルドし、Releases にて配布中。',
+      'download.androidReq': 'Android 8.0+ · arm64-v8a · 直接導入',
+      'download.iosReq': 'iOS 15+ · arm64 · AltStore / SideStore 署名',
+      'download.switchReq': 'アプリモード · 4 NRO を SD /switch/ へ配置',
       'download.copy': 'コピー',
-      'download.allReleases': 'リリース一覧',
-      'download.ciBuilds': '最新ビルド',
-      'download.source': 'ソースコード',
-      'footer.license': 'GNU General Public License v2.0 (GPL-2.0) に基づき公開。ゲームデータは同梱されません。',
+      'download.allReleases': 'リリース',
+      'download.ciBuilds': 'CI ビルド',
+      'download.source': 'ソース',
+      'footer.license': 'GPL-2.0 オープンソース · ゲームデータ非同梱',
       'footer.credits': 'CORE UPSTREAM CREDITS',
-      'toast.qqCopied': 'QQ グループ番号をコピーしました：383917628',
+      'toast.qqCopied': 'QQ 番号をコピー：383917628',
       'toast.pokes': [
         'Alice // Wine 不要・100% Native SDL2',
-        'Alice // 60fps VSync ロック中',
-        'Alice // X4SS ⇄ GD\\x01\\x01 セーブ互換対応',
+        'Alice // 60fps VSync ロック',
+        'Alice // X4SS ⇄ GD\\x01\\x01 準備完了',
       ],
     },
   };
 
-  /* Practical Handbook Content (Controls / Workflow / Storage × 3 Languages) */
+  /* Concise Practical Handbook Content */
   const HANDBOOK = {
     controls: {
-      zh: `<table class="ctrl-table"><thead><tr><th>运行时操作</th><th>触控手势（Android / iOS）</th><th>物理手柄默认映射（可自定义）</th></tr></thead><tbody>
-        <tr><td>鼠标左键 / 确认</td><td>单指轻触目标位置</td><td><code>A</code> / <code>R3</code>（左摇杆控制虚拟光标）</td></tr>
-        <tr><td>鼠标右键 / 返回 / 菜单</td><td>双指轻触任意位置，或单指轻触左右黑边</td><td><code>B</code></td></tr>
-        <tr><td>对话快进（Ctrl）</td><td>单指长按屏幕，或点击 <code>» Ctrl</code> 悬浮键锁定</td><td><code>RT</code>（锁定切换）</td></tr>
-        <tr><td>滚轮上下翻页 / Backlog</td><td>双指在屏幕上向下 / 向上滑动</td><td><code>LB</code> / <code>RB</code> 或右摇杆上下</td></tr>
-        <tr><td>光标悬停 / 拖拽滚动</td><td>单指按住并滑动</td><td>左摇杆移动光标（可调死区与速度）</td></tr>
-        <tr><td>悬浮菜单 / 虚拟按键</td><td>点击左上角悬浮图标</td><td><code>Start</code> 菜单 · <code>Back</code> 光标 · <code>Guide</code> 虚拟键 · Switch <code>L+R</code></td></tr>
-        <tr><td>退出确认弹窗</td><td>系统返回手势 / 返回键</td><td><code>LT</code>（<code>Esc</code>）或系统返回键</td></tr>
+      zh: `<table class="ctrl-table"><thead><tr><th>操作</th><th>触控手势</th><th>手柄默认映射</th></tr></thead><tbody>
+        <tr><td>左键 / 确认</td><td>单指轻触</td><td><code>A</code> / <code>R3</code>（左摇杆光标）</td></tr>
+        <tr><td>右键 / 菜单</td><td>双指轻触 / 轻触黑边</td><td><code>B</code></td></tr>
+        <tr><td>快进（Ctrl）</td><td>长按屏幕 / 点 <code>» Ctrl</code> 锁定</td><td><code>RT</code> 锁定切换</td></tr>
+        <tr><td>滚轮 / 回看</td><td>双指上下滑动</td><td><code>LB</code> / <code>RB</code> 或右摇杆</td></tr>
+        <tr><td>悬停 / 拖拽</td><td>单指按住滑动</td><td>左摇杆（可调速度）</td></tr>
+        <tr><td>局内悬浮菜单</td><td>点左上角悬浮图标</td><td><code>Start</code> · <code>Back</code> · <code>Guide</code> · Switch <code>L+R</code></td></tr>
+        <tr><td>退出确认</td><td>系统返回手势</td><td><code>LT</code>（<code>Esc</code>）</td></tr>
       </tbody></table>`,
-      en: `<table class="ctrl-table"><thead><tr><th>Runtime Action</th><th>Touch Gesture (Android / iOS)</th><th>Default Controller Mapping (Customizable)</th></tr></thead><tbody>
-        <tr><td>Left Click / Confirm</td><td>Single-finger tap on target</td><td><code>A</code> / <code>R3</code> (Left Stick moves cursor)</td></tr>
-        <tr><td>Right Click / Menu</td><td>Two-finger tap anywhere, or tap side letterbox bars</td><td><code>B</code></td></tr>
-        <tr><td>Fast-Forward (Ctrl)</td><td>Long-press screen, or tap <code>» Ctrl</code> pill to latch</td><td><code>RT</code> (latched toggle)</td></tr>
-        <tr><td>Mouse Wheel / Backlog</td><td>Two-finger swipe down / up</td><td><code>LB</code> / <code>RB</code> or Right Stick up / down</td></tr>
-        <tr><td>Hover / Drag Scroll</td><td>Single-finger press and drag</td><td>Left Stick cursor (deadzone & speed tunable)</td></tr>
-        <tr><td>Overlay / Virtual Pad</td><td>Tap top-left floating icon</td><td><code>Start</code> menu · <code>Back</code> cursor · <code>Guide</code> pad · Switch <code>L+R</code></td></tr>
-        <tr><td>Exit Prompt</td><td>System Back gesture / button</td><td><code>LT</code> (<code>Esc</code>) or System Back</td></tr>
+      en: `<table class="ctrl-table"><thead><tr><th>Action</th><th>Touch Gesture</th><th>Default Controller</th></tr></thead><tbody>
+        <tr><td>Left Click</td><td>Single tap</td><td><code>A</code> / <code>R3</code> (Left Stick cursor)</td></tr>
+        <tr><td>Right Click / Menu</td><td>Two-finger tap / side bars</td><td><code>B</code></td></tr>
+        <tr><td>Fast-Forward</td><td>Long press / tap <code>» Ctrl</code></td><td><code>RT</code> toggle</td></tr>
+        <tr><td>Wheel / Backlog</td><td>Two-finger swipe</td><td><code>LB</code> / <code>RB</code> or Right Stick</td></tr>
+        <tr><td>Hover / Drag</td><td>Press and drag</td><td>Left Stick (tunable)</td></tr>
+        <tr><td>Overlay Menu</td><td>Top-left floating icon</td><td><code>Start</code> · <code>Back</code> · <code>Guide</code> · Switch <code>L+R</code></td></tr>
+        <tr><td>Exit Prompt</td><td>System Back</td><td><code>LT</code> (<code>Esc</code>)</td></tr>
       </tbody></table>`,
-      ja: `<table class="ctrl-table"><thead><tr><th>操作内容</th><th>タッチジェスチャー（Android / iOS）</th><th>物理コントローラー初期割り当て（変更可）</th></tr></thead><tbody>
-        <tr><td>左クリック / 決定</td><td>1本指でタップ</td><td><code>A</code> / <code>R3</code>（左スティックでカーソル移動）</td></tr>
-        <tr><td>右クリック / メニュー</td><td>2本指タップ、または左右の黒帯をタップ</td><td><code>B</code></td></tr>
-        <tr><td>テキストスキップ（Ctrl）</td><td>1本指長押し、または <code>» Ctrl</code> ボタンで固定</td><td><code>RT</code>（トグル固定）</td></tr>
-        <tr><td>マウスホイール / ログ</td><td>2本指で上下にスワイプ</td><td><code>LB</code> / <code>RB</code> または右スティック上下</td></tr>
-        <tr><td>ホバー / ドラッグ</td><td>1本指で押さえたままスライド</td><td>左スティックで移動（感度・デッドゾーン調整可）</td></tr>
-        <tr><td>オーバーレイ / 仮想パッド</td><td>左上のフローティングアイコンをタップ</td><td><code>Start</code> メニュー · <code>Back</code> カーソル · <code>Guide</code> パッド · Switch <code>L+R</code></td></tr>
-        <tr><td>終了確認ダイアログ</td><td>システムの戻る操作</td><td><code>LT</code>（<code>Esc</code>）または戻るボタン</td></tr>
+      ja: `<table class="ctrl-table"><thead><tr><th>操作</th><th>タッチ</th><th>コントローラー初期設定</th></tr></thead><tbody>
+        <tr><td>左クリック / 決定</td><td>1本指タップ</td><td><code>A</code> / <code>R3</code>（左スティック）</td></tr>
+        <tr><td>右クリック / 戻る</td><td>2本指タップ / 黒帯タップ</td><td><code>B</code></td></tr>
+        <tr><td>スキップ（Ctrl）</td><td>長押し / <code>» Ctrl</code> 固定</td><td><code>RT</code> トグル</td></tr>
+        <tr><td>ホイール / ログ</td><td>2本指上下スワイプ</td><td><code>LB</code> / <code>RB</code>・右スティック</td></tr>
+        <tr><td>ホバー / ドラッグ</td><td>1本指スライド</td><td>左スティック（感度調整可）</td></tr>
+        <tr><td>オーバーレイ</td><td>左上アイコン</td><td><code>Start</code>・<code>Back</code>・<code>Guide</code>・Switch <code>L+R</code></td></tr>
+        <tr><td>終了確認</td><td>戻る操作</td><td><code>LT</code>（<code>Esc</code>）</td></tr>
       </tbody></table>`,
     },
     workflow: {
       zh: `<div class="workflow-steps">
-        <div class="wf-step"><span class="wf-num">STEP 01</span><strong>安装对应平台包</strong><p>Android 直接安装 APK；iOS 使用 AltStore / SideStore / Sideloadly 自签 IPA；Switch 将 4 个 NRO 放入 SD 卡 <code>/switch/</code>。</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 02</span><strong>导入本地游戏资源</strong><p>选择目录内条目或「导入其他游戏」，支持文件夹、<code>.zip/.rar/.7z</code>、<code>.iso/.mdf</code> 多碟合并；也可在设置同意条款后开启在线安装。</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 03</span><strong>可选配置补丁与入口</strong><p>在项目中心管理无损 MOD / 汉化 / 去码补丁；含多版本入口的 System 4 作品可直接切换 <code>启动入口</code>（如 <code>AliceStart.CHS</code>）。</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 04</span><strong>畅玩与跨端存档互通</strong><p>局内可随时调整字号/手柄或使用修改器；通过存档管理器一键备份、同步 iCloud 或导出 Windows PC 兼容存档。</p></div>
+        <div class="wf-step"><span class="wf-num">01</span><strong>安装启动器</strong><p>Android 装 APK；iOS 自签 IPA；Switch 复制 4 个 NRO 至 <code>/switch/</code>。</p></div>
+        <div class="wf-step"><span class="wf-num">02</span><strong>导入游戏</strong><p>支持文件夹、<code>.zip/.rar/.7z</code>、<code>.iso/.mdf</code> 多碟合并，或按需开启在线安装。</p></div>
+        <div class="wf-step"><span class="wf-num">03</span><strong>补丁与入口</strong><p>管理无损 MOD / 汉化 / 去码补丁，按需切换 <code>AliceStart.CHS</code> 等入口。</p></div>
+        <div class="wf-step"><span class="wf-num">04</span><strong>游玩与互通</strong><p>局内调字号/手柄/修改器；随时备份、同步 iCloud 或导出 PC 存档。</p></div>
       </div>`,
       en: `<div class="workflow-steps">
-        <div class="wf-step"><span class="wf-num">STEP 01</span><strong>Install for Your Platform</strong><p>Install the APK on Android, sideload the unsigned IPA on iOS via AltStore/SideStore/Sideloadly, or copy the 4 NROs to <code>/switch/</code> on SD.</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 02</span><strong>Import Game Assets</strong><p>Select a catalog entry or Import Other Game—supports folders, <code>.zip/.rar/.7z</code>, and <code>.iso/.mdf</code> multi-disc sets, or enable Online Install in Settings.</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 03</span><strong>Configure MODs & Boot Entry</strong><p>Manage atomic-backup MODs, translations, and uncensored patches per title; switch System 4 <code>Launch entry</code> (e.g. <code>AliceStart.CHS</code>) anytime.</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 04</span><strong>Play & Export PC Saves</strong><p>Tune virtual controls, font scaling, or live modifiers in-game; back up saves, sync via iCloud Drive, or export Windows PC-compatible archives.</p></div>
+        <div class="wf-step"><span class="wf-num">01</span><strong>Install App</strong><p>Install APK on Android, sideload IPA on iOS, or copy 4 NROs to <code>/switch/</code>.</p></div>
+        <div class="wf-step"><span class="wf-num">02</span><strong>Import Games</strong><p>Folders, <code>.zip/.rar/.7z</code>, <code>.iso/.mdf</code> multi-disc sets, or opt-in Online Install.</p></div>
+        <div class="wf-step"><span class="wf-num">03</span><strong>MODs & Entry</strong><p>Install atomic-backup MODs/patches and switch System 4 <code>Launch entry</code> anytime.</p></div>
+        <div class="wf-step"><span class="wf-num">04</span><strong>Play & Sync</strong><p>Use virtual pad, font scale & modifiers; sync via iCloud or export PC saves.</p></div>
       </div>`,
       ja: `<div class="workflow-steps">
-        <div class="wf-step"><span class="wf-num">STEP 01</span><strong>パッケージを導入</strong><p>Android は APK を直接導入、iOS は AltStore 等で IPA を署名導入、Switch は 4 つの NRO を SD カードの <code>/switch/</code> に配置。</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 02</span><strong>ゲームデータを読み込み</strong><p>フォルダ・<code>.zip/.rar/.7z</code>・<code>.iso/.mdf</code> の複数ディスクを自動統合してインポート。設定で規約に同意するとオンライン導入も利用可能。</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 03</span><strong>MOD や起動エントリを設定</strong><p>作品ごとのハブで非破壊 MOD・翻訳・修正解除パッチを管理し、複数版を含む System 4 作品は <code>起動エントリ</code> を自由に切替可能。</p></div>
-        <div class="wf-step"><span class="wf-num">STEP 04</span><strong>プレイ＆PC 互換セーブ連携</strong><p>プレイ中の文字サイズ拡大や仮想パッド編集に対応。セーブ管理からバックアップ、iCloud 同期、Windows PC 互換形式への変換出力が行えます。</p></div>
+        <div class="wf-step"><span class="wf-num">01</span><strong>アプリ導入</strong><p>Android は APK、iOS は IPA 署名、Switch は 4 NRO を <code>/switch/</code> へ配置。</p></div>
+        <div class="wf-step"><span class="wf-num">02</span><strong>データ読込</strong><p>フォルダ・<code>.zip/.rar/.7z</code>・<code>.iso/.mdf</code> 統合対応。規約同意でオンライン導入可。</p></div>
+        <div class="wf-step"><span class="wf-num">03</span><strong>MOD・起動設定</strong><p>非破壊 MOD/パッチ管理や <code>起動エントリ</code> 切替を作品ごとに設定。</p></div>
+        <div class="wf-step"><span class="wf-num">04</span><strong>プレイ＆連携</strong><p>文字拡大・仮想パッド対応。iCloud 同期や PC 互換セーブ出力もワンタップ。</p></div>
       </div>`,
     },
     storage: {
       zh: `<div class="storage-grid">
-        <div class="storage-col"><strong>ANDROID // 共享存储与迁移</strong><p>支持在应用专用目录与共享目录 <code>内部存储/AliceHub</code> 间切换。授权迁移时仅迁移体积较小的 <code>saves</code> 与 <code>save_backups</code>，已安装的庞大游戏本体留在原处继续运行，新导入游戏自动存入 <code>AliceHub/games</code>，安全无损。</p></div>
-        <div class="storage-col"><strong>iOS / iPadOS // 文件与 iCloud 同步</strong><p>支持通过系统「文件」App 直接管理 <code>AliceHub → Games</code>，解压采用 APFS 写时复制免双倍空间；存档管理可选取任意「文件」目录（含 iCloud 云盘）进行跨设备双向同步与 PC 格式导出。</p></div>
-        <div class="storage-col"><strong>SWITCH // SD 卡隔离结构</strong><p>三套引擎按 <code>/switch/alicehub/&lt;engine&gt;/games/</code> 与 <code>saves/</code> 清晰隔离，升级或重装引擎 NRO 绝不影响存档；支持 SD 卡文件夹同步、备份恢复以及一键导出 <code>PC_SaveData</code> 兼容目录。</p></div>
+        <div class="storage-col"><strong>ANDROID // 共享存储</strong><p>可切换至 <code>内部存储/AliceHub</code>。迁移仅移动 <code>saves</code> 与备份，旧游戏原地直跑，新游戏存入 <code>AliceHub/games</code>。</p></div>
+        <div class="storage-col"><strong>iOS // 文件与 iCloud</strong><p>通过「文件」直拷至 <code>AliceHub → Games</code>，APFS 省空间解压；支持 iCloud 云盘同步与 PC 存档导出。</p></div>
+        <div class="storage-col"><strong>SWITCH // SD 卡隔离</strong><p>按 <code>/switch/alicehub/&lt;engine&gt;/</code> 隔离游戏与存档，更新 NRO 零影响，一键导出 <code>PC_SaveData</code>。</p></div>
       </div>`,
       en: `<div class="storage-grid">
-        <div class="storage-col"><strong>ANDROID // SHARED STORAGE</strong><p>Switch between app-private storage and <code>Internal Storage/AliceHub</code>. Guided migration moves only <code>saves</code> and <code>save_backups</code> while keeping large installed games in place; new installs go to <code>AliceHub/games</code>.</p></div>
-        <div class="storage-col"><strong>iOS / iPadOS // FILES & iCLOUD</strong><p>Drop folders straight into <code>AliceHub → Games</code> via Files with APFS copy-on-write staging. Sync saves with any Files location (including iCloud Drive) and export Windows PC-compatible archives.</p></div>
-        <div class="storage-col"><strong>SWITCH // SCOPED SD LAYOUT</strong><p>Each engine isolates data cleanly under <code>/switch/alicehub/&lt;engine&gt;/games/</code> and <code>saves/</code>. Updating NROs never touches saves; supports SD folder sync, backups, and <code>PC_SaveData</code> export.</p></div>
+        <div class="storage-col"><strong>ANDROID // SHARED</strong><p>Switch to <code>Internal Storage/AliceHub</code>. Migration moves <code>saves</code> only; existing games stay in place.</p></div>
+        <div class="storage-col"><strong>iOS // FILES & iCLOUD</strong><p>Drop folders into <code>AliceHub → Games</code> with APFS copy-on-write; sync saves via iCloud & export PC archives.</p></div>
+        <div class="storage-col"><strong>SWITCH // SD LAYOUT</strong><p>Isolated under <code>/switch/alicehub/&lt;engine&gt;/</code>. Updating NROs keeps saves intact; one-tap <code>PC_SaveData</code> export.</p></div>
       </div>`,
       ja: `<div class="storage-grid">
-        <div class="storage-col"><strong>ANDROID // 共有ストレージ移行</strong><p>アプリ専用領域と <code>内部ストレージ/AliceHub</code> を切替可能。移行時は容量の小さい <code>saves</code> と <code>save_backups</code> のみを安全に移動し、導入済みゲームはその場から起動継続できます。</p></div>
-        <div class="storage-col"><strong>iOS / iPadOS // ファイル＆iCloud 同期</strong><p>「ファイル」アプリで <code>AliceHub → Games</code> に直接配置でき、APFS により省容量で展開。iCloud Drive 等のフォルダとセーブ同期し、PC 互換形式への変換出力にも対応します。</p></div>
-        <div class="storage-col"><strong>SWITCH // SD カード独立管理</strong><p>各エンジンごとに <code>/switch/alicehub/&lt;engine&gt;/games/</code> と <code>saves/</code> を分離保存。NRO 更新でセーブが消えることはなく、フォルダ間同期や <code>PC_SaveData</code> 出力が可能です。</p></div>
+        <div class="storage-col"><strong>ANDROID // 共有領域</strong><p><code>内部ストレージ/AliceHub</code> へ切替可。移行時は <code>saves</code> のみ安全移動し既存ゲームはそのまま起動。</p></div>
+        <div class="storage-col"><strong>iOS // ファイル＆iCloud</strong><p><code>AliceHub → Games</code> へ直接配置、APFS で省容量展開。iCloud 同期＆PC 互換出力対応。</p></div>
+        <div class="storage-col"><strong>SWITCH // SD 分離</strong><p><code>/switch/alicehub/&lt;engine&gt;/</code> で独立保存。NRO 更新で消失せず <code>PC_SaveData</code> 出力可。</p></div>
       </div>`,
     },
   };
@@ -388,18 +388,18 @@
       ],
       copy: {
         zh: {
-          title: '早期 System 1–3 原生引擎',
-          desc: '面向采用早期 DAT 资源架构的经典作品（如《兰斯 I》《兰斯 II》《兰斯 III》原版），提供原生触控交互、独立存档隔离与轻量快进体验。',
+          title: '早期 System 1–3 内核',
+          desc: '面向 1989–1995 年 DAT 经典作品，提供原生触控、独立存档与轻量快进。',
           log: '[BOOT] Mounted ADISK.DAT + ACG.DAT (System 1-3)\n[GFX ] Indexed palette blitter -> SDL2 texture OK\n[CTRL] Direct native touch mode active\n[SAVE] Scoped directory: saves/<game>/ [READY]',
         },
         en: {
-          title: 'Early System 1–3 Native Runtime',
-          desc: 'Runs classic DAT-archive titles such as the original Rance I, II, and III with direct native touch input, isolated saves, and read-text skip.',
+          title: 'Early System 1–3 Kernel',
+          desc: 'Runs 1989–1995 DAT classics with native touch, isolated saves & fast skip.',
           log: '[BOOT] Mounted ADISK.DAT + ACG.DAT (System 1-3)\n[GFX ] Indexed palette blitter -> SDL2 texture OK\n[CTRL] Direct native touch mode active\n[SAVE] Scoped directory: saves/<game>/ [READY]',
         },
         ja: {
-          title: '初期 System 1–3 ネイティブエンジン',
-          desc: '『ランス I』『ランス II』『ランス III』オリジナル版など DAT 形式の初期作品を実行。ネイティブタッチ操作と作品別セーブ管理に対応。',
+          title: '初期 System 1–3 コア',
+          desc: '1989–1995 年の DAT 初期作をネイティブ実行。タッチ操作・作品別セーブ対応。',
           log: '[BOOT] Mounted ADISK.DAT + ACG.DAT (System 1-3)\n[GFX ] Indexed palette blitter -> SDL2 texture OK\n[CTRL] Direct native touch mode active\n[SAVE] Scoped directory: saves/<game>/ [READY]',
         },
       },
@@ -417,18 +417,18 @@
       ],
       copy: {
         zh: {
-          title: 'System 3.5–3.9 黄金时代内核',
-          desc: '完整实现 System 3.5–3.9 字节码与扩展模块（SACT / ShGraph / ShSound / eDemo）、PMS/QNT/VSP/WebP 图像、Shift-JIS/GBK/Unicode 排版、虚拟 CD 音轨与原生 MIDI 合成器。',
+          title: 'System 3.5–3.9 内核',
+          desc: '完整支持 ALD/PMS/QNT 渲染、多编码文本、虚拟 CD 音轨与原生 MIDI 合成。',
           log: '[BOOT] Detected System39.ain + *SA.ALD archive set\n[AUD ] MIDI synth active + playlist.txt Ogg/MP3 CDDA\n[TEXT] Shift-JIS / GBK / UTF-8 glyph pipeline OK\n[TOOL] Overlay + gamepad bridge + live modifier',
         },
         en: {
-          title: 'System 3.5–3.9 Golden-Era Kernel',
-          desc: 'Full System 3.5–3.9 bytecode & modules (SACT, ShGraph, ShSound, eDemo), PMS/QNT/VSP/WebP graphics, multi-encoding CJK text, virtual CD tracks, and native MIDI playback.',
+          title: 'System 3.5–3.9 Kernel',
+          desc: 'Full ALD/PMS/QNT rendering, multi-encoding CJK text, virtual CDDA & native MIDI.',
           log: '[BOOT] Detected System39.ain + *SA.ALD archive set\n[AUD ] MIDI synth active + playlist.txt Ogg/MP3 CDDA\n[TEXT] Shift-JIS / GBK / UTF-8 glyph pipeline OK\n[TOOL] Overlay + gamepad bridge + live modifier',
         },
         ja: {
-          title: 'System 3.5–3.9 黄金期ネイティブコア',
-          desc: 'System 3.5–3.9 バイトコード＆拡張モジュール、PMS/QNT/VSP/WebP 描画、Shift-JIS/GBK/Unicode、仮想 CD 音源、ネイティブ MIDI 再生に対応。',
+          title: 'System 3.5–3.9 コア',
+          desc: 'ALD/PMS/QNT 描画、多文字コード、仮想 CD 音源、ネイティブ MIDI 再生に対応。',
           log: '[BOOT] Detected System39.ain + *SA.ALD archive set\n[AUD ] MIDI synth active + playlist.txt Ogg/MP3 CDDA\n[TEXT] Shift-JIS / GBK / UTF-8 glyph pipeline OK\n[TOOL] Overlay + gamepad bridge + live modifier',
         },
       },
@@ -446,18 +446,18 @@
       ],
       copy: {
         zh: {
-          title: 'System 4.x 全世代原生内核',
-          desc: '覆盖早期 System 4.0（SACT2 / StoatSpriteEngine / DrawDungeon / ReignEngine）至现代旗舰（AIN v12–v14.1、PartsEngine、SealEngine 3D UBO 骨骼、FLAT v15、Ogg Opus、CHS.TBL/UIF 汉化映射与 <memory> 虚拟存档）。',
+          title: 'System 4.x 全世代内核',
+          desc: '覆盖 SACT2 至 AIN v14.1、PartsEngine、SealEngine 3D、FLAT v15 与 CHS.TBL 汉化映射。',
           log: '[BOOT] Loaded AIN v14.1 · O(deg) Delegate Reverse Index\n[GFX ] GLES 3.0 SealEngine UBO + FLAT v15 · 60.0 FPS\n[CJK ] GBK / SJIS / CHS.TBL + smart CP932 system popup\n[SAVE] X4SS ⇄ GD\\x01\\x01 PC export + <memory> snapshot OK',
         },
         en: {
-          title: 'Full-Generation System 4.x Kernel',
-          desc: 'Spans early System 4.0 (SACT2, StoatSpriteEngine, DrawDungeon, ReignEngine) through modern flagships (AIN v12–v14.1, PartsEngine, SealEngine 3D UBO, FLAT v15, Ogg Opus, CHS.TBL/UIF remaps, and <memory> snapshots).',
+          title: 'System 4.x Full-Gen Kernel',
+          desc: 'Covers SACT2 through AIN v14.1, PartsEngine, SealEngine 3D, FLAT v15 & CHS.TBL remaps.',
           log: '[BOOT] Loaded AIN v14.1 · O(deg) Delegate Reverse Index\n[GFX ] GLES 3.0 SealEngine UBO + FLAT v15 · 60.0 FPS\n[CJK ] GBK / SJIS / CHS.TBL + smart CP932 system popup\n[SAVE] X4SS ⇄ GD\\x01\\x01 PC export + <memory> snapshot OK',
         },
         ja: {
-          title: 'System 4.x 全世代ネイティブコア',
-          desc: '初期 System 4.0 から最新大規模作（AIN v12–v14.1、PartsEngine、SealEngine 3D UBO、FLAT v15、Ogg Opus、CHS.TBL/UIF、<memory> セーブ）まで網羅。',
+          title: 'System 4.x 全世代コア',
+          desc: 'SACT2 から AIN v14.1・PartsEngine・SealEngine 3D・FLAT v15・CHS.TBL まで対応。',
           log: '[BOOT] Loaded AIN v14.1 · O(deg) Delegate Reverse Index\n[GFX ] GLES 3.0 SealEngine UBO + FLAT v15 · 60.0 FPS\n[CJK ] GBK / SJIS / CHS.TBL + smart CP932 system popup\n[SAVE] X4SS ⇄ GD\\x01\\x01 PC export + <memory> snapshot OK',
         },
       },
@@ -471,35 +471,35 @@
       footer: ['SINGLE TAP → CLICK', '2-FINGER → MENU', 'LONG PRESS → CTRL'],
       copy: {
         zh: {
-          headline: '旗舰级 Android 原生调度与全屏手柄编辑器',
-          summary: '下载 APK 直接安装，支持前台服务后台流式安装、共享存储「内部存储 → AliceHub」存档迁移、ADPF 动态提频与 Android 15+ 16KB 页对齐。',
+          headline: 'Android 原生调度与手柄编辑',
+          summary: 'APK 直接安装，支持前台流式下载、共享存储迁移与 16KB 页对齐。',
           bullets: [
-            '直读文件夹、.zip / .rar / .7z 与 .iso / .mdf 光盘镜像，自动合并多盘与修复乱码',
-            '可视化全屏虚拟手柄编辑器 + Xbox / PlayStation / Switch Pro 即插即用',
-            '支持单游戏 System 4 启动入口切换、原子备份 MOD 管理与 PC 兼容存档导出',
-            '结构化崩溃诊断卡片，一键复制或导出 .txt 日志；内置应用更新检查',
+            '直读文件夹、.zip/.rar/.7z 与 .iso/.mdf 多碟自动合并',
+            '全屏虚拟手柄编辑器 + Xbox / PS / Switch Pro 即插即用',
+            '单游戏启动入口切换、无损 MOD 与 PC 兼容存档导出',
+            '崩溃诊断卡片导出 .txt 日志，内置更新检查',
           ],
           cta: '下载 Android APK',
         },
         en: {
-          headline: 'Android Native Scheduling & Visual Gamepad Editor',
-          summary: 'Direct APK install with foreground-service installs, guided shared storage (Internal Storage → AliceHub) save migration, ADPF boost, and Android 15+ 16 KB alignment.',
+          headline: 'Android Native Scheduling & Pad Editor',
+          summary: 'Direct APK install with foreground downloads, shared storage & 16 KB alignment.',
           bullets: [
-            'Direct import from folders, .zip / .rar / .7z archives, and .iso / .mdf disc images',
-            'Fullscreen drag-and-drop virtual pad editor + plug-and-play Xbox / PS / Switch Pro controllers',
-            'Per-game System 4 launch entries, atomic-backup MOD manager, and PC-compatible save export',
-            'Structured crash diagnostic reports with one-tap .txt export and built-in update checks',
+            'Direct folders, .zip/.rar/.7z archives & .iso/.mdf multi-disc merge',
+            'Fullscreen drag-and-drop pad editor + Xbox / PS / Switch Pro support',
+            'Per-game launch entries, atomic MODs & PC save export',
+            'Crash diagnostics with .txt log export & in-app update checks',
           ],
           cta: 'Download Android APK',
         },
         ja: {
-          headline: 'Android ネイティブ制御＆仮想パッドエディタ',
-          summary: 'APK をそのまま導入可能。フォアグラウンドサービス導入、共有ストレージ「内部ストレージ → AliceHub」移行、ADPF 動的制御、16KB ページ整列に対応。',
+          headline: 'Android ネイティブ制御＆パッド編集',
+          summary: 'APK 直接導入。フォアグラウンド導入、共有ストレージ移行、16KB 整列対応。',
           bullets: [
-            'フォルダ・.zip/.rar/.7z・.iso/.mdf を直接読み込み、複数ディスク統合と文字化け修復に対応',
-            'フルスクリーン仮想パッド編集＋Xbox / PlayStation / Switch Pro 物理コントローラー対応',
-            'System 4 作品別起動エントリ切替、非破壊 MOD 管理、PC 互換セーブ出力を搭載',
-            '構造化クラッシュ診断ログ出力およびアプリ内アップデート確認に対応',
+            'フォルダ・.zip/.rar/.7z・.iso/.mdf 直読＆複数ディスク統合',
+            '全画面仮想パッド編集＋Xbox / PS / Switch Pro 即時対応',
+            '起動エントリ切替、非破壊 MOD 管理、PC 互換セーブ出力',
+            'クラッシュ診断 .txt 出力・アプリ内アップデート確認',
           ],
           cta: 'Android APK を入手',
         },
@@ -511,37 +511,37 @@
       footer: ['FILES → ALICEHUB/GAMES', 'HOLD → SKIP (SYS4)', 'iCLOUD DRIVE SYNC'],
       copy: {
         zh: {
-          headline: 'SwiftUI 原生壳体、iCloud 同步与 iOS 26 后台任务',
-          summary: '使用 AltStore、SideStore 或 Sideloadly 自签侧载未签名 IPA；支持「文件」App 直接拖入游戏与 APFS 零冗余克隆安装。',
+          headline: 'SwiftUI 原生壳体与 iCloud 同步',
+          summary: '自签未签名 IPA，支持「文件」App 拖入与 APFS 零冗余安装。',
           bullets: [
-            '支持导入文件夹 / 多碟与 .zip / .rar / .7z / .iso / .mdf 镜像，也可直拷至「AliceHub → Games」',
-            '可选用「文件」内任意目录（如 iCloud 云盘）同步存档，并支持导出 Windows PC 兼容存档',
-            'iOS 26+ 支持系统后台持续处理任务；支持 System 4 启动入口切换与 xsystem35 MIDI 播放',
-            '内置虚拟按键/手柄设置、无损 MOD 与去码补丁管理及应用内更新检查',
+            '支持文件夹、多碟与 .zip/.rar/.7z/.iso/.mdf，直拷至 Games',
+            '支持 iCloud 云盘任意目录同步与 PC 兼容存档导出',
+            'iOS 26+ 后台持续任务、启动入口切换与原生 MIDI',
+            '手柄自定义、无损 MOD / 去码补丁与更新检查',
           ],
           cta: '下载 iOS 未签名 IPA',
         },
         en: {
-          headline: 'Native SwiftUI Shell, iCloud Sync & iOS 26 Background Tasks',
-          summary: 'Sign and sideload the unsigned IPA with AltStore, SideStore, or Sideloadly; import directly via Files with APFS copy-on-write staging.',
+          headline: 'SwiftUI Shell & iCloud Save Sync',
+          summary: 'Sideload unsigned IPA via AltStore/SideStore; APFS copy-on-write via Files.',
           bullets: [
-            'Import folders, multi-disc sets, and .zip / .rar / .7z / .iso / .mdf images—or drop into AliceHub → Games',
-            'Sync saves with any folder in Files (including iCloud Drive) and export Windows PC-compatible saves',
-            'Continued background processing on iOS 26+, per-game System 4 launch entries, and xsystem35 MIDI',
-            'Customizable gamepad controls, non-destructive MOD/patch management, and built-in update checks',
+            'Import folders, multi-disc & .zip/.rar/.7z/.iso/.mdf into Games',
+            'Sync saves via iCloud Drive & export Windows PC archives',
+            'iOS 26+ background tasks, launch entry switch & native MIDI',
+            'Custom gamepad controls, atomic MODs & update checks',
           ],
-          cta: 'Download iOS Unsigned IPA',
+          cta: 'Download iOS IPA',
         },
         ja: {
-          headline: 'SwiftUI ネイティブ実装・iCloud 同期・iOS 26 バックグラウンド',
-          summary: 'AltStore / SideStore / Sideloadly 等で未署名 IPA に署名して導入。「ファイル」アプリからの直接コピーと APFS 省容量展開に対応。',
+          headline: 'SwiftUI ネイティブ＆iCloud 同期',
+          summary: '未署名 IPA を署名導入。「ファイル」直配置と APFS 省容量展開に対応。',
           bullets: [
-            'フォルダ・複数ディスク・.zip/.rar/.7z/.iso/.mdf の取り込み、および AliceHub → Games 配置に対応',
-            'iCloud Drive 等のフォルダとセーブ同期でき、Windows PC 互換セーブ出力にも対応',
-            'iOS 26 以降のバックグラウンド継続処理、System 4 起動エントリ切替、MIDI 再生に対応',
-            'パッド設定・非破壊 MOD／パッチ管理・アプリ内アップデート確認を内蔵',
+            'フォルダ・複数ディスク・.zip/.rar/.7z/.iso/.mdf を Games へ導入',
+            'iCloud Drive セーブ同期＆Windows PC 互換セーブ出力',
+            'iOS 26+ バックグラウンド継続、起動エントリ切替、MIDI 再生',
+            'パッド設定・非破壊 MOD／パッチ管理・更新確認',
           ],
-          cta: 'iOS 未署名 IPA を入手',
+          cta: 'iOS IPA を入手',
         },
       },
     },
@@ -551,35 +551,35 @@
       footer: ['L + R → MENU', 'X → SEARCH · Y → SETTINGS', '4× NRO → /switch/'],
       copy: {
         zh: {
-          headline: '四 NRO 原生自制程序 · 掌机底座全适配',
-          summary: '直接从最新 Release 下载 Switch 压缩包，将 AliceHub.nro 与三套引擎 NRO 一并放入 SD 卡 /switch/，以应用模式启动即可。',
+          headline: '四 NRO 原生自制 · 掌机底座通用',
+          summary: '将 4 个 NRO 放入 SD 卡 /switch/，应用模式直接启动。',
           bullets: [
-            '三引擎统一大库：支持 X 搜索、Y 设置、单游戏启动入口切换、断点续传下载与更新检查',
-            '支持从 SD 卡导入文件夹/.zip/.iso/.mdf，并支持 .zip/.rar/.7z 本地或在线 MOD 与汉化补丁',
-            '完整存档管理器支持导入/导出（含 PC_SaveData 转换）、备份恢复、目录同步与兰斯 10 存档编辑',
-            '局内按 L+R（横握 SL+SR / 键盘 F1）呼出菜单，支持截图、快进、局内修改与字号/滚动条缩放',
+            '三引擎统一大库：X 搜索、Y 设置、断点续传与入口切换',
+            '直读 SD 卡文件夹/.zip/.iso/.mdf 及本地/在线 MOD',
+            '存档备份恢复、目录同步、PC_SaveData 导出与兰斯 10 编辑',
+            '局内 L+R（SL+SR / F1）呼出截图、快进、修改器与缩放',
           ],
           cta: '下载 Switch ZIP',
         },
         en: {
-          headline: 'Four Native Homebrew NROs · Handheld & Docked',
-          summary: 'Grab the Switch ZIP from the latest Release, copy AliceHub.nro and all three engine NROs into /switch/ on your SD card, and launch via Homebrew Menu (App Mode).',
+          headline: '4× Native NROs · Handheld & Docked',
+          summary: 'Copy 4 NROs to SD /switch/ and launch in Homebrew Menu App Mode.',
           bullets: [
-            'Unified 3-engine library with X search, Y settings, System 4 launch entries, resumable downloads, and update checks',
-            'Import local folders/.zip/.iso/.mdf from SD plus .zip/.rar/.7z local or online MOD & translation overlays',
-            'Full save manager with import/export (including PC_SaveData), backup/restore, sync, and Rance 10 save editor',
-            'Press L+R (SL+SR sideways / F1 keyboard) for in-game screenshots, skip toggle, live modifiers, and scaling',
+            'Unified 3-engine library: X search, Y settings, resume & boot entries',
+            'Import SD folders/.zip/.iso/.mdf & local/online MOD overlays',
+            'Save backup/restore, sync, PC_SaveData export & Rance X editor',
+            'Press L+R (SL+SR / F1) for screenshots, skip, modifiers & scaling',
           ],
           cta: 'Download Switch ZIP',
         },
         ja: {
-          headline: '4 NRO ネイティブ Homebrew・携帯／ドック両対応',
-          summary: '最新リリースの Switch ZIP を展開し、AliceHub.nro と3つのエンジン NRO を SD カードの /switch/ に配置。Homebrew Menu からアプリモードで起動。',
+          headline: '4 NRO 自作アプリ・携帯／ドック対応',
+          summary: '4つの NRO を SD /switch/ へ配置しアプリモードで起動。',
           bullets: [
-            '3エンジン統合ライブラリ：X 検索、Y 設定、起動エントリ切替、レジューム対応ダウンロード、更新確認',
-            'SD カードからフォルダ/.zip/.iso/.mdf を導入でき、.zip/.rar/.7z のローカル／オンライン MOD にも対応',
-            'セーブ管理でインポート・PC_SaveData 互換出力・バックアップ復元・同期・ランス10セーブ編集が可能',
-            'プレイ中 L+R（横持ち SL+SR / F1）でスクショ・スキップ・リアルタイム改造・文字拡大メニューを表示',
+            '3エンジン統合：X 検索、Y 設定、レジューム導入、起動エントリ切替',
+            'SD のフォルダ/.zip/.iso/.mdf およびローカル／オンライン MOD 対応',
+            'バックアップ復元、同期、PC_SaveData 出力、ランス10セーブ編集',
+            'プレイ中 L+R（SL+SR / F1）でスクショ・スキップ・改造・文字拡大',
           ],
           cta: 'Switch ZIP を入手',
         },
@@ -767,24 +767,26 @@
   }
 
   /* ========================================================================
-     3. ALICE MONOLITH 3D TILT + LIVE EYE TRACKING + SPOTLIGHT CARDS
+     3. FRAMELESS 3D ORBITAL KINETIC ALICE + LIVE EYES + SPOTLIGHT CARDS
      ======================================================================== */
   function initAliceAndSpotlights() {
     const shrine = document.getElementById('alice-shrine');
-    const card = document.getElementById('shrine-card');
+    const floatWrap = document.getElementById('shrine-card');
     const avatarBox = document.getElementById('alice-avatar-box');
     const eyeM = document.getElementById('alice-eye-m');
     const eyeC = document.getElementById('alice-eye-c');
+    const backCanvas = document.getElementById('alice-orbit-back');
+    const frontCanvas = document.getElementById('alice-orbit-front');
 
     if (avatarBox && !REDUCED_MOTION) {
       const scheduleBlink = () => {
         setTimeout(() => {
           if (!avatarBox.classList.contains('is-winking')) {
             avatarBox.classList.add('is-blinking');
-            setTimeout(() => avatarBox.classList.remove('is-blinking'), 120);
+            setTimeout(() => avatarBox.classList.remove('is-blinking'), 115);
           }
           scheduleBlink();
-        }, 2800 + Math.random() * 3400);
+        }, 2600 + Math.random() * 3200);
       };
       scheduleBlink();
     }
@@ -797,42 +799,309 @@
       }, { passive: true });
     });
 
+    // Pointer state with spring-damped tracking & idle glance
+    let targetDx = 0;
+    let targetDy = 0;
+    let curDx = 0;
+    let curDy = 0;
+    let lastMoveTs = 0;
+    let overdrive = 1;
+    let bounceScale = 1;
+    let bounceVel = 0;
+    let orbitVisible = true;
+
+    const pulseWaves = [];
+    const sparks = [];
+
     window.addEventListener('pointermove', (e) => {
       ptr.tx = e.clientX / Math.max(1, window.innerWidth);
       ptr.ty = e.clientY / Math.max(1, window.innerHeight);
+      lastMoveTs = performance.now();
 
-      if (REDUCED_MOTION || !avatarBox || !eyeM || !eyeC || !card) return;
-
+      if (!avatarBox) return;
       const rect = avatarBox.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height * 0.72;
-      const dx = Math.max(-1, Math.min(1, (e.clientX - cx) / Math.max(180, window.innerWidth * 0.45)));
-      const dy = Math.max(-1, Math.min(1, (e.clientY - cy) / Math.max(180, window.innerHeight * 0.45)));
-
-      eyeM.style.transform = `translate3d(${(dx * 4.8).toFixed(2)}px, ${(dy * 3.4).toFixed(2)}px, 0)`;
-      eyeC.style.transform = `translate3d(${(dx * 4.8).toFixed(2)}px, ${(dy * 3.4).toFixed(2)}px, 0)`;
-
-      card.style.transform = `rotateX(${(-dy * 9).toFixed(2)}deg) rotateY(${(dx * 10).toFixed(2)}deg)`;
-      const cr = card.getBoundingClientRect();
-      card.style.setProperty('--mx', `${(e.clientX - cr.left).toFixed(0)}px`);
-      card.style.setProperty('--my', `${(e.clientY - cr.top).toFixed(0)}px`);
+      const cy = rect.top + rect.height * 0.7;
+      targetDx = Math.max(-1, Math.min(1, (e.clientX - cx) / Math.max(180, window.innerWidth * 0.42)));
+      targetDy = Math.max(-1, Math.min(1, (e.clientY - cy) / Math.max(180, window.innerHeight * 0.42)));
     }, { passive: true });
 
-    if (shrine && card && avatarBox) {
+    if (shrine && avatarBox) {
       shrine.addEventListener('click', (e) => {
         const rect = shrine.getBoundingClientRect();
         spawnRipple(e.clientX || rect.left + rect.width / 2, e.clientY || rect.top + rect.height / 2);
-        card.classList.remove('is-poked');
-        void card.offsetWidth;
-        card.classList.add('is-poked');
+
+        // Overdrive orbital rings + spring elastic bounce + wink
+        overdrive = 4.6;
+        bounceVel = -0.14;
         avatarBox.classList.add('is-winking');
         setTimeout(() => avatarBox.classList.remove('is-winking'), 320);
+
+        // Spawn 2 concentric 3D pulse shockwaves + 20 radial sparks
+        pulseWaves.push({ r: 0.24, alpha: 0.9, color: '225, 75, 134', tiltX: 1.06, tiltZ: -0.34 });
+        pulseWaves.push({ r: 0.18, alpha: 0.85, color: '56, 189, 248', tiltX: 1.12, tiltZ: 0.52 });
+        for (let i = 0; i < 20; i++) {
+          const ang = (Math.PI * 2 * i) / 20 + (Math.random() - 0.5) * 0.22;
+          const spd = 1.6 + Math.random() * 2.6;
+          sparks.push({
+            x: Math.cos(ang) * 0.12,
+            y: Math.sin(ang) * 0.12,
+            vx: Math.cos(ang) * spd * 0.0045,
+            vy: Math.sin(ang) * spd * 0.0045,
+            life: 1,
+            size: 1.4 + Math.random() * 1.6,
+            color: i % 2 === 0 ? '225, 75, 134' : '56, 189, 248',
+          });
+        }
 
         const pokes = I18N[currentLang]['toast.pokes'];
         showToast(pokes[pokeCount % pokes.length]);
         pokeCount++;
       });
     }
+
+    if (!shrine || !backCanvas || !frontCanvas) return;
+    const ctxB = backCanvas.getContext('2d');
+    const ctxF = frontCanvas.getContext('2d');
+    if (!ctxB || !ctxF) return;
+
+    let size = 400;
+    function resizeOrbits() {
+      const rect = shrine.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      size = Math.max(220, Math.round(rect.width));
+      for (const c of [backCanvas, frontCanvas]) {
+        c.width = Math.round(size * dpr);
+        c.height = Math.round(size * dpr);
+      }
+      ctxB.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctxF.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    resizeOrbits();
+    window.addEventListener('resize', resizeOrbits, { passive: true });
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        orbitVisible = entries[0]?.isIntersecting ?? true;
+      }, { threshold: 0.02 });
+      io.observe(shrine);
+    }
+
+    // 16 subtle depth-sorted orbital stardust motes
+    const motes = Array.from({ length: 16 }, (_, i) => ({
+      radius: 0.30 + (i % 5) * 0.036,
+      angle: (Math.PI * 2 * i) / 16,
+      speed: (i % 2 === 0 ? 1 : -1) * (0.28 + (i % 4) * 0.11),
+      tiltX: 0.85 + (i % 3) * 0.28,
+      tiltZ: -0.7 + (i % 5) * 0.35,
+      size: 1.1 + (i % 3) * 0.55,
+      color: i % 3 === 0 ? '225, 75, 134' : i % 3 === 1 ? '56, 189, 248' : '255, 255, 255',
+    }));
+
+    function project3D(x0, y0, tiltX, tiltZ, cx, cy, fov) {
+      // Rotate around X (tilts circle into 3D ellipse), then Z (inclines ring)
+      const y1 = y0 * Math.cos(tiltX);
+      const z1 = y0 * Math.sin(tiltX);
+      const xr = x0 * Math.cos(tiltZ) - y1 * Math.sin(tiltZ);
+      const yr = x0 * Math.sin(tiltZ) + y1 * Math.cos(tiltZ);
+      const p = fov / (fov - z1);
+      return { x: cx + xr * p, y: cy + yr * p, z: z1, p };
+    }
+
+    function drawOrbitalRing(R, tiltX, tiltZ, opts, cx, cy, fov) {
+      const segs = 96;
+      const step = (Math.PI * 2) / segs;
+      for (let i = 0; i < segs; i++) {
+        if (opts.dashed && i % 3 === 0) continue;
+        const a0 = i * step;
+        const a1 = a0 + step;
+        const p0 = project3D(Math.cos(a0) * R, Math.sin(a0) * R, tiltX, tiltZ, cx, cy, fov);
+        const p1 = project3D(Math.cos(a1) * R, Math.sin(a1) * R, tiltX, tiltZ, cx, cy, fov);
+        const midZ = (p0.z + p1.z) * 0.5;
+        const ctx = midZ >= 0 ? ctxF : ctxB;
+        const alpha = midZ >= 0 ? opts.frontAlpha : opts.backAlpha;
+        ctx.strokeStyle = `rgba(${opts.rgb}, ${alpha})`;
+        ctx.lineWidth = midZ >= 0 ? opts.lineW : opts.lineW * 0.78;
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.stroke();
+
+        // Precision degree ticks on primary gyro ring
+        if (opts.ticks && i % 4 === 0) {
+          const pOut = project3D(Math.cos(a0) * (R + 4.5), Math.sin(a0) * (R + 4.5), tiltX, tiltZ, cx, cy, fov);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${midZ >= 0 ? 0.24 : 0.09})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(pOut.x, pOut.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    function drawComet(R, headAng, tailSpan, dir, tiltX, tiltZ, rgb, cx, cy, fov) {
+      const steps = 26;
+      for (let i = 0; i < steps; i++) {
+        const t0 = i / steps;
+        const t1 = (i + 1) / steps;
+        const a0 = headAng - dir * tailSpan * (1 - t0);
+        const a1 = headAng - dir * tailSpan * (1 - t1);
+        const p0 = project3D(Math.cos(a0) * R, Math.sin(a0) * R, tiltX, tiltZ, cx, cy, fov);
+        const p1 = project3D(Math.cos(a1) * R, Math.sin(a1) * R, tiltX, tiltZ, cx, cy, fov);
+        const midZ = (p0.z + p1.z) * 0.5;
+        const ctx = midZ >= 0 ? ctxF : ctxB;
+        const depthMul = midZ >= 0 ? 1 : 0.48;
+        ctx.strokeStyle = `rgba(${rgb}, ${(Math.pow(t1, 1.8) * 0.82 * depthMul).toFixed(3)})`;
+        ctx.lineWidth = (1.0 + t1 * 2.1) * p1.p;
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.stroke();
+      }
+
+      // Luminous orbiting satellite head
+      const head = project3D(Math.cos(headAng) * R, Math.sin(headAng) * R, tiltX, tiltZ, cx, cy, fov);
+      const ctx = head.z >= 0 ? ctxF : ctxB;
+      const glowR = (head.z >= 0 ? 16 : 11) * head.p;
+      const g = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, glowR);
+      g.addColorStop(0, `rgba(${rgb}, ${head.z >= 0 ? 0.95 : 0.55})`);
+      g.addColorStop(0.35, `rgba(${rgb}, ${head.z >= 0 ? 0.38 : 0.18})`);
+      g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, (head.z >= 0 ? 3.2 : 2.2) * head.p, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    let phase = 0;
+    let lastTs = performance.now();
+
+    function renderKinetic(now) {
+      const dt = Math.min(0.05, (now - lastTs) / 1000);
+      lastTs = now;
+
+      if (orbitVisible || REDUCED_MOTION) {
+        overdrive += (1 - overdrive) * 0.045;
+        phase += REDUCED_MOTION ? 0 : dt * overdrive;
+
+        // Spring physics for click bounce
+        const springForce = (1 - bounceScale) * 0.24;
+        bounceVel = (bounceVel + springForce) * 0.78;
+        bounceScale += bounceVel;
+
+        // Autonomous gentle idle eye glance when pointer is still
+        const idle = now - lastMoveTs > 3200;
+        const aimX = idle ? Math.sin(now * 0.00085) * 0.42 : targetDx;
+        const aimY = idle ? Math.cos(now * 0.00062) * 0.28 : targetDy;
+        curDx += (aimX - curDx) * 0.08;
+        curDy += (aimY - curDy) * 0.08;
+
+        // Zero-gravity floating Alice + smooth 3D pointer tilt
+        if (floatWrap && !REDUCED_MOTION) {
+          const floatY = Math.sin(now * 0.0017) * 9.5;
+          const swayZ = Math.sin(now * 0.0011) * 1.8;
+          const rotX = -curDy * 11 + Math.cos(now * 0.0013) * 2.2;
+          const rotY = curDx * 14 + Math.sin(now * 0.00095) * 5.5;
+          floatWrap.style.transform =
+            `translate3d(0, ${floatY.toFixed(2)}px, 0) rotateX(${rotX.toFixed(2)}deg) rotateY(${rotY.toFixed(2)}deg) rotateZ(${swayZ.toFixed(2)}deg) scale(${bounceScale.toFixed(4)})`;
+        }
+
+        if (eyeM && eyeC && !REDUCED_MOTION) {
+          const ex = (curDx * 4.4).toFixed(2);
+          const ey = (curDy * 3.1).toFixed(2);
+          eyeM.style.transform = `translate3d(${ex}px, ${ey}px, 0)`;
+          eyeC.style.transform = `translate3d(${ex}px, ${ey}px, 0)`;
+        }
+
+        ctxB.clearRect(0, 0, size, size);
+        ctxF.clearRect(0, 0, size, size);
+
+        const cx = size * 0.5;
+        const cy = size * 0.5;
+        const fov = size * 1.45;
+        const ptrTiltX = curDy * 0.14;
+        const ptrTiltZ = curDx * 0.12;
+
+        // Ring 3: Subtle equatorial harmonic halo behind Alice
+        const r3 = size * (0.31 + Math.sin(now * 0.0016) * 0.008);
+        ctxB.strokeStyle = 'rgba(255, 255, 255, 0.075)';
+        ctxB.lineWidth = 1;
+        ctxB.beginPath();
+        ctxB.arc(cx, cy, r3, 0, Math.PI * 2);
+        ctxB.stroke();
+
+        // Ring 1: Primary cyan-white calibrated 3D gyro orbit
+        const t1X = 1.08 + ptrTiltX + Math.sin(now * 0.0007) * 0.05;
+        const t1Z = -0.34 + ptrTiltZ;
+        const r1 = size * 0.43;
+        drawOrbitalRing(r1, t1X, t1Z, { rgb: '255, 255, 255', frontAlpha: 0.22, backAlpha: 0.09, lineW: 1.15, ticks: true }, cx, cy, fov);
+        drawComet(r1, phase * 0.85 + 0.5, 1.05, 1, t1X, t1Z, '56, 189, 248', cx, cy, fov);
+
+        // Ring 2: Counter-tilted rose elliptical orbit
+        const t2X = 1.12 - ptrTiltX * 0.8 + Math.cos(now * 0.0006) * 0.05;
+        const t2Z = 0.52 + ptrTiltZ * 0.9;
+        const r2 = size * 0.39;
+        drawOrbitalRing(r2, t2X, t2Z, { rgb: '225, 75, 134', frontAlpha: 0.28, backAlpha: 0.12, lineW: 1.1, dashed: true }, cx, cy, fov);
+        drawComet(r2, -phase * 0.72 + 2.4, 0.95, -1, t2X, t2Z, '225, 75, 134', cx, cy, fov);
+
+        // Depth-sorted stardust motes
+        for (const m of motes) {
+          const ang = m.angle + phase * m.speed;
+          const R = size * m.radius;
+          const pt = project3D(Math.cos(ang) * R, Math.sin(ang) * R, m.tiltX + ptrTiltX * 0.5, m.tiltZ + ptrTiltZ * 0.5, cx, cy, fov);
+          const ctx = pt.z >= 0 ? ctxF : ctxB;
+          ctx.fillStyle = `rgba(${m.color}, ${pt.z >= 0 ? 0.55 : 0.24})`;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, m.size * pt.p, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Click 3D shockwave rings
+        for (let i = pulseWaves.length - 1; i >= 0; i--) {
+          const pw = pulseWaves[i];
+          pw.r += dt * 0.42;
+          pw.alpha *= 0.93;
+          if (pw.alpha < 0.02 || pw.r > 0.52) {
+            pulseWaves.splice(i, 1);
+            continue;
+          }
+          drawOrbitalRing(size * pw.r, pw.tiltX, pw.tiltZ, {
+            rgb: pw.color,
+            frontAlpha: pw.alpha,
+            backAlpha: pw.alpha * 0.45,
+            lineW: 1.6,
+          }, cx, cy, fov);
+        }
+
+        // Click radial sparks
+        for (let i = sparks.length - 1; i >= 0; i--) {
+          const sp = sparks[i];
+          sp.x += sp.vx;
+          sp.y += sp.vy;
+          sp.vx *= 0.95;
+          sp.vy *= 0.95;
+          sp.life -= dt * 1.45;
+          if (sp.life <= 0) {
+            sparks.splice(i, 1);
+            continue;
+          }
+          ctxF.fillStyle = `rgba(${sp.color}, ${(sp.life * 0.9).toFixed(3)})`;
+          ctxF.beginPath();
+          ctxF.arc(cx + sp.x * size, cy + sp.y * size, sp.size * sp.life, 0, Math.PI * 2);
+          ctxF.fill();
+        }
+      }
+
+      if (!REDUCED_MOTION) requestAnimationFrame(renderKinetic);
+    }
+
+    renderKinetic(performance.now());
   }
 
   /* ========================================================================
@@ -1248,10 +1517,10 @@
     if (cn) cn.style.display = g.cn ? 'inline-block' : 'none';
     if (note) {
       note.textContent = currentLang === 'en'
-        ? `Auto-detected by AliceHub (${g.eng === 'SYS4' ? 'xsystem4' : 'xsystem35'} native kernel) across Android, iOS, and Nintendo Switch.`
+        ? `Auto-routed to ${g.eng === 'SYS4' ? 'xsystem4' : 'xsystem35'} native kernel · Android / iOS / Switch.`
         : currentLang === 'ja'
-          ? `AliceHub が自動判別し、Android・iOS・Switch 上で ${g.eng === 'SYS4' ? 'xsystem4' : 'xsystem35'} ネイティブエンジンにより直接起動します。`
-          : `AliceHub 自动识别目录并路由至 ${g.eng === 'SYS4' ? 'xsystem4' : 'xsystem35'} 原生引擎，支持 Android / iOS / Switch 三端直跑。`;
+          ? `${g.eng === 'SYS4' ? 'xsystem4' : 'xsystem35'} へ自動ルーティング · Android / iOS / Switch 対応。`
+          : `自动路由至 ${g.eng === 'SYS4' ? 'xsystem4' : 'xsystem35'} 原生运行 · 三端直跑。`;
     }
     if (caps) {
       caps.innerHTML = g.caps.map((c) => `<span>${escapeHtml(c)}</span>`).join('');
