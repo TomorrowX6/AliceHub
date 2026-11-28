@@ -53,10 +53,53 @@ static bool is_cp1252_punct_or_accented(unsigned char b)
            (b >= 0xc0 && b != 0xd7 && b != 0xf7);
 }
 
+static bool is_english_contraction_after_apostrophe(const unsigned char *s, size_t len, size_t idx)
+{
+    if (idx < 2 || !is_ascii_letter(s[idx - 1]) || !is_ascii_letter(s[idx - 2]) || idx + 1 >= len)
+        return false;
+    unsigned char n1 = s[idx + 1];
+    unsigned char l1 = (n1 >= 'A' && n1 <= 'Z') ? (unsigned char)(n1 + 32) : n1;
+    int n2 = idx + 2 < len ? (int)s[idx + 2] : -1;
+    int l2 = (n2 >= 'A' && n2 <= 'Z') ? (n2 + 32) : n2;
+    int n3 = idx + 3 < len ? (int)s[idx + 3] : -1;
+    bool n2_not_letter = n2 < 0 || !is_ascii_letter((unsigned char)n2);
+    bool n3_not_letter = n3 < 0 || !is_ascii_letter((unsigned char)n3);
+    if (l1 == 's' || l1 == 't' || l1 == 'd' || l1 == 'm')
+        return n2_not_letter;
+    if (l1 == 'r' || l1 == 'v')
+        return l2 == 'e' && n3_not_letter;
+    if (l1 == 'l')
+        return l2 == 'l' && n3_not_letter;
+    return false;
+}
+
+static size_t stem_ascii_letters_around(const unsigned char *s, size_t len, size_t idx)
+{
+    size_t seg_start = idx;
+    while (seg_start > 0 && s[seg_start - 1] != '/' && s[seg_start - 1] != '\\')
+        --seg_start;
+    size_t seg_end = idx;
+    while (seg_end < len && s[seg_end] != '/' && s[seg_end] != '\\')
+        ++seg_end;
+    size_t stem_end = seg_end;
+    for (size_t k = seg_end; k > seg_start; --k) {
+        if (s[k - 1] == '.') {
+            if (k - 1 > seg_start)
+                stem_end = k - 1;
+            break;
+        }
+    }
+    size_t count = 0;
+    for (size_t k = seg_start; k < stem_end; ++k)
+        if (is_ascii_letter(s[k]))
+            ++count;
+    return count;
+}
+
 static bool looks_like_cp1252(const unsigned char *s, size_t len, const char *sjis, const char *gbk)
 {
     size_t high = 0, ascii_letters = 0;
-    bool adj_high = false, all_cp1252 = true, flanked = false;
+    bool adj_high = false, all_cp1252 = true, all_strict = true;
     for (size_t i = 0; i < len; ++i) {
         unsigned char b = s[i];
         if (b < 0x80) {
@@ -73,24 +116,33 @@ static bool looks_like_cp1252(const unsigned char *s, size_t len, const char *sj
         }
         if (!is_cp1252_punct_or_accented(b))
             all_cp1252 = false;
-        if (prev >= 0 && is_ascii_letter((unsigned char)prev) && (next < 0 || next < 0x80)) {
-            if (b >= 0xc0) {
-                if (next < 0 || (next >= 'a' && next <= 'z') || next == ' ' || next == '.' ||
-                    next == '-' || next == '_' || next == '/' || next == '\\')
-                    flanked = true;
-            } else {
-                flanked = true;
-            }
-        } else if (next >= 0 && next >= 'a' && next <= 'z' &&
-                   (prev < 0 || prev == ' ' || prev == '/' || prev == '\\' || prev == '-' || prev == '_')) {
-            flanked = true;
+        bool byte_ok;
+        if (b >= 0x80 && b <= 0x9f) {
+            if (next >= 0x40)
+                byte_ok = b == 0x92 && is_english_contraction_after_apostrophe(s, len, i);
+            else
+                byte_ok = is_cp1252_punct_or_accented(b);
+        } else if (b >= 0xe0 && b <= 0xef) {
+            size_t stem = stem_ascii_letters_around(s, len, i);
+            byte_ok = stem >= 2 && (
+                (prev >= 0 && is_ascii_letter((unsigned char)prev)) ||
+                (next >= 'a' && next <= 'z' && i + 2 < len && is_ascii_letter(s[i + 2]))
+            );
+        } else {
+            size_t stem = stem_ascii_letters_around(s, len, i);
+            byte_ok = is_cp1252_punct_or_accented(b) && stem >= 2 && (
+                (prev >= 0 && is_ascii_letter((unsigned char)prev)) ||
+                (next >= 'a' && next <= 'z' && (prev < 0 || prev == ' ' || prev == '/' || prev == '\\' || prev == '-' || prev == '_'))
+            );
         }
+        if (!byte_ok)
+            all_strict = false;
     }
     if (!high)
         return false;
     if (!sjis && !gbk)
         return all_cp1252 || (ascii_letters >= 2 && !adj_high);
-    if (!adj_high && all_cp1252 && flanked && ascii_letters >= 2)
+    if (!adj_high && all_cp1252 && all_strict && ascii_letters >= 2)
         return !sjis || !utf8_has_kana(sjis);
     return false;
 }

@@ -367,37 +367,37 @@ static bool read_config_entries(const char *path)
 		return false;
 
 	for (int i = 0; i < ini_size; i++) {
-		if (!strcmp(ini[i].name->text, "GameName")) {
+		if (!strcasecmp(ini[i].name->text, "GameName")) {
 			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.game_name);
 			config.game_name = value;
-		} else if (!strcmp(ini[i].name->text, "BootName")) {
+		} else if (!strcasecmp(ini[i].name->text, "BootName")) {
 			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.boot_name);
 			config.boot_name = value;
-		} else if (!strcmp(ini[i].name->text, "CodeName")) {
+		} else if (!strcasecmp(ini[i].name->text, "CodeName")) {
 			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.ain_filename);
 			config.ain_filename = value;
-		} else if (!strcmp(ini[i].name->text, "MainVM")) {
+		} else if (!strcasecmp(ini[i].name->text, "MainVM")) {
 			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.vm_name);
 			config.vm_name = value;
-		} else if (!strcmp(ini[i].name->text, "SaveFolder")) {
+		} else if (!strcasecmp(ini[i].name->text, "SaveFolder")) {
 			char *value = xstrdup(ini_string(&ini[i])->text);
 			free(config.save_dir);
 			config.save_dir = value;
-		} else if (!strcmp(ini[i].name->text, "ViewWidth")) {
+		} else if (!strcasecmp(ini[i].name->text, "ViewWidth")) {
 			config.view_width = ini_integer(&ini[i]);
 			config.view_width_set = true;
-		} else if (!strcmp(ini[i].name->text, "ViewHeight")) {
+		} else if (!strcasecmp(ini[i].name->text, "ViewHeight")) {
 			config.view_height = ini_integer(&ini[i]);
 			config.view_height_set = true;
-		} else if (!strcmp(ini[i].name->text, "VolumeValancer")) {
+		} else if (!strcasecmp(ini[i].name->text, "VolumeValancer")) {
 			read_mixer_channels(&ini[i]);
-		} else if (!strcmp(ini[i].name->text, "DefaultVolumeRate")) {
+		} else if (!strcasecmp(ini[i].name->text, "DefaultVolumeRate")) {
 			config.default_volume = ini_integer(&ini[i]);
-		} else if (!strcmp(ini[i].name->text, "UseJoypad")) {
+		} else if (!strcasecmp(ini[i].name->text, "UseJoypad")) {
 			config.joypad = ini_boolean(&ini[i]);
 		}
 		ini_free_entry(&ini[i]);

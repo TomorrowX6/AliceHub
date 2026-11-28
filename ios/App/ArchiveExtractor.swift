@@ -37,12 +37,51 @@ enum ArchiveExtractor {
             ((0xC0...0xFF).contains(b) && b != 0xD7 && b != 0xF7)
     }
 
+    private static func isEnglishContractionAfterApostrophe(_ rawBytes: [UInt8], at idx: Int) -> Bool {
+        guard idx >= 2, isAsciiLetter(rawBytes[idx - 1]), isAsciiLetter(rawBytes[idx - 2]),
+              idx + 1 < rawBytes.count else { return false }
+        let n1 = rawBytes[idx + 1]
+        let l1 = (0x41...0x5A).contains(n1) ? n1 + 32 : n1
+        let n2: Int = idx + 2 < rawBytes.count ? Int(rawBytes[idx + 2]) : -1
+        let l2 = (0x41...0x5A).contains(n2) ? n2 + 32 : n2
+        let n3: Int = idx + 3 < rawBytes.count ? Int(rawBytes[idx + 3]) : -1
+        let n2NotLetter = n2 < 0 || !isAsciiLetter(UInt8(n2))
+        let n3NotLetter = n3 < 0 || !isAsciiLetter(UInt8(n3))
+        switch l1 {
+        case 0x73, 0x74, 0x64, 0x6D: return n2NotLetter // s, t, d, m
+        case 0x72, 0x76: return l2 == 0x65 && n3NotLetter // re, ve
+        case 0x6C: return l2 == 0x6C && n3NotLetter // ll
+        default: return false
+        }
+    }
+
+    private static func stemAsciiLettersAround(_ rawBytes: [UInt8], at idx: Int) -> Int {
+        var segStart = idx
+        while segStart > 0 && rawBytes[segStart - 1] != 0x2F && rawBytes[segStart - 1] != 0x5C {
+            segStart -= 1
+        }
+        var segEnd = idx
+        while segEnd < rawBytes.count && rawBytes[segEnd] != 0x2F && rawBytes[segEnd] != 0x5C {
+            segEnd += 1
+        }
+        var lastDot = -1
+        for k in segStart..<segEnd where rawBytes[k] == 0x2E {
+            lastDot = k
+        }
+        let stemEnd = lastDot > segStart ? lastDot : segEnd
+        var count = 0
+        for k in segStart..<stemEnd where isAsciiLetter(rawBytes[k]) {
+            count += 1
+        }
+        return count
+    }
+
     static func looksLikeCp1252(_ rawBytes: [UInt8], sjisStrict: String?, gbkStrict: String?) -> Bool {
         var highCount = 0
         var hasAdjacentHigh = false
         var asciiLetters = 0
         var allCp1252Isolated = true
-        var flankedByLatinContext = false
+        var allStrictEvidence = true
         for i in rawBytes.indices {
             let b = rawBytes[i]
             if b < 0x80 {
@@ -59,24 +98,33 @@ enum ArchiveExtractor {
             if !isCp1252PunctOrAccented(b) {
                 allCp1252Isolated = false
             }
-            if prev >= 0 && isAsciiLetter(UInt8(prev)) && (next < 0 || next < 0x80) {
-                if (0xC0...0xFF).contains(b) {
-                    if next < 0 || (0x61...0x7A).contains(next) || next == 0x20 || next == 0x2E || next == 0x2D || next == 0x5F || next == 0x2F || next == 0x5C {
-                        flankedByLatinContext = true
-                    }
+            let byteOk: Bool
+            if (0x80...0x9F).contains(b) {
+                if next >= 0x40 {
+                    byteOk = b == 0x92 && isEnglishContractionAfterApostrophe(rawBytes, at: i)
                 } else {
-                    flankedByLatinContext = true
+                    byteOk = isCp1252PunctOrAccented(b)
                 }
-            } else if next >= 0 && (0x61...0x7A).contains(next) &&
-                (prev < 0 || prev == 0x20 || prev == 0x2F || prev == 0x5C || prev == 0x2D || prev == 0x5F) {
-                flankedByLatinContext = true
+            } else if (0xE0...0xEF).contains(b) {
+                let stemLetters = stemAsciiLettersAround(rawBytes, at: i)
+                byteOk = stemLetters >= 2 && (
+                    (prev >= 0 && isAsciiLetter(UInt8(prev))) ||
+                        ((0x61...0x7A).contains(next) && i + 2 < rawBytes.count && isAsciiLetter(rawBytes[i + 2]))
+                )
+            } else {
+                let stemLetters = stemAsciiLettersAround(rawBytes, at: i)
+                byteOk = isCp1252PunctOrAccented(b) && stemLetters >= 2 && (
+                    (prev >= 0 && isAsciiLetter(UInt8(prev))) ||
+                        ((0x61...0x7A).contains(next) && (prev < 0 || prev == 0x20 || prev == 0x2F || prev == 0x5C || prev == 0x2D || prev == 0x5F))
+                )
             }
+            if !byteOk { allStrictEvidence = false }
         }
         if highCount == 0 { return false }
         if sjisStrict == nil && gbkStrict == nil {
             return allCp1252Isolated || (asciiLetters >= 2 && !hasAdjacentHigh)
         }
-        if !hasAdjacentHigh && allCp1252Isolated && flankedByLatinContext && asciiLetters >= 2 {
+        if !hasAdjacentHigh && allCp1252Isolated && allStrictEvidence && asciiLetters >= 2 {
             guard let sjisCandidate = sjisStrict else { return true }
             let hasKana = sjisCandidate.unicodeScalars.contains {
                 (0x3041...0x309F).contains($0.value) || (0x30A1...0x30FF).contains($0.value)

@@ -235,4 +235,19 @@ public class MultiLangImportAndBadgeTest {
         assertTrue(new File(nsPicDir, "NSPic").mkdir());
         assertTrue(GameCatalog.hasLocalChineseMarkers(nsPicDir));
     }
+
+    @Test
+    public void shiftJisKanjiWithAsciiTrailByteIsNotCorruptedAsCp1252() {
+        // "地.ain" = 92 6E 2E 61 69 6E (0x92 is CP1252 right apostrophe, 0x6E is 'n')
+        assertEquals("\u5730.ain", ArchiveExtractor.INSTANCE.decodeBestCjkText(new byte[]{
+                (byte) 0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E
+        }, false));
+        // "A地.ain" and "Map地.ain" must also remain Shift-JIS
+        assertEquals("A\u5730.ain", ArchiveExtractor.INSTANCE.decodeBestCjkText(new byte[]{
+                0x41, (byte) 0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E
+        }, false));
+        assertEquals("Map\u5730.ain", ArchiveExtractor.INSTANCE.decodeBestCjkText(new byte[]{
+                0x4D, 0x61, 0x70, (byte) 0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E
+        }, false));
+    }
 }

@@ -812,9 +812,7 @@ int save_text_gbk_bias(const char *s)
 
 	bool ok_s = false, ok_g = false;
 	char *us = sys4_has_mai_word_table() ? mai_cjk2utf_strict(s, &ok_s) : cjk2utf_strict(s, false, &ok_s);
-	char *ug = gbk_plausible ? cjk2utf_strict(s, true, &ok_g) : NULL;
-	if (!gbk_plausible)
-		ok_g = false;
+	char *ug = cjk2utf_strict(s, true, &ok_g);
 	if (ok_s && (sys4_has_mai_word_table() || !ok_g)) {
 		free(us);
 		free(ug);
@@ -823,7 +821,7 @@ int save_text_gbk_bias(const char *s)
 	if (!ok_s && ok_g) {
 		free(us);
 		free(ug);
-		return 100;
+		return gbk_plausible ? 100 : 0;
 	}
 
 	int bias = 0;

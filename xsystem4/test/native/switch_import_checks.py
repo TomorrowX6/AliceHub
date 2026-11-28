@@ -324,12 +324,14 @@ int main(int argc, char **argv)
         sjis_zip.write_bytes(make_raw_zip([
             (b"\x83\x5c\\System40.ini", b"codename = \x95\x5c.ain ; unquoted\n", 0),
             (b"\x83\x5c\\\x95\x5c.ain", b"code", 0),
+            (b"\x83\x5c\\\x92n.ain", b"kanji_chi", 0),
             (b"\x83\x5c\\.xsys4rc", b"font=ok", 0),
             (b"__MACOSX/._weird:name", b"appledouble", 0),
         ]))
         self.assertEqual(self.run_import(sjis_zip), "local:xsystem4:ソ")
         installed = self.library / "xsystem4/games/ソ"
         self.assertEqual((installed / "表.ain").read_bytes(), b"code")
+        self.assertEqual((installed / "地.ain").read_bytes(), b"kanji_chi")
         self.assertEqual((installed / ".xsys4rc").read_bytes(), b"font=ok")
         self.assertFalse((installed / "__MACOSX").exists())
 

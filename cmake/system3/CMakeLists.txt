@@ -36,6 +36,7 @@ list(REMOVE_ITEM vm_sources
   "${src}/sys/nact_sys3.cpp"
   "${src}/sys/ags.cpp"
   "${src}/sys/ags_text.cpp"
+  "${src}/sys/game_id.cpp"
   "${src}/sys/nact_input.cpp")
 
 function(alicehub_patch_replace var orig repl desc)
@@ -1121,7 +1122,61 @@ alicehub_patch_replace(patched_config_cpp
   [=[			std::tie(key, val) = parse_keyval(line);]=]
   [=[			std::tie(key, val) = parse_keyval(p);]=]
   "config.cpp parse_keyval uses BOM-stripped pointer")
+alicehub_patch_replace(patched_config_cpp
+  [=[			else if (!strcasecmp(key, "game"))
+				game_id = val;
+			else if (!strcasecmp(key, "encoding"))
+				encoding = val;]=]
+  [=[			else if (!strcasecmp(key, "game") || !strcasecmp(key, "encoding")) {
+				char *clean = val;
+				if (*clean == '"') {
+					clean++;
+					char *q = strchr(clean, '"');
+					if (q) *q = '\0';
+				} else {
+					for (char *c = clean; *c; c++) {
+						if (*c == ';' || *c == '#' || (*c == '/' && c[1] == '/')) {
+							*c = '\0';
+							break;
+						}
+					}
+				}
+				clean = trim(clean);
+				if (!strcasecmp(key, "game"))
+					game_id = clean;
+				else
+					encoding = clean;
+			}]=]
+  "config.cpp strip inline comments on game and encoding")
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/config.cpp" CONTENT "${patched_config_cpp}" @ONLY)
+
+# --- Patch sys/game_id.cpp (auto-detect GDISK.DAT / AGAME.DAT when ADISK.DAT is absent) ---
+set(orig_game_id_cpp "${src}/sys/game_id.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${orig_game_id_cpp}")
+file(READ "${orig_game_id_cpp}" patched_game_id_cpp)
+alicehub_patch_replace(patched_game_id_cpp
+  [=[		uint32_t crc32_a = calc_crc32("ADISK.DAT");
+		uint32_t crc32_b = calc_crc32("BDISK.DAT");
+		entry = lookup(crc32_a, crc32_b);]=]
+  [=[		uint32_t crc32_a = calc_crc32("ADISK.DAT");
+		uint32_t crc32_b = calc_crc32("BDISK.DAT");
+		entry = lookup(crc32_a, crc32_b);
+		if (!crc32_a && !entry) {
+			uint32_t gdisk_crc = calc_crc32("GDISK.DAT");
+			if (gdisk_crc) {
+				crc32_a = gdisk_crc;
+				entry = lookup(crc32_a, 0);
+			} else {
+				uint32_t agame_crc = calc_crc32("AGAME.DAT");
+				if (agame_crc) {
+					crc32_a = agame_crc;
+					entry = lookup(crc32_a, 0);
+				}
+			}
+		}]=]
+  "game_id.cpp GDISK.DAT and AGAME.DAT CRC auto-detection")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/game_id.cpp" CONTENT "${patched_game_id_cpp}" @ONLY)
+list(APPEND vm_sources "${CMAKE_CURRENT_BINARY_DIR}/game_id.cpp")
 
 # --- Patch fileio.cpp (support LF-only and CRLF AG00.DAT lines) ---
 set(orig_fileio_cpp "${src}/fileio.cpp")

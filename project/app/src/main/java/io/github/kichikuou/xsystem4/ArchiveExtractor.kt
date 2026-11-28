@@ -98,12 +98,52 @@ object ArchiveExtractor {
             b == 0xA9 || b == 0xAE || b == 0xB0 ||
             (b in 0xC0..0xFF && b != 0xD7 && b != 0xF7)
 
+    private fun isEnglishContractionAfterApostrophe(rawBytes: ByteArray, idx: Int): Boolean {
+        if (idx < 2 || !isAsciiLetter(rawBytes[idx - 1].toInt() and 0xFF) || !isAsciiLetter(rawBytes[idx - 2].toInt() and 0xFF)) {
+            return false
+        }
+        val n1 = if (idx + 1 < rawBytes.size) (rawBytes[idx + 1].toInt() and 0xFF) else return false
+        val l1 = if (n1 in 'A'.code..'Z'.code) n1 + 32 else n1
+        val n2 = if (idx + 2 < rawBytes.size) (rawBytes[idx + 2].toInt() and 0xFF) else -1
+        val l2 = if (n2 in 'A'.code..'Z'.code) n2 + 32 else n2
+        val n3 = if (idx + 3 < rawBytes.size) (rawBytes[idx + 3].toInt() and 0xFF) else -1
+        val n2NotLetter = n2 < 0 || !isAsciiLetter(n2)
+        val n3NotLetter = n3 < 0 || !isAsciiLetter(n3)
+        return when (l1) {
+            's'.code, 't'.code, 'd'.code, 'm'.code -> n2NotLetter
+            'r'.code, 'v'.code -> l2 == 'e'.code && n3NotLetter
+            'l'.code -> l2 == 'l'.code && n3NotLetter
+            else -> false
+        }
+    }
+
+    private fun stemAsciiLettersAround(rawBytes: ByteArray, idx: Int): Int {
+        var segStart = idx
+        while (segStart > 0 && rawBytes[segStart - 1].toInt() != '/'.code && rawBytes[segStart - 1].toInt() != '\\'.code) {
+            segStart--
+        }
+        var segEnd = idx
+        while (segEnd < rawBytes.size && rawBytes[segEnd].toInt() != '/'.code && rawBytes[segEnd].toInt() != '\\'.code) {
+            segEnd++
+        }
+        var lastDot = -1
+        for (k in segStart until segEnd) {
+            if (rawBytes[k].toInt() == '.'.code) lastDot = k
+        }
+        val stemEnd = if (lastDot > segStart) lastDot else segEnd
+        var count = 0
+        for (k in segStart until stemEnd) {
+            if (isAsciiLetter(rawBytes[k].toInt() and 0xFF)) count++
+        }
+        return count
+    }
+
     internal fun looksLikeCp1252(rawBytes: ByteArray, sjisStrict: String? = decodeStrict(rawBytes, SJIS_CHARSET), gbkStrict: String? = decodeStrict(rawBytes, GBK_CHARSET)): Boolean {
         var highCount = 0
         var hasAdjacentHigh = false
         var asciiLetters = 0
         var allCp1252Isolated = true
-        var flankedByLatinContext = false
+        var allStrictEvidence = true
         for (i in rawBytes.indices) {
             val b = rawBytes[i].toInt() and 0xFF
             if (b < 0x80) {
@@ -120,24 +160,37 @@ object ArchiveExtractor {
             if (!isCp1252PunctOrAccented(b)) {
                 allCp1252Isolated = false
             }
-            if (prev >= 0 && isAsciiLetter(prev) && (next < 0 || next < 0x80)) {
-                if (b in 0xC0..0xFF) {
-                    if (next < 0 || next in 'a'.code..'z'.code || next == ' '.code || next == '.'.code || next == '-'.code || next == '_'.code || next == '/'.code || next == '\\'.code) {
-                        flankedByLatinContext = true
+            val byteOk = when {
+                b in 0x80..0x9F -> {
+                    if (next >= 0x40) {
+                        b == 0x92 && isEnglishContractionAfterApostrophe(rawBytes, i)
+                    } else {
+                        isCp1252PunctOrAccented(b)
                     }
-                } else {
-                    flankedByLatinContext = true
                 }
-            } else if (next >= 0 && next in 'a'.code..'z'.code && (prev < 0 || prev == ' '.code || prev == '/'.code || prev == '\\'.code || prev == '-'.code || prev == '_'.code)) {
-                flankedByLatinContext = true
+                b in 0xE0..0xEF -> {
+                    val stemLetters = stemAsciiLettersAround(rawBytes, i)
+                    stemLetters >= 2 && (
+                        (prev >= 0 && isAsciiLetter(prev)) ||
+                            (next in 'a'.code..'z'.code && i + 2 < rawBytes.size && isAsciiLetter(rawBytes[i + 2].toInt() and 0xFF))
+                        )
+                }
+                else -> {
+                    val stemLetters = stemAsciiLettersAround(rawBytes, i)
+                    isCp1252PunctOrAccented(b) && stemLetters >= 2 && (
+                        (prev >= 0 && isAsciiLetter(prev)) ||
+                            (next in 'a'.code..'z'.code && (prev < 0 || prev == ' '.code || prev == '/'.code || prev == '\\'.code || prev == '-'.code || prev == '_'.code))
+                        )
+                }
             }
+            if (!byteOk) allStrictEvidence = false
         }
         if (highCount == 0) return false
         if (sjisStrict == null && gbkStrict == null) {
             // Invalid in both Shift-JIS and GBK: CP1252 cleanly preserves European filenames/punctuation (Café, Rance IX – Patch, Rance™)
             return allCp1252Isolated || (asciiLetters >= 2 && !hasAdjacentHigh)
         }
-        if (!hasAdjacentHigh && allCp1252Isolated && flankedByLatinContext && asciiLetters >= 2) {
+        if (!hasAdjacentHigh && allCp1252Isolated && allStrictEvidence && asciiLetters >= 2) {
             val sjisCandidate = sjisStrict ?: return true
             val hasKana = sjisCandidate.any { it in '\u3041'..'\u309F' || it in '\u30A1'..'\u30FF' }
             if (!hasKana) return true

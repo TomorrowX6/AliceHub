@@ -186,6 +186,23 @@ struct OnlineGameChecks {
         precondition(ArchiveExtractor.decodeBestCjkText(Data([0x52, 0x61, 0x6E, 0x63, 0x65, 0x92, 0x73, 0x20, 0x51, 0x75, 0x65, 0x73, 0x74, 0x2E, 0x74, 0x78, 0x74])) == "Rance\u{2019}s Quest.txt")
         precondition(ArchiveExtractor.decodeBestCjkText(Data([0x43, 0x61, 0x66, 0xE9, 0x2E, 0x74, 0x78, 0x74])) == "Caf\u{00E9}.txt")
         precondition(ArchiveExtractor.decodeBestCjkText(Data([0x47, 0x72, 0x6F, 0xDF, 0x65, 0x20, 0x53, 0x74, 0x72, 0x61, 0xDF, 0x65, 0x2E, 0x74, 0x78, 0x74])) == "Gro\u{00DF}e Stra\u{00DF}e.txt")
+        precondition(ArchiveExtractor.decodeBestCjkText(Data([0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E]), preferGbkOnTie: false) == "地.ain")
+        precondition(ArchiveExtractor.decodeBestCjkText(Data([0x4D, 0x61, 0x70, 0x92, 0x6E, 0x2E, 0x61, 0x69, 0x6E]), preferGbkOnTie: false) == "Map地.ain")
+
+        // Patch folder with bare .ain must NOT displace complete game folder with INI + assets
+        let bundleRoot = root.appendingPathComponent("BundleWithPatch")
+        let patchDir = bundleRoot.appendingPathComponent("English Patch")
+        let fullGameDir = bundleRoot.appendingPathComponent("Game")
+        let stagedOut = root.appendingPathComponent("StagedFromBundle")
+        try files.createDirectory(at: patchDir, withIntermediateDirectories: true)
+        try files.createDirectory(at: fullGameDir, withIntermediateDirectories: true)
+        try Data("patch".utf8).write(to: patchDir.appendingPathComponent("Demo_EN.ain"))
+        try Data("CodeName = \"Demo.ain\"\n".utf8).write(to: fullGameDir.appendingPathComponent("AliceStart.ini"))
+        try Data("base".utf8).write(to: fullGameDir.appendingPathComponent("Demo.ain"))
+        try Data("cg".utf8).write(to: fullGameDir.appendingPathComponent("DemoCG.afa"))
+        try LocalGameImport.stageFolder(bundleRoot, to: stagedOut)
+        precondition(files.fileExists(atPath: stagedOut.appendingPathComponent("AliceStart.ini").path))
+        precondition(files.fileExists(atPath: stagedOut.appendingPathComponent("DemoCG.afa").path))
         for tcName in ["媽媽.ain", "對戰.ini", "實戰.ini", "搖桿.txt", "寶劍.ain", "兩張.ain"] {
             precondition(ArchiveExtractor.repairSjisAsGbkMojibake(tcName) == tcName, "Corrupted TC filename: \(tcName)")
         }

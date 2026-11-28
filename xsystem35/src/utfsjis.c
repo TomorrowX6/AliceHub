@@ -419,18 +419,32 @@ bool cjk_looks_like_gbk(const uint8_t *src) {
 		return false;
 
 	int sjis_kana = 0, gb2312_valid = 0, gbk_low_trail = 0;
+	int hankaku_kata_marks = 0, gb2312_punct = 0;
 	const uint8_t *p = src;
+	uint8_t prev = 0;
 	while (*p) {
 		if (*p < 0x80) {
-			p++;
+			prev = *p++;
 		} else if ((*p >= 0x81 && *p <= 0x9f) || (*p >= 0xe0 && *p <= 0xfc)) {
 			uint8_t b2 = p[1];
 			if ((p[0] == 0x82 && b2 >= 0x9f && b2 <= 0xf1) ||
 				(p[0] == 0x83 && b2 >= 0x40 && b2 <= 0x96)) {
 				sjis_kana++;
 			}
+			prev = 0;
 			p += b2 ? 2 : 1;
 		} else {
+			uint8_t b = *p;
+			if (b == 0xb0 && prev >= 0xb1 && prev <= 0xdf) {
+				hankaku_kata_marks++;
+			} else if (b == 0xde && (prev == 0xb3 || (prev >= 0xb6 && prev <= 0xc4) || (prev >= 0xca && prev <= 0xce))) {
+				hankaku_kata_marks++;
+			} else if (b == 0xdf && prev >= 0xca && prev <= 0xce) {
+				hankaku_kata_marks++;
+			} else if (b == 0xaf && prev >= 0xb1 && prev <= 0xdd && p[1] >= 0xb1 && p[1] <= 0xdd) {
+				hankaku_kata_marks++;
+			}
+			prev = b;
 			p++;
 		}
 	}
@@ -443,10 +457,15 @@ bool cjk_looks_like_gbk(const uint8_t *src) {
 			if (b2 < 0x40 || b2 > 0xfe || b2 == 0x7f || gbk_to_unicode[*p - 0x81][b2 - 0x40] == 0) {
 				p++;
 			} else {
-				if (*p >= 0xa1 && *p <= 0xf7 && b2 >= 0xa1 && b2 <= 0xfe)
+				if (*p >= 0xa1 && *p <= 0xf7 && b2 >= 0xa1 && b2 <= 0xfe) {
 					gb2312_valid++;
-				else if (*p >= 0xa1 && b2 >= 0x40 && b2 <= 0x7e)
+					if ((*p == 0xa1 && (b2 == 0xa2 || b2 == 0xa3 || b2 == 0xb0 || b2 == 0xb1 || b2 == 0xb6 || b2 == 0xb7)) ||
+						(*p == 0xa3 && (b2 == 0xa1 || b2 == 0xac || b2 == 0xba || b2 == 0xbf))) {
+						gb2312_punct++;
+					}
+				} else if (*p >= 0xa1 && b2 >= 0x40 && b2 <= 0x7e) {
 					gbk_low_trail++;
+				}
 				p += 2;
 			}
 		} else {
@@ -457,8 +476,10 @@ bool cjk_looks_like_gbk(const uint8_t *src) {
 		return false;
 	if (sjis_err <= gbk_err) {
 		// Pure GB2312 sentences whose bytes fall in 0xA1..0xDF parse as 1-byte halfwidth katakana in SJIS
-		// with sjis_err == 0; accept them only when >= 4 valid GB2312 pairs and zero errors / zero SJIS kana.
-		return gbk_err == 0 && sjis_kana == 0 && gb2312_valid >= 4;
+		// with sjis_err == 0; only flip on a tie when GB2312 punctuation is present and zero halfwidth
+		// katakana markers (voiced ﾞ/ﾟ, prolonged ｰ, geminate ｯ) appear.
+		return gbk_err == 0 && sjis_kana == 0 && gb2312_valid >= 4 &&
+			hankaku_kata_marks == 0 && gb2312_punct > 0;
 	}
 	if (gbk_err > 0 && (gb2312_valid < 4 || sjis_err <= gbk_err * 2))
 		return false;

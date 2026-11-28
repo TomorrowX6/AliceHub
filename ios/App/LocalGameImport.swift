@@ -184,6 +184,7 @@ enum LocalGameImport {
 
     static func stageFolder(_ source: URL, to output: URL) throws {
         var primary: (url: URL, engine: GameEngine, names: Set<String>)?
+        var fallbackPrimary: (url: URL, engine: GameEngine, names: Set<String>)?
         var sources = [(url: URL, data: Bool, engine: GameEngine?, names: Set<String>)]()
         var patches = [URL]()
         var pending = [(source, 0)]
@@ -195,8 +196,8 @@ enum LocalGameImport {
             let local = Set(children.filter { !directory($0) }.map(leaf))
             let launch = try? GameLibrary.launchInfo(root)
             let engine = launch?.engine
-            if let engine, depth == 0 ||
-                (engine == .system4 && (hasSystem4Root(local) || launch?.target.pathExtension.lowercased() == "ini" || !system4Code(local).isEmpty)) ||
+            let strongSystem4 = engine == .system4 && (hasSystem4Root(local) || launch?.target.pathExtension.lowercased() == "ini")
+            if let engine, depth == 0 || strongSystem4 ||
                 (engine == .system3 && local.contains(where: GameLibrary.isSystem35Scenario)) ||
                 engine == .legacySystem3 {
                 if primary == nil {
@@ -210,6 +211,9 @@ enum LocalGameImport {
                 if engine == .system4 { patches += children.filter { directory($0) && leaf($0) == "patchcn" } }
                 if depth == 0 { break }
             } else {
+                if engine == .system4 && !system4Code(local).isEmpty && fallbackPrimary == nil {
+                    fallbackPrimary = (root, engine, local)
+                }
                 if depth > 0 && isCompanionData(root, names: local) {
                     sources.append((root, true, engine, local))
                 } else if depth > 0 && local.contains(where: { ["ald", "bgi", "alk"].contains(($0 as NSString).pathExtension) }) {
@@ -220,7 +224,7 @@ enum LocalGameImport {
                 }
             }
         }
-        guard let primary else { throw LibraryError.notGame }
+        guard let primary = primary ?? fallbackPrimary else { throw LibraryError.notGame }
         let rules = try LocalImportCleanup(root: primary.url)
         if rules.game == .ixseal {
             for patch in patches {
@@ -275,7 +279,7 @@ enum LocalGameImport {
         switch launch.engine {
         case .system4:
             guard let local = try? names(url) else { return false }
-            return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini" || !system4Code(local).isEmpty
+            return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini"
         case .system3, .legacySystem3:
             return true
         }

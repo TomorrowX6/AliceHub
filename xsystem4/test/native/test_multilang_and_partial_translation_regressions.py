@@ -10,6 +10,7 @@ import unittest
 from test_evenicle2_regressions import LIBSYS4_CORE, ROOT, compile_and_run
 
 REPO = ROOT.parent
+LIBSYS4_SRC = ROOT / "subprojects" / "libsys4" / "src"
 XSYS35_SRC = REPO / "xsystem35" / "src"
 SYS3_BUILD = Path("/root/Rance10_CN/host-build/system3")
 SYS3_UPSTREAM = SYS3_BUILD / "_deps" / "system3_source-src" / "src"
@@ -223,6 +224,8 @@ int main(void) {{
     assert(save_text_gbk_bias("Ros\\xc9s caf\\xc9s") <= 0);
     // Half-width katakana 'ｱｲ' (0xB1 0xB2) must NOT have positive GBK bias!
     assert(save_text_gbk_bias("\\xb1\\xb2") <= 0);
+    // Traditional Chinese GBK-extension string '儲檔' (83 A6 99 6E) must NOT vote -100 Shift-JIS!
+    assert(save_text_gbk_bias("\\x83\\xa6\\x99\\x6e") == 0);
     // Real GBK Chinese save comment ('存档一：开始') MUST have positive GBK bias!
     assert(save_text_gbk_bias("\\xb4\\xe6\\xb5\\xb5\\xd2\\xbb\\xa3\\xba\\xbf\\xaa\\xca\\xbc") > 0);
     // Real Shift-JIS save comment ('セーブ１') MUST have negative GBK bias!
@@ -262,9 +265,11 @@ int main(void) {
     // 1. UTF-8 Russian and UTF-8 Chinese must NOT trigger cjk_looks_like_gbk()!
     assert(cjk_looks_like_gbk((const uint8_t *)"\xd0\xa0\xd0\xb0\xd0\xbd\xd1\x81 10") == false);
     assert(cjk_looks_like_gbk((const uint8_t *)"\xe5\xbc\x80\xe5\xa7\x8b\xe6\xb8\xb8\xe6\x88\x8f") == false);
-    // 2. Single CP1252 ellipsis 'Wait…really?' (0x85) or short half-width kana 'ｱｲ' must NOT trigger GBK!
+    // 2. Single CP1252 ellipsis 'Wait…really?' (0x85), short 'ｱｲ', or full half-width Japanese 'ｹﾞｰﾑｽﾀｰﾄ' must NOT trigger GBK!
     assert(cjk_looks_like_gbk((const uint8_t *)"Wait\x85really?") == false);
     assert(cjk_looks_like_gbk((const uint8_t *)"\xb1\xb2") == false);
+    assert(cjk_looks_like_gbk((const uint8_t *)"\xb9\xde\xb0\xd1\xbd\xc0\xb0\xc4") == false);
+    assert(cjk_looks_like_gbk((const uint8_t *)"\xb1\xb2\xb3\xb4\xb5\xb6\xb7\xb8") == false);
     // 3. Real GBK sentence MUST trigger cjk_looks_like_gbk()!
     assert(cjk_looks_like_gbk((const uint8_t *)"\xbf\xaa\xca\xbc\xd3\xce\xcf\xb7\xa1\xa3") == true);
 
@@ -315,6 +320,7 @@ int main(void) {
 #include "config.h"
 #include "encoding.h"
 #include "fileio.h"
+#include "game_id.h"
 #include "scenario.h"
 
 [[noreturn]] void sys_error(const char *format, ...) {
@@ -329,6 +335,58 @@ void Dri::open(const char *file_name) { (void)file_name; }
 std::vector<uint8_t> g_test_page;
 std::vector<uint8_t> Dri::load(int page) {
     return (page == 1) ? g_test_page : std::vector<uint8_t>();
+}
+
+static void write_forged_crc256(const char *path, uint32_t target_crc) {
+    uint32_t table[256];
+    for (int i = 0; i < 256; i++) {
+        uint32_t c = (uint32_t)i;
+        for (int j = 0; j < 8; j++)
+            c = (c & 1) ? ((c >> 1) ^ 0xedb88320u) : (c >> 1);
+        table[i] = c;
+    }
+    uint8_t buf[256] = {0};
+    // Reverse-step CRC from target_crc back 4 bytes so final 256-byte CRC == target_crc
+    uint32_t crc = ~target_crc;
+    uint8_t tail[4];
+    for (int pos = 3; pos >= 0; pos--) {
+        uint32_t top = crc >> 24;
+        int idx = -1;
+        for (int i = 0; i < 256; i++) {
+            if ((table[i] >> 24) == top) { idx = i; break; }
+        }
+        assert(idx >= 0);
+        uint32_t prev_crc = (crc ^ table[idx]) << 8;
+        // We compute forward after setting bytes below
+        tail[pos] = (uint8_t)idx;
+        crc = prev_crc;
+    }
+    uint32_t fwd = ~0u;
+    for (int i = 0; i < 252; i++)
+        fwd = table[(fwd ^ buf[i]) & 0xff] ^ (fwd >> 8);
+    // Adjust tail using linear CRC property: solve 4 bytes from fwd to ~target_crc
+    uint32_t want = ~target_crc;
+    uint8_t idx_bytes[4];
+    for (int pos = 3; pos >= 0; pos--) {
+        uint32_t top = want >> 24;
+        int idx = -1;
+        for (int i = 0; i < 256; i++) {
+            if ((table[i] >> 24) == top) { idx = i; break; }
+        }
+        assert(idx >= 0);
+        idx_bytes[pos] = (uint8_t)idx;
+        want = (want ^ table[idx]) << 8;
+    }
+    for (int pos = 0; pos < 4; pos++) {
+        uint8_t b = (uint8_t)((fwd & 0xff) ^ idx_bytes[pos]);
+        buf[252 + pos] = b;
+        fwd = table[(fwd ^ b) & 0xff] ^ (fwd >> 8);
+    }
+    assert(~fwd == target_crc);
+    FILE *fp = fopen(path, "wb");
+    assert(fp != NULL);
+    assert(fwrite(buf, 1, 256, fp) == 256);
+    fclose(fp);
 }
 
 int main() {
@@ -365,23 +423,40 @@ int main() {
     std::string lone_before_quote("\x82'hi'", 5);
     assert(sjis->toUtf8(lone_before_quote) == "?'hi'");
 
-    // 4. Case-insensitive SYSTEM3.INI with UTF-8 BOM + LF-only AG00.DAT
+    // 4. Case-insensitive SYSTEM3.INI with UTF-8 BOM + inline comment on game + LF-only AG00.DAT
     char tmpdir[] = "/tmp/sys3_multilang_XXXXXX";
     assert(mkdtemp(tmpdir) != NULL);
     assert(chdir(tmpdir) == 0);
 
     FILE *ini = fopen("SYSTEM3.INI", "wb");
     assert(ini != NULL);
-    const char *ini_data = "\xef\xbb\xbf[config]\ngame = rance41_eng\nencoding = utf-8\nfontfile = Missing.ttf\n";
+    const char *ini_data = "\xef\xbb\xbf[config]\ngame = little_vampire_eng ; English v2.0\nencoding = utf-8 # force utf8\nfontfile = Missing.ttf\n";
     fwrite(ini_data, 1, strlen(ini_data), ini);
     fclose(ini);
 
     char arg0[] = "system3";
     char *argv[] = { arg0 };
     Config cfg(1, argv);
-    assert(cfg.game_id == "rance41_eng");
+    assert(cfg.game_id == "little_vampire_eng");
     assert(cfg.encoding == "utf-8");
     assert(cfg.font_file == "Missing.ttf");
+    GameId gid_ini(cfg);
+    assert(gid_ini.game == GameId::LITTLE_VAMPIRE);
+    assert(gid_ini.language == ENGLISH);
+
+    // 5. Auto-detect GDISK.DAT (Rance 2 Hint) and AGAME.DAT (Prostudent G Omake) without system3.ini
+    unlink("SYSTEM3.INI");
+    write_forged_crc256("GDISK.DAT", 0x2a85e5fau);
+    Config cfg_gdisk(1, argv);
+    GameId gid_gdisk(cfg_gdisk);
+    assert(gid_gdisk.game == GameId::RANCE2_HINT);
+    unlink("GDISK.DAT");
+
+    write_forged_crc256("AGAME.DAT", 0x8ba18bffu);
+    Config cfg_agame(1, argv);
+    GameId gid_agame(cfg_agame);
+    assert(gid_agame.game == GameId::PROG_OMAKE);
+    unlink("AGAME.DAT");
 
     FILE *ag = fopen("AG00.DAT", "wb");
     assert(ag != NULL);
@@ -398,7 +473,6 @@ int main() {
     assert(fio->gets() == "Key");
     fio.reset();
 
-    unlink("SYSTEM3.INI");
     unlink("AG00.DAT");
     assert(chdir("/tmp") == 0);
     rmdir(tmpdir);
@@ -409,11 +483,67 @@ int main() {
 """
         out = _compile_and_run_cpp(
             harness,
-            [SYS3_BUILD / "config.cpp", SYS3_BUILD / "fileio.cpp", SYS3_BUILD / "encoding.cpp", SYS3_BUILD / "scenario.cpp"],
+            [SYS3_BUILD / "config.cpp", SYS3_BUILD / "fileio.cpp", SYS3_BUILD / "encoding.cpp", SYS3_BUILD / "scenario.cpp", SYS3_BUILD / "game_id.cpp"],
             [SYS3_BUILD, SYS3_UPSTREAM, SYS3_UPSTREAM / "sys"],
-            _pkg_flags("sdl2", "--cflags"),
+            _pkg_flags("sdl2", "--cflags") + _pkg_flags("sdl2", "--libs"),
         )
         self.assertEqual(out, "OK")
+
+    def test_libsys4_ini_unquoted_codename_and_long_string_bounds(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            tab_c = tdp / "ini_parser.tab.c"
+            tab_h = tdp / "ini_parser.tab.h"
+            lex_c = tdp / "ini_lexer.yy.c"
+            subprocess.run(
+                ["bison", str(LIBSYS4_SRC / "ini_parser.y"), f"--defines={tab_h}", f"--output={tab_c}"],
+                check=True, capture_output=True,
+            )
+            subprocess.run(
+                ["flex", "-o", str(lex_c), str(LIBSYS4_SRC / "ini_lexer.l")],
+                check=True, capture_output=True,
+            )
+            ini_file = tdp / "Custom.ini"
+            long_val = "A" * 70000
+            ini_file.write_text(
+                f'codename = Data\\Rance10_EN.ain ; English patch\n'
+                f'ViewWidth = 1280 ; comment\n'
+                f'UseJoypad = true\n'
+                f'LongKey = "{long_val}"\n',
+                encoding="utf-8",
+            )
+            harness = f"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include "system4/ini.h"
+#include "system4/string.h"
+
+int main(void) {{
+    int n = 0;
+    struct ini_entry *entries = ini_parse("{ini_file.as_posix()}", &n);
+    assert(entries != NULL && n == 4);
+    assert(strcasecmp(entries[0].name->text, "CodeName") == 0);
+    assert(entries[0].value.type == INI_STRING);
+    assert(strcmp(entries[0].value.s->text, "Data\\\\Rance10_EN.ain") == 0);
+    assert(entries[1].value.type == INI_INTEGER && entries[1].value.i == 1280);
+    assert(entries[2].value.type == INI_BOOLEAN && entries[2].value.i == 1);
+    assert(entries[3].value.type == INI_STRING && entries[3].value.s->size == 65535);
+    for (int i = 0; i < n; i++) ini_free_entry(&entries[i]);
+    free(entries);
+    puts("OK");
+    return 0;
+}}
+"""
+            out = _compile_and_run_c(
+                harness,
+                [LIBSYS4_SRC / "ini.c", tab_c, lex_c, *LIBSYS4_CORE],
+                [tdp, LIBSYS4_SRC, ROOT / "include", ROOT / "subprojects/libsys4/include", Path("/root/Rance10_CN/host-build/xsystem4")],
+                ["-lz", "-lm"],
+            )
+            self.assertEqual(out, "OK")
 
 
 if __name__ == "__main__":
