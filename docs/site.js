@@ -63,13 +63,8 @@ const GAMES = [
 
 const I18N = {
   zh: {
-    'nav.demos': '演示',
     'nav.download': '下载',
-    'filter.all': '全部',
-    'filter.cn': '汉化',
     'hero.sub': 'AliceSoft System 多平台原生启动器',
-    'hero.hint': '拖拽拨动 · 点击起波',
-    'hero.explore': '功能演示',
     'hero.cta': '获取版本',
     'ed.about': '说明',
     'ed.statement': '在手机与掌机上直接打开 AliceSoft 作品。<span>不依赖 Wine 或转译层，由三套开源原生内核驱动，支持压缩包与镜像导入、汉化与 MOD 补丁及跨平台存档互通。</span>',
@@ -77,27 +72,24 @@ const I18N = {
     'spec.k2': '目录',
     'spec.v2': '内置 171+ 作品识别，支持自由导入任意目录与多碟合并',
     'spec.k3': '输入',
-    'spec.v3': '原生触控手势、自定义虚拟按键与主流蓝牙 / USB 手柄',
+    'spec.v3': '原生触控手势、自由拖拽虚拟按键与主流蓝牙 / USB 手柄',
     'spec.k4': '许可',
     'spec.v4': 'GNU GPL-2.0 开源免费，安装包不含任何游戏本体',
-    'demo.kicker': '功能演示',
-    'demo.t1': '局内字号与操控',
-    'demo.t2': 'PC ⇄ 移动存档转换',
-    'demo.t3': '多格式导入与路由',
-    'demo.t4': '无损 MOD 与入口',
-    'demo.play.title': 'PartsEngine 字号实时重排与虚拟手柄叠加',
-    'demo.play.desc': '拖动滑块实时体验字体防溢出缩放、滚动条加宽，切换 GAL / RPG 按键布局或点击 » Ctrl 快进对话。',
-    'demo.play.font': '字号缩放',
-    'demo.play.bar': '滚动条宽度',
-    'demo.play.pOff': '纯触控',
-    'demo.save.title': '基于 .ain 结构定义的 PC ⇄ 移动端无损存档互通',
-    'demo.save.desc': '导出 PC 存档时按游戏 .ain 重建 Windows 头部与压缩流，导入覆盖前自动生成可还原备份。',
-    'demo.save.run': '转换方向 ⇄',
-    'demo.router.title': '多格式直读解压与三套原生内核自动识别',
-    'demo.router.desc': '点选不同格式的本地游戏包，预览流式解压、多碟合并、编码修复与三核自动路由。',
-    'demo.mods.title': '无损原子备份 MOD、去码补丁与启动入口切换',
-    'demo.mods.desc': '模拟单作项目中心：自由开关补丁或切换启动入口，原版文件自动隔离备份，随时一键还原。',
-    'demo.mods.reset': '一键还原原版',
+    'sc.t1': '三端实机与操控',
+    'sc.t2': '跨端存档互通',
+    'sc.t3': '三核架构与谱系',
+    'sc.n1': '切换设备形态、缩放局内字体，或在屏幕内直接拖拽虚拟按键。',
+    'sc.n2': '点击切换双向传输方向，基于 .ain 结构在掌机与 Windows PC 间无损转换。',
+    'sc.n3': '切换不同年代的 AliceSoft 作品谱系，查看自动匹配的原生引擎与特性。',
+    'sc.font': '字号',
+    'sc.padOn': '虚拟按键（可拖拽）',
+    'sc.padOff': '纯触控',
+    'sc.nextGame': '切换作品 ↻',
+    'sc.toPc': '掌机 → PC 无损转换',
+    'sc.toMob': 'PC → 掌机自动导入',
+    'sc.flip': '切换传输方向 ⇄',
+    'sc.backupOk': '覆盖前自动备份 · 支持一键还原',
+    'sc.autoRoute': '自动识别目录结构并匹配原生引擎',
     'ed.download': '下载',
     'dl.android': 'Android 8.0+ · 直接安装',
     'dl.ios': 'iOS 15+ · 自签侧载',
@@ -108,13 +100,8 @@ const I18N = {
     'toast.qq': '已复制 QQ 群号：383917628',
   },
   en: {
-    'nav.demos': 'Demos',
     'nav.download': 'Download',
-    'filter.all': 'All',
-    'filter.cn': 'CN',
     'hero.sub': 'Native multi-platform launcher for AliceSoft System',
-    'hero.hint': 'Drag to glide · Click to ripple',
-    'hero.explore': 'Live Demos',
     'hero.cta': 'Download',
     'ed.about': 'ABOUT',
     'ed.statement': 'Open AliceSoft games directly on phone and handheld. <span>No Wine or translation layers—driven by three open-source native engines with archive and disc import, translation & MOD patches, and cross-platform saves.</span>',
@@ -122,27 +109,24 @@ const I18N = {
     'spec.k2': 'CATALOG',
     'spec.v2': '171+ recognized titles built in, plus open import for any game folder or multi-disc set',
     'spec.k3': 'INPUT',
-    'spec.v3': 'Native touch gestures, customizable virtual pad, and standard Bluetooth / USB controllers',
+    'spec.v3': 'Native touch gestures, draggable virtual pads, and standard Bluetooth / USB controllers',
     'spec.k4': 'LICENSE',
     'spec.v4': 'GNU GPL-2.0 free & open source — no game files are bundled',
-    'demo.kicker': 'INTERACTIVE',
-    'demo.t1': 'Font Scale & Controls',
-    'demo.t2': 'PC ⇄ Mobile Saves',
-    'demo.t3': 'Archive & Routing',
-    'demo.t4': 'Atomic MODs & Entry',
-    'demo.play.title': 'Live PartsEngine Font Scaling & Virtual Pad Overlay',
-    'demo.play.desc': 'Drag sliders to test non-overflow font scaling and wider scrollbars, switch GAL/RPG pads, or latch » Ctrl.',
-    'demo.play.font': 'Font Scale',
-    'demo.play.bar': 'Scrollbar',
-    'demo.play.pOff': 'Touch Only',
-    'demo.save.title': '.ain-Guided Bidirectional PC ⇄ Mobile Save Conversion',
-    'demo.save.desc': 'Rebuilds Windows save headers and compressed streams from .ain schemas with automatic pre-overwrite backups.',
-    'demo.save.run': 'Flip Direction ⇄',
-    'demo.router.title': 'Multi-Format Import & Automatic 3-Kernel Routing',
-    'demo.router.desc': 'Pick sample archives or disc images to preview streaming extraction, multi-disc merging, and engine detection.',
-    'demo.mods.title': 'Atomic-Backup MODs, Uncensored Patches & Launch Entries',
-    'demo.mods.desc': 'Toggle patches or switch launch entries—original game files are backed up atomically for one-tap restore.',
-    'demo.mods.reset': 'Restore Vanilla',
+    'sc.t1': 'Hardware & Controls',
+    'sc.t2': 'Cross-Save Pipeline',
+    'sc.t3': 'Three Native Kernels',
+    'sc.n1': 'Morph between Switch, Android & iPad, scale live text, or drag virtual buttons directly on screen.',
+    'sc.n2': 'Flip transfer direction to preview .ain-guided lossless conversion between handheld and Windows PC.',
+    'sc.n3': 'Explore four decades of AliceSoft engines and automatic archive/patch detection.',
+    'sc.font': 'Font',
+    'sc.padOn': 'Virtual Pad (Drag)',
+    'sc.padOff': 'Touch Only',
+    'sc.nextGame': 'Next Title ↻',
+    'sc.toPc': 'Handheld → PC Export',
+    'sc.toMob': 'PC → Handheld Import',
+    'sc.flip': 'Reverse Flow ⇄',
+    'sc.backupOk': 'Auto-backup before overwrite · One-tap restore',
+    'sc.autoRoute': 'Auto-detects root markers and routes to native kernel',
     'ed.download': 'DOWNLOAD',
     'dl.android': 'Android 8.0+ · Direct install',
     'dl.ios': 'iOS 15+ · Sideload IPA',
@@ -153,13 +137,8 @@ const I18N = {
     'toast.qq': 'Copied QQ Group: 383917628',
   },
   ja: {
-    'nav.demos': 'デモ',
     'nav.download': '入手',
-    'filter.all': 'すべて',
-    'filter.cn': '翻訳',
     'hero.sub': 'AliceSoft System マルチプラットフォーム実行環境',
-    'hero.hint': 'ドラッグで移動 · クリックで波紋',
-    'hero.explore': '機能デモ',
     'hero.cta': 'ダウンロード',
     'ed.about': '概要',
     'ed.statement': 'スマホや携帯機でアリスソフト作品をそのまま起動。<span>Wine や命令変換に頼らず、3つのオープンソース・ネイティブエンジンで動作。アーカイブ読込・MOD／翻訳パッチ・機種間セーブ連携に対応します。</span>',
@@ -167,27 +146,24 @@ const I18N = {
     'spec.k2': 'カタログ',
     'spec.v2': '171 作品以上を自動判別。カタログ外のフォルダや複数ディスクも自由に導入可能',
     'spec.k3': '操作',
-    'spec.v3': 'ネイティブタッチ・カスタマイズ可能な仮想パッド・各種コントローラー対応',
+    'spec.v3': 'ネイティブタッチ・自由配置仮想パッド・各種コントローラー対応',
     'spec.k4': 'ライセンス',
     'spec.v4': 'GNU GPL-2.0 オープンソース（ゲーム本体は含まれません）',
-    'demo.kicker': '機能デモ',
-    'demo.t1': '文字拡大と仮想操作',
-    'demo.t2': 'PC ⇄ セーブ変換',
-    'demo.t3': '自動展開と判別',
-    'demo.t4': '非破壊 MOD と起動',
-    'demo.play.title': 'PartsEngine リアルタイム文字拡大＆仮想パッド',
-    'demo.play.desc': 'スライダーで文字拡大とスクロールバー調整を体験。GAL / RPG 配置切替や » Ctrl 早送りにも対応。',
-    'demo.play.font': '文字サイズ',
-    'demo.play.bar': 'バー幅',
-    'demo.play.pOff': 'タッチのみ',
-    'demo.save.title': '.ain 構造参照による PC ⇄ モバイル双方向セーブ変換',
-    'demo.save.desc': 'ゲームの .ain を参照し Windows 版ヘッダへ無劣化変換。上書き前の自動バックアップも実行します。',
-    'demo.save.run': '変換方向を切替 ⇄',
-    'demo.router.title': '全形式直展開＆3系統ネイティブエンジン自動判別',
-    'demo.router.desc': '各種アーカイブや ISO を選んで、ストリーミング展開・複数ディスク統合・起動ルーティングを確認。',
-    'demo.mods.title': '非破壊バックアップ MOD・修正解除＆起動エントリ切替',
-    'demo.mods.desc': 'パッチの ON/OFF や起動エントリを切替。元ファイルは自動退避され、いつでもワンタップで復元できます。',
-    'demo.mods.reset': '初期状態へ復元',
+    'sc.t1': '3機種実機と操作',
+    'sc.t2': 'PC ⇄ セーブ連携',
+    'sc.t3': '3系統コアの系譜',
+    'sc.n1': '機種切替・文字拡大・画面内の仮想パッド自由ドラッグをそのまま体験できます。',
+    'sc.n2': '転送方向を切り替えて、.ain 参照による PC ⇄ 携帯機の無劣化変換を確認。',
+    'sc.n3': '年代ごとのネイティブエンジン自動判別と対応フォーマットを確認できます。',
+    'sc.font': '文字',
+    'sc.padOn': '仮想パッド（移動可）',
+    'sc.padOff': 'タッチのみ',
+    'sc.nextGame': '作品切替 ↻',
+    'sc.toPc': '携帯機 → PC 無劣化出力',
+    'sc.toMob': 'PC → 携帯機 自動導入',
+    'sc.flip': '転送方向を反転 ⇄',
+    'sc.backupOk': '上書き前自動退避・ワンタップ復元',
+    'sc.autoRoute': 'ディレクトリ構造からネイティブコアを自動判別',
     'ed.download': '入手',
     'dl.android': 'Android 8.0+ · 直接導入',
     'dl.ios': 'iOS 15+ · 署名して導入',
@@ -201,13 +177,14 @@ const I18N = {
 
 let currentLang = 'zh';
 let focusedGame = GAMES[0];
+let activeShowcase = 'device';
 
 /* ==========================================================================
-   1. THREE.JS INTERACTIVE 3D CURVED COVER WALL (TRUE SRGB BRIGHTNESS FIXED!)
+   1. THREE.JS INTERACTIVE 3D CURVED COVER WALL (TRUE VIBRANT SRGB)
    ========================================================================== */
 function initThreeWall() {
   const canvas = document.getElementById('webgl-stage');
-  if (!canvas) return { triggerWave: () => {}, setFilter: () => {} };
+  if (!canvas) return { triggerWave: () => {} };
 
   let renderer;
   try {
@@ -218,7 +195,7 @@ function initThreeWall() {
       powerPreference: 'high-performance',
     });
   } catch {
-    return { triggerWave: () => {}, setFilter: () => {} };
+    return { triggerWave: () => {} };
   }
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -229,7 +206,6 @@ function initThreeWall() {
   const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 80);
   camera.position.set(0, 0, 12.8);
 
-  /* Deep Obsidian Atmospheric Aurora Backdrop */
   const auroraMat = new THREE.ShaderMaterial({
     depthWrite: false,
     uniforms: {
@@ -265,7 +241,6 @@ function initThreeWall() {
   auroraPlane.position.set(0, 0, -14);
   scene.add(auroraPlane);
 
-  /* 3D Cursor Volumetric Light Probe + Click Shockwave Torus Rings */
   const probeMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -299,26 +274,16 @@ function initThreeWall() {
   const shockRings = [];
   const shockGeo = new THREE.TorusGeometry(1.0, 0.018, 8, 96);
 
-  /* 5-Row Panoramic Curved 3D Cover Wall (True sRGB faithful brightness!) */
   const wallGroup = new THREE.Group();
   scene.add(wallGroup);
 
   const texLoader = new THREE.TextureLoader();
   const tileGeo = new THREE.PlaneGeometry(1.9, 1.9, 1, 1);
 
-  const tileVert = `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `;
-
   const tileFrag = `
     precision highp float;
     uniform sampler2D uMap;
     uniform float uHover;
-    uniform float uDim;
     uniform float uFlash;
     uniform float uProx;
     uniform vec2 uLightDir;
@@ -335,31 +300,24 @@ function initThreeWall() {
       float mask = 1.0 - smoothstep(-0.008, 0.008, d);
       if (mask < 0.01) discard;
 
-      // Sample faithful sRGB directly (NoColorSpace prevents double-gamma darkening)
       vec2 shift = vec2(uFlash * 0.011, 0.0);
-      vec3 tex = vec3(
+      vec3 col = vec3(
         texture2D(uMap, clamp(vUv + shift, 0.002, 0.998)).r,
         texture2D(uMap, vUv).g,
         texture2D(uMap, clamp(vUv - shift, 0.002, 0.998)).b
       );
 
-      float luma = dot(tex, vec3(0.299, 0.587, 0.114));
-      vec3 col = mix(tex, vec3(luma * 0.42), uDim * 0.85);
-
-      // Vibrant true-color resting brightness (0.94) + gentle hover/proximity lift
-      float bright = mix(0.94, 1.12, clamp(uHover + uProx * 0.2, 0.0, 1.0)) * (1.0 - uDim * 0.65);
+      float bright = mix(0.95, 1.12, clamp(uHover + uProx * 0.2, 0.0, 1.0));
       col *= bright;
 
-      // Subtle diagonal specular glass sheen
       float spec = smoothstep(0.36, 0.96, 1.0 - abs(dot(p, normalize(uLightDir)) - 0.08));
       col += vec3(0.9, 0.96, 1.0) * spec * (0.03 + uProx * 0.07 + uHover * 0.11 + uFlash * 0.16);
 
-      // Crisp luminous glass edge highlight
       float rim = smoothstep(-0.02, -0.004, d) * mask;
       vec3 rimCol = mix(vec3(1.0), vec3(0.22, 0.74, 0.97), clamp(uHover + uFlash + uProx * 0.35, 0.0, 1.0));
       col += rimCol * rim * (0.14 + uProx * 0.14 + uHover * 0.52 + uFlash * 0.56);
 
-      gl_FragColor = vec4(col, mask * (1.0 - uDim * 0.52));
+      gl_FragColor = vec4(col, mask);
     }
   `;
 
@@ -376,7 +334,7 @@ function initThreeWall() {
   function getTexture(slug) {
     if (!textures.has(slug)) {
       const tex = texLoader.load(`assets/games/${slug}.webp`);
-      tex.colorSpace = THREE.NoColorSpace; // Raw sRGB for custom ShaderMaterial (no dark gamma crush!)
+      tex.colorSpace = THREE.NoColorSpace;
       tex.minFilter = THREE.LinearMipmapLinearFilter;
       tex.generateMipmaps = true;
       textures.set(slug, tex);
@@ -398,12 +356,11 @@ function initThreeWall() {
         uniforms: {
           uMap: { value: getTexture(game.slug) },
           uHover: { value: 0 },
-          uDim: { value: 0 },
           uFlash: { value: 0 },
           uProx: { value: 0 },
           uLightDir: { value: new THREE.Vector2(0.7, 0.7) },
         },
-        vertexShader: tileVert,
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
         fragmentShader: tileFrag,
       });
 
@@ -414,22 +371,10 @@ function initThreeWall() {
       wallGroup.add(mesh);
       meshes.push(mesh);
 
-      tiles.push({
-        mesh,
-        mat,
-        game,
-        row: r,
-        x: xInit,
-        yBase,
-        hover: 0,
-        dim: 0,
-        dimTarget: 0,
-        phase: Math.random() * Math.PI * 2,
-      });
+      tiles.push({ mesh, mat, game, row: r, x: xInit, yBase, hover: 0, phase: Math.random() * Math.PI * 2 });
     }
   }
 
-  /* Floating 3D Volumetric Bokeh Dust */
   const PARTICLE_COUNT = 120;
   const pPos = new Float32Array(PARTICLE_COUNT * 3);
   const pScale = new Float32Array(PARTICLE_COUNT);
@@ -460,10 +405,7 @@ function initThreeWall() {
     blending: THREE.AdditiveBlending,
     uniforms: { uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) } },
     vertexShader: `
-      attribute float aScale;
-      attribute vec3 aColor;
-      varying vec3 vColor;
-      uniform float uPixelRatio;
+      attribute float aScale; attribute vec3 aColor; varying vec3 vColor; uniform float uPixelRatio;
       void main() {
         vColor = aColor;
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -472,8 +414,7 @@ function initThreeWall() {
       }
     `,
     fragmentShader: `
-      precision highp float;
-      varying vec3 vColor;
+      precision highp float; varying vec3 vColor;
       void main() {
         float d = length(gl_PointCoord - 0.5);
         if (d > 0.5) discard;
@@ -484,7 +425,6 @@ function initThreeWall() {
   const particles = new THREE.Points(pGeo, pMat);
   scene.add(particles);
 
-  /* Interaction: Raycast Hover, Inertia Drag, Click Ripple & Scroll Pause */
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2(99, 99);
   const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
@@ -515,16 +455,6 @@ function initThreeWall() {
     shockRings.push({ mesh: rMesh, mat: rMat, t: 0 });
   }
 
-  function setFilter(filter) {
-    for (const tile of tiles) {
-      const match =
-        filter === 'all' ||
-        (filter === 'cn' && tile.game.cn) ||
-        tile.game.eng === filter;
-      tile.dimTarget = match ? 0 : 1;
-    }
-  }
-
   window.addEventListener('pointerdown', (e) => {
     if (scrollProgress > 0.75) return;
     if (e.target.closest('a, button, .editorial-sheet, .stage-bottom, .site-nav')) return;
@@ -553,7 +483,6 @@ function initThreeWall() {
     if (!dragging) return;
     dragging = false;
     canvas.classList.remove('is-dragging');
-
     if (dragMoved < 8) {
       const nx = (e.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
       const ny = -(e.clientY / Math.max(1, window.innerHeight)) * 2 + 1;
@@ -607,8 +536,7 @@ function initThreeWall() {
       mouse.y += (mouse.ty - mouse.y) * 0.055;
       if (!dragging) dragVel *= 0.93;
 
-      const isNarrow = window.innerWidth < 720;
-      const baseZ = isNarrow ? 15.2 : 12.8;
+      const baseZ = window.innerWidth < 720 ? 15.2 : 12.8;
       camera.position.x = mouse.x * 1.0;
       camera.position.y = mouse.y * 0.55 - scrollProgress * 0.6;
       camera.position.z = baseZ + scrollProgress * 2.2;
@@ -617,10 +545,8 @@ function initThreeWall() {
       wallGroup.rotation.y = -mouse.x * 0.055;
       wallGroup.rotation.x = mouse.y * 0.04 + scrollProgress * 0.12;
 
-      const probeX = mouse.x * 7.2;
-      const probeY = mouse.y * 4.2;
-      cursorProbe.position.x += (probeX - cursorProbe.position.x) * 0.12;
-      cursorProbe.position.y += (probeY - cursorProbe.position.y) * 0.12;
+      cursorProbe.position.x += (mouse.x * 7.2 - cursorProbe.position.x) * 0.12;
+      cursorProbe.position.y += (mouse.y * 4.2 - cursorProbe.position.y) * 0.12;
       cursorProbe.position.z = 1.4 + cursorProbe.position.x * cursorProbe.position.x * 0.028;
 
       auroraMat.uniforms.uTime.value = elapsed;
@@ -650,9 +576,7 @@ function initThreeWall() {
         const nextHover = hits.length > 0 ? hits[0].object : null;
         if (nextHover !== hoveredMesh) {
           hoveredMesh = nextHover;
-          if (hoveredMesh && hoveredMesh.userData.game) {
-            updateHudFocus(hoveredMesh.userData.game);
-          }
+          if (hoveredMesh && hoveredMesh.userData.game) updateHudFocus(hoveredMesh.userData.game);
         }
       }
 
@@ -666,7 +590,6 @@ function initThreeWall() {
 
         const isHovered = tile.mesh === hoveredMesh;
         tile.hover += ((isHovered ? 1 : 0) - tile.hover) * 0.14;
-        tile.dim += (tile.dimTarget - tile.dim) * 0.1;
 
         const pDist = Math.hypot(tile.x - cursorProbe.position.x, tile.yBase - cursorProbe.position.y);
         const prox = Math.exp(-pDist * pDist * 0.085);
@@ -687,7 +610,7 @@ function initThreeWall() {
 
         tile.mesh.position.x = tile.x;
         tile.mesh.position.y = tile.yBase + idleFloat;
-        tile.mesh.position.z = curveZ + tile.hover * 0.72 + prox * 0.14 - tile.dim * 1.05 + waveZ;
+        tile.mesh.position.z = curveZ + tile.hover * 0.72 + prox * 0.14 + waveZ;
         tile.mesh.rotation.y = -tile.x * 0.056 + waveZ * 0.09 + dragVel * 0.014;
         tile.mesh.rotation.x = waveZ * 0.055;
 
@@ -695,7 +618,6 @@ function initThreeWall() {
         tile.mesh.scale.set(s, s, 1);
 
         tile.mat.uniforms.uHover.value = tile.hover;
-        tile.mat.uniforms.uDim.value = tile.dim;
         tile.mat.uniforms.uFlash.value = waveFlash;
         tile.mat.uniforms.uProx.value = prox;
         tile.mat.uniforms.uLightDir.value.set(0.65 + mouse.x * 0.4, 0.72 + mouse.y * 0.4);
@@ -719,286 +641,473 @@ function initThreeWall() {
   }
 
   animate(performance.now());
-  return { triggerWave, setFilter };
+  return { triggerWave };
 }
 
 /* ==========================================================================
-   2. INTERACTIVE CORE FEATURE DEMOS WORKBENCH
+   2. VISUAL INTERACTIVE SHOWCASE (HARDWARE + OPTICAL SAVE + 3D ERA DECK)
    ========================================================================== */
-function initInteractiveDemos() {
-  /* --- Tab Switching --- */
-  const tabs = Array.from(document.querySelectorAll('.demo-tab'));
-  const panes = Array.from(document.querySelectorAll('.demo-pane'));
-  tabs.forEach((tab) => {
+function initShowcase() {
+  /* --- Chapter Tabs --- */
+  const scTabs = Array.from(document.querySelectorAll('.sc-tab'));
+  const scPanels = Array.from(document.querySelectorAll('.sc-panel'));
+  const scNote = document.getElementById('sc-note');
+
+  function syncShowcaseNote() {
+    if (!scNote) return;
+    const key = activeShowcase === 'device' ? 'sc.n1' : activeShowcase === 'save' ? 'sc.n2' : 'sc.n3';
+    scNote.textContent = I18N[currentLang][key];
+  }
+
+  scTabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      const target = tab.dataset.demo;
-      tabs.forEach((t) => {
-        const active = t === tab;
-        t.classList.toggle('is-active', active);
-        t.setAttribute('aria-selected', String(active));
+      activeShowcase = tab.dataset.sc;
+      scTabs.forEach((t) => {
+        const on = t === tab;
+        t.classList.toggle('is-active', on);
+        t.setAttribute('aria-selected', String(on));
       });
-      panes.forEach((p) => p.classList.toggle('is-active', p.dataset.pane === target));
+      scPanels.forEach((p) => p.classList.toggle('is-active', p.dataset.scPanel === activeShowcase));
+      syncShowcaseNote();
+      if (activeShowcase === 'save') resizeOpticalCanvas();
     });
   });
 
-  /* --- DEMO 01: Live In-Game Font Scale, Scrollbar & Virtual Pad --- */
-  const LINES = {
-    zh: [
-      ['兰斯', '「哼，人类灭亡危机？那就由本大爷在掌机上亲自解决吧。」'],
-      ['希露', '「兰斯大人，拖动下方滑块即可实时缩放 PartsEngine 字体且不截断哦。」'],
-      ['兰斯', '「噢！连右侧滚动条都能加宽，还有 GAL / RPG 虚拟手柄随时切换。」'],
-      ['AliceHub', '点击 » Ctrl 可锁定 60fps 持续快进，双指轻触或按 B 呼出右键菜单。'],
-    ],
-    en: [
-      ['Rance', '"Humanity in crisis? Fine, I will clear it natively on handheld."'],
-      ['Sill', '"Drag the slider below to scale PartsEngine text cleanly without clipping."'],
-      ['Rance', '"Nice! Even the scrollbar widens, plus instant GAL & RPG pad layouts."'],
-      ['AliceHub', 'Latch » Ctrl for smooth 60fps fast-forward, or tap B / 2-finger for menu.'],
-    ],
-    ja: [
-      ['ランス', '「人類滅亡の危機だと？ 俺様が携帯機でネイティブ解決してやるぜ。」'],
-      ['シィル', '「下のスライダーで PartsEngine の文字サイズを崩れず拡大できますよ。」'],
-      ['ランス', '「おおっ、スクロールバーも太くなるし、GAL / RPG パッドも即切替だな。」'],
-      ['AliceHub', '» Ctrl で 60fps 早送り固定、B または 2 本指タップで右クリックメニュー。'],
-    ],
-  };
+  /* --- STAGE 01: Morphing Hardware Device + Ambient Screen Canvas + Draggable Virtual Pads --- */
+  const hwShell = document.getElementById('hw-shell');
+  const hwScreen = document.getElementById('hw-screen');
+  const vnBadge = document.getElementById('vn-badge');
+  const vnPortrait = document.getElementById('vn-portrait');
+  const vnSpk = document.getElementById('vn-spk');
+  const vnText = document.getElementById('vn-text');
+  const vnCtrl = document.getElementById('vn-ctrl');
+  const vnFontRange = document.getElementById('vn-font-range');
+  const vnFontVal = document.getElementById('vn-font-val');
+  const vnCanvas = document.getElementById('hw-scene-canvas');
 
-  let lineIdx = 0;
-  let ctrlTimer = null;
-  const simSpeaker = document.getElementById('sim-speaker');
-  const simLine = document.getElementById('sim-line');
-  const simStatus = document.getElementById('sim-status');
-  const simCtrl = document.getElementById('sim-ctrl');
-  const simVpad = document.getElementById('sim-vpad');
-  const fontRange = document.getElementById('sim-font-range');
-  const fontVal = document.getElementById('sim-font-val');
-  const barRange = document.getElementById('sim-bar-range');
-  const barVal = document.getElementById('sim-bar-val');
-  const simThumb = document.getElementById('sim-thumb');
+  const VN_SCENES = [
+    {
+      slug: 'rance10',
+      eng: 'xsystem4',
+      zh: ['兰斯', '「拖动屏幕里的虚拟按键试试——放哪儿都能直接按，字号也能随时放大。」'],
+      en: ['Rance', '"Try dragging the virtual pads right inside this screen, or scaling the dialogue live."'],
+      ja: ['ランス', '「画面内の仮想キーはそのままドラッグ移動できるし、文字サイズも即調整だ。」'],
+    },
+    {
+      slug: 'evenicle2',
+      eng: 'xsystem4',
+      zh: ['亚历克斯', '「在 Switch、Android 与 iPad 之间切换设备形态，三端原生布局都会自动贴合。」'],
+      en: ['Alex', '"Morph between Switch, Android, and iPad below—native rendering adapts cleanly across all three."'],
+      ja: ['アレックス', '「下のボタンで Switch・Android・iPad を切り替えると、各機種に最適な画面比率へ変形します。」'],
+    },
+    {
+      slug: 'kichikuou',
+      eng: 'xsystem35',
+      zh: ['鬼畜王兰斯', '「早期 System 3.5 作品同样原生运行，内置 MIDI 合成与虚拟 CD 音轨。」'],
+      en: ['Kichikuou', '"Classic System 3.5 titles run natively too, complete with built-in MIDI and virtual CD audio."'],
+      ja: ['鬼畜王ランス', '「初期の System 3.5 名作も MIDI シンセと仮想 CD 音源付きでネイティブ動作する。」'],
+    },
+  ];
 
-  function renderSimLine() {
-    const bank = LINES[currentLang] || LINES.zh;
-    const [spk, txt] = bank[lineIdx % bank.length];
-    if (simSpeaker) simSpeaker.textContent = spk;
-    if (simLine) simLine.textContent = txt;
+  let vnIdx = 0;
+  let hwMode = 'switch';
+  let typeTimer = null;
+  let skipTimer = null;
+
+  function updateVnBadge() {
+    if (!vnBadge) return;
+    const dev = hwMode === 'switch' ? 'SWITCH' : hwMode === 'ipad' ? 'iPadOS' : 'ANDROID';
+    vnBadge.textContent = `${dev} · ${VN_SCENES[vnIdx].eng}`;
   }
 
-  function advanceLine(delta) {
-    const bank = LINES[currentLang] || LINES.zh;
-    lineIdx = (lineIdx + delta + bank.length) % bank.length;
-    renderSimLine();
-  }
+  function playVnScene() {
+    const s = VN_SCENES[vnIdx];
+    const [spk, line] = s[currentLang] || s.zh;
+    if (vnPortrait) vnPortrait.src = `assets/games/${s.slug}.webp`;
+    if (vnSpk) vnSpk.textContent = spk;
+    updateVnBadge();
 
-  if (fontRange && fontVal && simLine) {
-    const syncFont = () => {
-      const v = Number(fontRange.value);
-      fontVal.textContent = `${v}%`;
-      simLine.style.fontSize = `${(14.5 * v / 100).toFixed(1)}px`;
-    };
-    fontRange.addEventListener('input', syncFont);
-    syncFont();
-  }
-
-  if (barRange && barVal && simThumb) {
-    const syncBar = () => {
-      const v = Number(barRange.value);
-      barVal.textContent = `${v}%`;
-      simThumb.style.width = `${Math.round(4 + (v - 100) * 0.04)}px`;
-    };
-    barRange.addEventListener('input', syncBar);
-    syncBar();
-  }
-
-  document.querySelectorAll('[data-preset]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const preset = btn.dataset.preset;
-      document.querySelectorAll('[data-preset]').forEach((b) => b.classList.toggle('is-active', b === btn));
-      if (simVpad) simVpad.dataset.preset = preset;
-    });
-  });
-
-  document.querySelectorAll('[data-sim-act]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const act = btn.dataset.simAct;
-      if (act === 'prev') advanceLine(-1);
-      else if (act === 'next' || act === 'skip') advanceLine(1);
-      else if (act === 'shot' && simStatus) simStatus.textContent = 'PNG SCREENSHOT SAVED';
-      else if (act === 'menu' && simStatus) simStatus.textContent = 'RIGHT-CLICK MENU';
-      else if (simStatus) simStatus.textContent = `D-PAD ${act.toUpperCase()}`;
-    });
-  });
-
-  if (simCtrl) {
-    simCtrl.addEventListener('click', () => {
-      const on = simCtrl.classList.toggle('is-on');
-      if (ctrlTimer) {
-        clearInterval(ctrlTimer);
-        ctrlTimer = null;
+    if (typeTimer) clearInterval(typeTimer);
+    if (!vnText) return;
+    if (REDUCED_MOTION) {
+      vnText.textContent = line;
+      return;
+    }
+    let pos = 0;
+    vnText.textContent = '';
+    typeTimer = setInterval(() => {
+      pos += 2;
+      vnText.textContent = line.slice(0, pos);
+      if (pos >= line.length) {
+        clearInterval(typeTimer);
+        typeTimer = null;
       }
+    }, 22);
+  }
+
+  document.querySelectorAll('[data-hw-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      hwMode = btn.dataset.hwBtn;
+      document.querySelectorAll('[data-hw-btn]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      if (hwShell) hwShell.dataset.hw = hwMode;
+      updateVnBadge();
+    });
+  });
+
+  document.querySelectorAll('[data-vpad-mode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const hide = btn.dataset.vpadMode === 'hide';
+      document.querySelectorAll('[data-vpad-mode]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      if (hwScreen) hwScreen.classList.toggle('is-pad-hidden', hide);
+    });
+  });
+
+  if (vnFontRange && vnFontVal && vnText) {
+    const syncF = () => {
+      const v = Number(vnFontRange.value);
+      vnFontVal.textContent = `${v}%`;
+      vnText.style.fontSize = `${(14 * v / 100).toFixed(1)}px`;
+    };
+    vnFontRange.addEventListener('input', syncF);
+    syncF();
+  }
+
+  const nextGameBtn = document.getElementById('vn-cycle-game');
+  if (nextGameBtn) {
+    nextGameBtn.addEventListener('click', () => {
+      vnIdx = (vnIdx + 1) % VN_SCENES.length;
+      playVnScene();
+    });
+  }
+
+  if (vnCtrl) {
+    vnCtrl.addEventListener('click', () => {
+      const on = vnCtrl.classList.toggle('is-on');
+      if (skipTimer) { clearInterval(skipTimer); skipTimer = null; }
       if (on) {
-        if (simStatus) simStatus.textContent = '» CTRL LATCHED · 60fps';
-        ctrlTimer = setInterval(() => advanceLine(1), 950);
-      } else if (simStatus) {
-        simStatus.textContent = 'xsystem4 · 60fps';
+        skipTimer = setInterval(() => {
+          vnIdx = (vnIdx + 1) % VN_SCENES.length;
+          playVnScene();
+        }, 1250);
       }
     });
   }
 
-  /* --- DEMO 02: Bidirectional PC <-> Mobile Save Converter --- */
-  const SAVE_SAMPLES = {
+  // Real drag-anywhere virtual pad editor inside the hardware screen!
+  document.querySelectorAll('[data-drag-pad]').forEach((pad) => {
+    let activeDrag = false;
+    let moved = 0;
+    let ox = 0, oy = 0;
+
+    pad.addEventListener('pointerdown', (e) => {
+      activeDrag = true;
+      moved = 0;
+      const pr = pad.getBoundingClientRect();
+      ox = e.clientX - pr.left;
+      oy = e.clientY - pr.top;
+      pad.setPointerCapture(e.pointerId);
+      pad.classList.add('is-dragging');
+      if (hwScreen) hwScreen.classList.add('is-editing');
+    });
+
+    pad.addEventListener('pointermove', (e) => {
+      if (!activeDrag || !hwScreen) return;
+      const sr = hwScreen.getBoundingClientRect();
+      let nx = e.clientX - sr.left - ox;
+      let ny = e.clientY - sr.top - oy;
+      moved += Math.abs(e.movementX) + Math.abs(e.movementY);
+      nx = Math.max(8, Math.min(sr.width - pad.offsetWidth - 8, nx));
+      ny = Math.max(44, Math.min(sr.height - pad.offsetHeight - 88, ny));
+      // 10px subtle magnetic snap
+      nx = Math.round(nx / 10) * 10;
+      ny = Math.round(ny / 10) * 10;
+      pad.style.left = `${nx}px`;
+      pad.style.right = 'auto';
+      pad.style.top = `${ny}px`;
+    });
+
+    const endDrag = (e) => {
+      if (!activeDrag) return;
+      activeDrag = false;
+      pad.classList.remove('is-dragging');
+      if (hwScreen) hwScreen.classList.remove('is-editing');
+      // If user tapped a pad button without dragging, trigger action!
+      if (moved < 6) {
+        const btn = e.target.closest('[data-vn-act]');
+        if (btn) {
+          const act = btn.dataset.vnAct;
+          if (act === 'next' || act === 'skip') { vnIdx = (vnIdx + 1) % VN_SCENES.length; playVnScene(); }
+          else if (act === 'prev') { vnIdx = (vnIdx - 1 + VN_SCENES.length) % VN_SCENES.length; playVnScene(); }
+          else if (act === 'shot') showToast('PNG Screenshot Saved');
+          else if (act === 'menu') showToast('Right-Click Menu');
+        }
+      }
+    };
+    pad.addEventListener('pointerup', endDrag);
+    pad.addEventListener('pointercancel', endDrag);
+  });
+
+  // Ambient 60fps subtle light field inside the hardware screen
+  if (vnCanvas && !REDUCED_MOTION) {
+    const ctx = vnCanvas.getContext('2d');
+    const dots = Array.from({ length: 24 }, (_, i) => ({
+      x: Math.random(),
+      y: Math.random(),
+      r: 1 + (i % 3) * 0.8,
+      vy: 0.04 + Math.random() * 0.08,
+      c: i % 2 === 0 ? '56, 189, 248' : '225, 75, 134',
+    }));
+
+    function drawHwBg() {
+      if (activeShowcase === 'device' && ctx && hwScreen) {
+        const r = hwScreen.getBoundingClientRect();
+        const w = Math.max(200, Math.round(r.width));
+        const h = Math.max(140, Math.round(r.height));
+        if (vnCanvas.width !== w || vnCanvas.height !== h) {
+          vnCanvas.width = w;
+          vnCanvas.height = h;
+        }
+        ctx.clearRect(0, 0, w, h);
+        const g = ctx.createRadialGradient(w * 0.5, h * 0.42, 10, w * 0.5, h * 0.42, w * 0.6);
+        g.addColorStop(0, 'rgba(56, 189, 248, 0.14)');
+        g.addColorStop(0.55, 'rgba(225, 75, 134, 0.06)');
+        g.addColorStop(1, 'transparent');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+
+        for (const d of dots) {
+          d.y -= d.vy * 0.016;
+          if (d.y < -0.05) { d.y = 1.05; d.x = Math.random(); }
+          ctx.fillStyle = `rgba(${d.c}, 0.45)`;
+          ctx.beginPath();
+          ctx.arc(d.x * w, d.y * h, d.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      requestAnimationFrame(drawHwBg);
+    }
+    requestAnimationFrame(drawHwBg);
+  }
+  playVnScene();
+
+  /* --- STAGE 02: 60fps Optical Fiber Save Pipeline Canvas --- */
+  const SAVE_DATA = {
     rance10: {
-      schema: 'Rance10.ain',
-      mKind: 'MOBILE X4SS',
-      pKind: 'WINDOWS GD\\x01\\x01',
-      mFile: 'saves/rance10/0001.save',
-      pFile: 'PC_SaveData/0001.save',
-      mHex: '58 34 53 53 00 1A F2 09 78 9C E3 04',
-      pHex: '47 44 01 01 00 1A F2 09 78 9C E3 04',
-      logOut: ['[BACKUP] saves/rance10 → save_backups/auto_20261128.zip', '[SCHEMA] Verified 148 struct tables via Rance10.ain · CRC OK'],
-      logIn: ['[BACKUP] Pre-overwrite snapshot saved · one-tap restore ready', '[IMPORT] Converted Windows GD\\x01\\x01 → native X4SS · 0 errors'],
+      ain: 'Rance10.ain',
+      lTag: 'HANDHELD · X4SS',
+      rTag: 'WINDOWS · GD\\x01\\x01',
+      lFile: 'saves/rance10/0001.save',
+      rFile: 'PC_SaveData/0001.save',
+      lHex: '58 34 53 53 00 1A F2 09',
+      rHex: '47 44 01 01 00 1A F2 09',
     },
     evenicle2: {
-      schema: 'Evenicle2.ain',
-      mKind: 'MOBILE GSAVE',
-      pKind: 'PC GSAVE v8 + .CMT',
-      mFile: 'saves/evenicle2/0004.gsave',
-      pFile: 'PC_SaveData/0004.gsave',
-      mHex: '47 53 56 08 40 00 A2 11 19 88 C0 02',
-      pHex: '47 53 56 08 FF 01 A2 11 19 88 C0 02',
-      logOut: ['[BACKUP] saves/evenicle2 → save_backups/auto_20261128.zip', '[EXPORT] Repaired .gsave + thumbnail .cmt metadata for Windows'],
-      logIn: ['[BACKUP] Isolated existing mobile saves before import', '[IMPORT] Mounted PC .gsave + .cmt into Evenicle 2 slot #04'],
+      ain: 'Evenicle2.ain',
+      lTag: 'HANDHELD · GSAVE',
+      rTag: 'WINDOWS · GSAVE v8',
+      lFile: 'saves/evenicle2/0004.gsave',
+      rFile: 'PC_SaveData/0004.gsave',
+      lHex: '47 53 56 08 40 00 A2 11',
+      rHex: '47 53 56 08 FF 01 A2 11',
     },
     escalayer_reboot: {
-      schema: 'EscalayerR.ain',
-      mKind: 'MOBILE <memory>',
-      pKind: 'PC RSM RAW',
-      mFile: 'saves/escalayer_r/SaveData.rsm',
-      pFile: 'PC_SaveData/SaveData.rsm',
-      mHex: '52 53 4D 06 7C E9 10 4A 00 3F B4 12',
-      pHex: '52 53 4D 00 00 14 00 00 00 3F B4 12',
-      logOut: ['[MEMORY] Snapshotted virtual <memory> slot cleanly', '[EXPORT] Decoded RSM v6 header for Windows PC compatibility'],
-      logIn: ['[BACKUP] Archived previous <memory> state automatically', '[IMPORT] Restored Windows SaveData.rsm into isolated directory'],
+      ain: 'EscalayerR.ain',
+      lTag: 'HANDHELD · <memory>',
+      rTag: 'WINDOWS · RSM RAW',
+      lFile: 'saves/escalayer_r/Save.rsm',
+      rFile: 'PC_SaveData/Save.rsm',
+      lHex: '52 53 4D 06 7C E9 10 4A',
+      rHex: '52 53 4D 00 00 14 00 00',
     },
   };
 
-  let curSaveKey = 'rance10';
-  let saveToPc = true;
+  let optGame = 'rance10';
+  let optDir = 1; // 1 = Handheld -> PC, -1 = PC -> Handheld
+  let optPulse = 0;
 
-  function renderSaveDemo() {
-    const d = SAVE_SAMPLES[curSaveKey];
+  function renderOptLabels() {
+    const d = SAVE_DATA[optGame];
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    set('save-src-kind', saveToPc ? d.mKind : d.pKind);
-    set('save-src-file', saveToPc ? d.mFile : d.pFile);
-    set('save-src-hex', saveToPc ? d.mHex : d.pHex);
-    set('save-dst-kind', saveToPc ? d.pKind : d.mKind);
-    set('save-dst-file', saveToPc ? d.pFile : d.mFile);
-    set('save-dst-hex', saveToPc ? d.pHex : d.mHex);
-    set('save-schema', d.schema);
-    const log = document.getElementById('save-log');
-    if (log) {
-      const lines = saveToPc ? d.logOut : d.logIn;
-      log.innerHTML = lines.map((l) => `<span>${l}</span>`).join('');
+    set('opt-left-tag', d.lTag);
+    set('opt-left-file', d.lFile);
+    set('opt-left-hex', d.lHex);
+    set('opt-right-tag', d.rTag);
+    set('opt-right-file', d.rFile);
+    set('opt-right-hex', d.rHex);
+    set('opt-ain', d.ain);
+    set('opt-dir-label', I18N[currentLang][optDir > 0 ? 'sc.toPc' : 'sc.toMob']);
+  }
+
+  document.querySelectorAll('[data-opt-game]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      optGame = btn.dataset.optGame;
+      optPulse = 1;
+      document.querySelectorAll('[data-opt-game]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      renderOptLabels();
+    });
+  });
+
+  const flipBtn = document.getElementById('opt-flip-btn');
+  if (flipBtn) {
+    flipBtn.addEventListener('click', () => {
+      optDir *= -1;
+      optPulse = 1;
+      renderOptLabels();
+    });
+  }
+  renderOptLabels();
+
+  const fiberCanvas = document.getElementById('save-fiber-canvas');
+  let fW = 800, fH = 320;
+  function resizeOpticalCanvas() {
+    if (!fiberCanvas) return;
+    const r = fiberCanvas.parentElement.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    fW = Math.max(280, Math.round(r.width));
+    fH = Math.max(240, Math.round(r.height));
+    fiberCanvas.width = Math.round(fW * dpr);
+    fiberCanvas.height = Math.round(fH * dpr);
+    const ctx = fiberCanvas.getContext('2d');
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeOpticalCanvas, { passive: true });
+
+  if (fiberCanvas) {
+    const fCtx = fiberCanvas.getContext('2d');
+    const packets = Array.from({ length: 28 }, (_, i) => ({
+      t: i / 28,
+      lane: (i % 5) - 2,
+      speed: 0.24 + (i % 3) * 0.08,
+    }));
+
+    function drawFibers() {
+      if (activeShowcase === 'save' && fCtx) {
+        if (fiberCanvas.width === 0) resizeOpticalCanvas();
+        optPulse *= 0.93;
+        fCtx.clearRect(0, 0, fW, fH);
+
+        const x0 = fW * 0.14;
+        const x1 = fW * 0.86;
+        const cy = fH * 0.5;
+
+        // Draw 5 curved optical glass fiber tracks
+        for (let l = -2; l <= 2; l++) {
+          const bend = l * 28;
+          fCtx.strokeStyle = l === 0 ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.06)';
+          fCtx.lineWidth = l === 0 ? 1.4 : 1;
+          fCtx.beginPath();
+          fCtx.moveTo(x0, cy + bend * 0.35);
+          fCtx.quadraticCurveTo(fW * 0.5, cy + bend, x1, cy + bend * 0.35);
+          fCtx.stroke();
+        }
+
+        // Expanding refractive pulse ring from center .ain prism
+        if (optPulse > 0.02) {
+          fCtx.strokeStyle = `rgba(56, 189, 248, ${(optPulse * 0.55).toFixed(3)})`;
+          fCtx.lineWidth = 1.5;
+          fCtx.beginPath();
+          fCtx.arc(fW * 0.5, cy, 42 + (1 - optPulse) * 140, 0, Math.PI * 2);
+          fCtx.stroke();
+        }
+
+        // Animated luminous data packets along fibers
+        for (const p of packets) {
+          if (!REDUCED_MOTION) {
+            p.t += p.speed * 0.016 * optDir;
+            if (p.t > 1) p.t -= 1;
+            if (p.t < 0) p.t += 1;
+          }
+          const t = p.t;
+          const bend = p.lane * 28;
+          const px = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * (fW * 0.5) + t * t * x1;
+          const py = (1 - t) * (1 - t) * (cy + bend * 0.35) + 2 * (1 - t) * t * (cy + bend) + t * t * (cy + bend * 0.35);
+          const rgb = t < 0.5 ? '225, 75, 134' : '56, 189, 248';
+          const grad = fCtx.createRadialGradient(px, py, 0, px, py, 10);
+          grad.addColorStop(0, `rgba(${rgb}, 0.95)`);
+          grad.addColorStop(1, 'transparent');
+          fCtx.fillStyle = grad;
+          fCtx.beginPath();
+          fCtx.arc(px, py, 10, 0, Math.PI * 2);
+          fCtx.fill();
+        }
+      }
+      if (!REDUCED_MOTION) requestAnimationFrame(drawFibers);
+    }
+    requestAnimationFrame(drawFibers);
+  }
+
+  /* --- STAGE 03: 3D Fanned Era Artwork Deck --- */
+  const ERAS = {
+    sys3: {
+      kernel: 'system3-sdl2',
+      years: '1989 — 1995',
+      covers: ['rance01', 'rance02', 'toushin2', 'dalk', 'rance03'],
+      zh: ['System 1–3 早期经典内核', '面向采用早期 DAT 资源结构的作品，还原索引调色板渲染，提供原生触控与独立存档管理。', ['ADISK.DAT / ACG.DAT', '.ZIP 直读', '原生触控', '独立存档']],
+      en: ['Early System 1–3 Kernel', 'Faithfully renders 1989–1995 DAT-archive releases with direct native touch and isolated saves.', ['ADISK.DAT / ACG.DAT', 'ZIP Import', 'Native Touch', 'Scoped Saves']],
+      ja: ['初期 System 1–3 コア', '1989〜1995 年の DAT 形式作品をネイティブ描画。タッチ操作と作品別セーブに対応。', ['ADISK.DAT / ACG.DAT', 'ZIP 直接展開', 'タッチ操作', '分離セーブ']],
+    },
+    sys35: {
+      kernel: 'xsystem35',
+      years: '1996 — 2003',
+      covers: ['kichikuou', 'daiakuji', 'mamatoto', 'toushin2', 'yorugakuru'],
+      zh: ['System 3.5–3.9 黄金期内核', '完整实现 ALD/PMS/QNT 图像、Shift-JIS/GBK/UTF-8 排版、内置 MIDI 合成器与虚拟 CD 音轨。', ['System39.ain / *SA.ALD', '原生 MIDI 合成', '虚拟 CD 音轨', 'ISO 多碟合并']],
+      en: ['System 3.5–3.9 Golden-Era Kernel', 'Full ALD/PMS/QNT graphics, multi-encoding CJK text, built-in MIDI synthesis, and virtual CDDA.', ['System39.ain / *SA.ALD', 'Native MIDI', 'Virtual CDDA', 'Multi-Disc ISO']],
+      ja: ['System 3.5–3.9 黄金期コア', 'ALD/PMS/QNT 描画、多文字コード、内蔵 MIDI シンセ、playlist.txt 仮想 CD 音源に対応。', ['System39.ain / *SA.ALD', 'ネイティブ MIDI', '仮想 CD 音源', '複数ディスク統合']],
+    },
+    sys4: {
+      kernel: 'xsystem4',
+      years: '2002 — PRESENT',
+      covers: ['rance10', 'evenicle2', 'sengokurance', 'oyakorankan', 'escalayer_reboot'],
+      zh: ['System 4.x 全世代原生内核', '覆盖 AIN v0–v14.1、PartsEngine 字体重排、SealEngine 3D、FLAT v15、CHS.TBL 汉化映射及无损 MOD 与入口切换。', ['.ZIP/.RAR/.7Z/.ISO/.MDF', 'CHS.TBL / UIF', '原子备份 MOD', 'AliceStart.CHS']],
+      en: ['Full-Generation System 4.x Kernel', 'Spans AIN v0–v14.1, PartsEngine scaling, SealEngine 3D, FLAT v15, CHS.TBL remaps, atomic MODs & boot entries.', ['.ZIP/.RAR/.7Z/.ISO/.MDF', 'CHS.TBL / UIF', 'Atomic MODs', 'AliceStart.CHS']],
+      ja: ['System 4.x 全世代コア', 'AIN v0–v14.1・PartsEngine・SealEngine 3D・FLAT v15・CHS.TBL 置換・非破壊 MOD・起動切替に対応。', ['.ZIP/.RAR/.7Z/.ISO/.MDF', 'CHS.TBL / UIF', '非破壊 MOD', 'AliceStart.CHS']],
+    },
+  };
+
+  let curEra = 'sys4';
+  function renderEra() {
+    const d = ERAS[curEra];
+    const [title, desc, specs] = d[currentLang] || d.zh;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('era-kernel', d.kernel);
+    set('era-years', d.years);
+    set('era-title', title);
+    set('era-desc', desc);
+
+    const spEl = document.getElementById('era-specs');
+    if (spEl) spEl.innerHTML = specs.map((s) => `<span>${s}</span>`).join('');
+
+    const deck = document.getElementById('era-deck');
+    if (deck) {
+      const layout = [
+        { tx: -124, ty: 18, tz: -40, rot: -14, z: 1 },
+        { tx: -64, ty: 5, tz: -16, rot: -7, z: 2 },
+        { tx: 0, ty: -6, tz: 18, rot: 0, z: 5 },
+        { tx: 64, ty: 5, tz: -16, rot: 7, z: 2 },
+        { tx: 124, ty: 18, tz: -40, rot: 14, z: 1 },
+      ];
+      deck.innerHTML = d.covers.map((slug, i) => {
+        const L = layout[i];
+        return `<div class="era-card" style="--tx:${L.tx}px;--ty:${L.ty}px;--tz:${L.tz}px;--rot:${L.rot}deg;z-index:${L.z}"><img src="assets/games/${slug}.webp" alt="" width="148" height="148" /></div>`;
+      }).join('');
     }
   }
 
-  document.querySelectorAll('[data-save-game]').forEach((btn) => {
+  document.querySelectorAll('[data-era]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      curSaveKey = btn.dataset.saveGame;
-      document.querySelectorAll('[data-save-game]').forEach((b) => b.classList.toggle('is-active', b === btn));
-      renderSaveDemo();
+      curEra = btn.dataset.era;
+      document.querySelectorAll('[data-era]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      renderEra();
     });
   });
-
-  const flipSaveBtn = document.getElementById('run-save-convert');
-  if (flipSaveBtn) {
-    flipSaveBtn.addEventListener('click', () => {
-      saveToPc = !saveToPc;
-      renderSaveDemo();
-    });
-  }
-  renderSaveDemo();
-
-  /* --- DEMO 03: Multi-Format Archive / ISO Auto-Router --- */
-  const ROUTES = {
-    oyakorankan: {
-      zh: ['libarchive 7z 固实流式直读', '免双倍暂存空间，自动修复压缩包内 Shift-JIS / GBK 路径乱码。', 'xsystem4 · System 4.x', '检测到 AliceStart.CHS 与 CHS.TBL，自动绑定中文启动入口。', 'CHS.TBL 重映射 + CP932 弹窗识别', '自动区分汉化文本与未汉化系统提示框，支持虚拟手柄与 PC 存档。'],
-      en: ['Streaming 7z Solid Extraction', 'Zero 2× staging space; repairs garbled Shift-JIS / GBK paths automatically.', 'xsystem4 · System 4.x', 'Detected AliceStart.CHS + CHS.TBL and bound the localized boot entry.', 'CHS.TBL Remap + CP932 Popups', 'Separates remapped CJK dialogue from raw CP932 system dialogs cleanly.'],
-      ja: ['7z ソリッド・ストリーミング展開', '2倍の一時領域不要。Shift-JIS / GBK の文字化けパスを自動修復。', 'xsystem4 · System 4.x', 'AliceStart.CHS と CHS.TBL を検出し専用エントリへ自動接続。', 'CHS.TBL 置換＆CP932 判定', '翻訳テキストと未翻訳システムダイアログを正確に判別表示します。'],
-    },
-    kichikuou: {
-      zh: ['ISO9660 / Joliet 双碟自动合并', '直读 2048/2352/2448 扇区镜像，自动合并 Disk1/Disk2 音频与脚本。', 'xsystem35 · System 3.5–3.9', '检测到 System39.ain 与 *SA.ALD，路由至 xsystem35 原生内核。', '原生 MIDI 合成 + 虚拟 CD 音轨', '内置 MIDI 合成器与 playlist.txt CDDA 音轨，切后台自动挂起音频。'],
-      en: ['ISO9660 / Joliet Multi-Disc Merge', 'Reads 2048/2352/2448 sector disc images and merges multi-disc assets.', 'xsystem35 · System 3.5–3.9', 'Detected System39.ain + *SA.ALD; routed to native xsystem35 kernel.', 'Native MIDI Synth + Virtual CDDA', 'Built-in MIDI synthesizer and playlist.txt CD tracks with background pause.'],
-      ja: ['ISO9660 / Joliet 複数ディスク統合', '2048/2352/2448 セクタの ISO/MDF を直読し Disk1/2 を自動統合。', 'xsystem35 · System 3.5–3.9', 'System39.ain と *SA.ALD を検出し xsystem35 ネイティブ起動。', 'ネイティブ MIDI＆仮想 CD 音源', '内蔵 MIDI シンセと playlist.txt 音源に対応、バックグラウンド自動停止。'],
-    },
-    rance10: {
-      zh: ['RAR5 流式直读 + 增量补丁覆盖', '直接流式解压大字典 RAR 归档，自动按目录隔离多版本实例。', 'xsystem4 · AIN v12–v14.1', '检测到 Rance10.ain + PartsEngine，启用多实例存档与高优调度。', '离线存档编辑 + 60fps 稳帧', '支持多实例独立存档/MOD、实时字号缩放、修改器与 PC 互通导出。'],
-      en: ['Streaming RAR5 + Patch Overlay', 'Extracts large-dictionary RAR archives cleanly with multi-instance folders.', 'xsystem4 · AIN v12–v14.1', 'Detected Rance10.ain + PartsEngine; enabled multi-instance save scoping.', 'Save Editor + 60fps Scheduling', 'Independent saves & MODs per folder, live font scale, modifiers & PC export.'],
-      ja: ['RAR5 直展開＆差分パッチ統合', '大容量 RAR を省容量展開し、複数バージョンのフォルダを分離管理。', 'xsystem4 · AIN v12–v14.1', 'Rance10.ain と PartsEngine を検出、独立インスタンス環境を構成。', 'セーブ編集＆60fps 制御', 'フォルダ別セーブ/MOD 管理、文字拡大、PC 互換出力を標準搭載。'],
-    },
-    rance1: {
-      zh: ['ZIP 轻量直读与编码校验', '秒级提取早期 DAT 数据包，保留原始目录结构并建立独立存档槽。', 'system3-sdl2 · System 1–3', '检测到 ADISK.DAT + ACG.DAT（1989 架构），路由至 system3-sdl2。', '原生触控 + 轻量快进', '完整兼容早期调色板绘制、直觉触控点击与独立作品存档管理。'],
-      en: ['Instant ZIP Extract & Check', 'Extracts classic 1989 DAT packages cleanly with scoped save storage.', 'system3-sdl2 · System 1–3', 'Detected ADISK.DAT + ACG.DAT; routed automatically to system3-sdl2.', 'Direct Touch + Fast Skip', 'Faithful indexed palette rendering with native touch input and fast skip.'],
-      ja: ['ZIP 軽量展開＆構成チェック', '初期 DAT パッケージを即座に展開し作品別のセーブ領域を用意。', 'system3-sdl2 · System 1–3', 'ADISK.DAT + ACG.DAT を検出し system3-sdl2 へ自動ルーティング。', 'ネイティブタッチ＆スキップ', '初期パレット描画を忠実に再現し、タッチ操作と高速スキップに対応。'],
-    },
-  };
-
-  let curRouteKey = 'oyakorankan';
-  function renderRouteDemo() {
-    const arr = (ROUTES[curRouteKey][currentLang] || ROUTES[curRouteKey].zh);
-    const ids = ['rt-extract-title', 'rt-extract-desc', 'rt-engine-title', 'rt-engine-desc', 'rt-caps-title', 'rt-caps-desc'];
-    ids.forEach((id, i) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = arr[i];
-    });
-  }
-
-  document.querySelectorAll('[data-route]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      curRouteKey = btn.dataset.route;
-      document.querySelectorAll('[data-route]').forEach((b) => b.classList.toggle('is-active', b === btn));
-      renderRouteDemo();
-    });
-  });
-  renderRouteDemo();
-
-  /* --- DEMO 04: Atomic-Backup MODs & Launch Entry --- */
-  const entryReadout = document.getElementById('mod-entry-readout');
-  const backupState = document.getElementById('mod-backup-state');
-  const checks = Array.from(document.querySelectorAll('.mod-check'));
-
-  function syncModState() {
-    const activeCount = checks.filter((c) => c.checked).length;
-    if (!backupState) return;
-    const files = activeCount === 0 ? 0 : activeCount + 1;
-    backupState.textContent = currentLang === 'en'
-      ? (activeCount ? `Atomic backup protects ${files} vanilla files · one-tap restore ready` : 'Vanilla state active · 0 files modified')
-      : currentLang === 'ja'
-        ? (activeCount ? `元ファイル ${files} 件を自動退避済み・ワンタップ復元可能` : '初期状態（変更ファイル 0 件）')
-        : (activeCount ? `原子备份已保护 ${files} 个原版文件 · 卸载后自动无损还原` : '当前为纯净原版状态 · 未修改任何原版文件');
-  }
-
-  document.querySelectorAll('[data-entry]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('[data-entry]').forEach((b) => b.classList.toggle('is-active', b === btn));
-      if (entryReadout) entryReadout.textContent = `ENTRY: ${btn.dataset.entry}`;
-    });
-  });
-
-  checks.forEach((c) => c.addEventListener('change', syncModState));
-
-  const resetBtn = document.getElementById('mod-reset-btn');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      checks.forEach((c) => { c.checked = false; });
-      syncModState();
-    });
-  }
+  renderEra();
 
   return {
     refreshLang: () => {
-      renderSimLine();
-      renderRouteDemo();
-      syncModState();
+      syncShowcaseNote();
+      playVnScene();
+      renderOptLabels();
+      renderEra();
     },
   };
 }
@@ -1119,7 +1228,7 @@ function showToast(msg) {
    BOOT
    ========================================================================== */
 const wall = initThreeWall();
-const demos = initInteractiveDemos();
+const showcase = initShowcase();
 initAliceEmblem(wall.triggerWave);
 initReveals();
 applyReleaseUI();
@@ -1143,21 +1252,13 @@ function applyLanguage(lang) {
   });
 
   updateHudFocus(focusedGame);
-  demos.refreshLang();
+  showcase.refreshLang();
 }
 
 applyLanguage('zh');
 
 document.querySelectorAll('.lang-btn').forEach((b) => {
   b.addEventListener('click', () => applyLanguage(b.dataset.lang));
-});
-
-document.querySelectorAll('.wf-btn').forEach((b) => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('.wf-btn').forEach((x) => x.classList.toggle('is-active', x === b));
-    wall.setFilter(b.dataset.filter);
-    wall.triggerWave(0, 0.5);
-  });
 });
 
 const qqBtn = document.getElementById('copy-qq-btn');
