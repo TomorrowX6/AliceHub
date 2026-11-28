@@ -158,7 +158,7 @@ let modalOpen = false;
    ========================================================================== */
 function initThreeWall() {
   const canvas = document.getElementById('webgl-stage');
-  if (!canvas) return { triggerWave: () => {} };
+  if (!canvas) return;
 
   let renderer;
   try {
@@ -169,7 +169,7 @@ function initThreeWall() {
       powerPreference: 'high-performance',
     });
   } catch {
-    return { triggerWave: () => {} };
+    return;
   }
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -198,9 +198,9 @@ function initThreeWall() {
         vec2 c2 = vec2(0.28 + cos(uTime * 0.18) * 0.08 - uMouse.x * 0.06, -0.14 + sin(uTime * 0.22) * 0.06);
         float g1 = exp(-dot(p - c1, p - c1) * 5.0);
         float g2 = exp(-dot(p - c2, p - c2) * 4.8);
-        vec3 col = vec3(0.026, 0.026, 0.038)
-          + vec3(0.88, 0.29, 0.52) * g1 * 0.13
-          + vec3(0.22, 0.74, 0.97) * g2 * 0.12;
+        vec3 col = vec3(0.022, 0.022, 0.032)
+          + vec3(0.88, 0.29, 0.52) * g1 * 0.07
+          + vec3(0.22, 0.74, 0.97) * g2 * 0.065;
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -208,33 +208,6 @@ function initThreeWall() {
   const auroraPlane = new THREE.Mesh(new THREE.PlaneGeometry(62, 38), auroraMat);
   auroraPlane.position.set(0, 0, -14);
   scene.add(auroraPlane);
-
-  const probeMat = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    uniforms: { uIntensity: { value: 0.18 } },
-    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `
-      precision highp float;
-      varying vec2 vUv;
-      uniform float uIntensity;
-      void main() {
-        vec2 p = vUv - 0.5;
-        float d = length(p);
-        if (d > 0.5) discard;
-        float glow = exp(-d * d * 18.0);
-        vec3 col = mix(vec3(0.22, 0.74, 0.97), vec3(0.88, 0.29, 0.52), smoothstep(-0.35, 0.35, p.x));
-        gl_FragColor = vec4(col, glow * uIntensity);
-      }
-    `,
-  });
-  const cursorProbe = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 5.6), probeMat);
-  cursorProbe.position.set(0, 0, 1.5);
-  scene.add(cursorProbe);
-
-  const shockRings = [];
-  const shockGeo = new THREE.TorusGeometry(1.0, 0.018, 8, 96);
 
   const wallGroup = new THREE.Group();
   scene.add(wallGroup);
@@ -246,7 +219,6 @@ function initThreeWall() {
     precision highp float;
     uniform sampler2D uMap;
     uniform float uHover;
-    uniform float uFlash;
     uniform float uProx;
     uniform vec2 uLightDir;
     varying vec2 vUv;
@@ -262,22 +234,17 @@ function initThreeWall() {
       float mask = 1.0 - smoothstep(-0.008, 0.008, d);
       if (mask < 0.01) discard;
 
-      vec2 shift = vec2(uFlash * 0.011, 0.0);
-      vec3 col = vec3(
-        texture2D(uMap, clamp(vUv + shift, 0.002, 0.998)).r,
-        texture2D(uMap, vUv).g,
-        texture2D(uMap, clamp(vUv - shift, 0.002, 0.998)).b
-      );
+      vec3 col = texture2D(uMap, vUv).rgb;
 
-      float bright = mix(0.95, 1.12, clamp(uHover + uProx * 0.2, 0.0, 1.0));
+      float bright = mix(0.76, 0.97, clamp(uHover + uProx * 0.1, 0.0, 1.0));
       col *= bright;
 
-      float spec = smoothstep(0.36, 0.96, 1.0 - abs(dot(p, normalize(uLightDir)) - 0.08));
-      col += vec3(0.9, 0.96, 1.0) * spec * (0.03 + uProx * 0.07 + uHover * 0.11 + uFlash * 0.16);
+      float spec = smoothstep(0.64, 0.98, 1.0 - abs(dot(p, normalize(uLightDir)) - 0.08));
+      col += vec3(0.92, 0.96, 1.0) * spec * (0.01 + uProx * 0.016 + uHover * 0.03);
 
       float rim = smoothstep(-0.02, -0.004, d) * mask;
-      vec3 rimCol = mix(vec3(1.0), vec3(0.22, 0.74, 0.97), clamp(uHover + uFlash + uProx * 0.35, 0.0, 1.0));
-      col += rimCol * rim * (0.14 + uProx * 0.14 + uHover * 0.52 + uFlash * 0.56);
+      vec3 rimCol = mix(vec3(1.0), vec3(0.22, 0.74, 0.97), clamp(uHover + uProx * 0.25, 0.0, 1.0));
+      col += rimCol * rim * (0.07 + uProx * 0.04 + uHover * 0.22);
 
       gl_FragColor = vec4(col, mask);
     }
@@ -318,7 +285,6 @@ function initThreeWall() {
         uniforms: {
           uMap: { value: getTexture(game.slug) },
           uHover: { value: 0 },
-          uFlash: { value: 0 },
           uProx: { value: 0 },
           uLightDir: { value: new THREE.Vector2(0.7, 0.7) },
         },
@@ -380,7 +346,7 @@ function initThreeWall() {
       void main() {
         float d = length(gl_PointCoord - 0.5);
         if (d > 0.5) discard;
-        gl_FragColor = vec4(vColor, pow(1.0 - d * 2.0, 2.4) * 0.28);
+        gl_FragColor = vec4(vColor, pow(1.0 - d * 2.0, 2.4) * 0.14);
       }
     `,
   });
@@ -396,25 +362,7 @@ function initThreeWall() {
   let dragMoved = 0;
   let lastDragX = 0;
   let dragVel = 0;
-  const waves = [];
-
-  function triggerWave(wx, wy) {
-    waves.push({ x: wx, y: wy, t: 0 });
-    if (waves.length > 4) waves.shift();
-
-    const rMat = new THREE.MeshBasicMaterial({
-      color: waves.length % 2 === 0 ? 0x38bdf8 : 0xe14b86,
-      transparent: true,
-      opacity: 0.52,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const rMesh = new THREE.Mesh(shockGeo, rMat);
-    rMesh.position.set(wx, wy, 1.4);
-    rMesh.scale.setScalar(0.35);
-    wallGroup.add(rMesh);
-    shockRings.push({ mesh: rMesh, mat: rMat, t: 0 });
-  }
+  const probePos = { x: 0, y: 0 };
 
   window.addEventListener('pointerdown', (e) => {
     if (modalOpen) return;
@@ -450,11 +398,8 @@ function initThreeWall() {
       const ny = -(e.clientY / Math.max(1, window.innerHeight)) * 2 + 1;
       raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
       const hits = raycaster.intersectObjects(meshes, false);
-      if (hits.length > 0) {
-        triggerWave(hits[0].point.x, hits[0].point.y);
-        if (hits[0].object.userData.game) updateHudFocus(hits[0].object.userData.game);
-      } else {
-        triggerWave(nx * 6, ny * 3.5);
+      if (hits.length > 0 && hits[0].object.userData.game) {
+        updateHudFocus(hits[0].object.userData.game);
       }
     }
   });
@@ -499,29 +444,11 @@ function initThreeWall() {
     wallGroup.rotation.y = -mouse.x * 0.055;
     wallGroup.rotation.x = mouse.y * 0.04;
 
-    cursorProbe.position.x += (mouse.x * 7.2 - cursorProbe.position.x) * 0.12;
-    cursorProbe.position.y += (mouse.y * 4.2 - cursorProbe.position.y) * 0.12;
-    cursorProbe.position.z = 1.4 + cursorProbe.position.x * cursorProbe.position.x * 0.028;
+    probePos.x += (mouse.x * 7.2 - probePos.x) * 0.12;
+    probePos.y += (mouse.y * 4.2 - probePos.y) * 0.12;
 
     auroraMat.uniforms.uTime.value = elapsed;
     auroraMat.uniforms.uMouse.value.set(mouse.x, mouse.y);
-
-    for (let i = shockRings.length - 1; i >= 0; i--) {
-      const sr = shockRings[i];
-      sr.t += dt;
-      sr.mesh.scale.setScalar(0.35 + sr.t * 5.8);
-      sr.mat.opacity = Math.max(0, 0.52 * Math.exp(-sr.t * 2.1));
-      if (sr.t > 1.8) {
-        wallGroup.remove(sr.mesh);
-        sr.mat.dispose();
-        shockRings.splice(i, 1);
-      }
-    }
-
-    for (let i = waves.length - 1; i >= 0; i--) {
-      waves[i].t += dt;
-      if (waves[i].t > 2.6) waves.splice(i, 1);
-    }
 
     rayTick++;
     if (!modalOpen && !dragging && pointerNdc.x < 2 && rayTick % 2 === 0) {
@@ -545,34 +472,21 @@ function initThreeWall() {
       const isHovered = tile.mesh === hoveredMesh;
       tile.hover += ((isHovered ? 1 : 0) - tile.hover) * 0.14;
 
-      const pDist = Math.hypot(tile.x - cursorProbe.position.x, tile.yBase - cursorProbe.position.y);
+      const pDist = Math.hypot(tile.x - probePos.x, tile.yBase - probePos.y);
       const prox = Math.exp(-pDist * pDist * 0.085);
       const curveZ = tile.x * tile.x * 0.032;
       const idleFloat = REDUCED_MOTION ? 0 : Math.sin(elapsed * 0.9 + tile.phase) * 0.045;
 
-      let waveZ = 0;
-      let waveFlash = 0;
-      for (const w of waves) {
-        const dist = Math.hypot(tile.x - w.x, tile.yBase - w.y);
-        const front = w.t * 7.4 - dist;
-        if (front > 0 && front < 6.283) {
-          const env = Math.sin(front) * Math.exp(-dist * 0.21) * Math.exp(-w.t * 1.15);
-          waveZ += env * 1.25;
-          waveFlash = Math.max(waveFlash, Math.abs(env) * 1.35);
-        }
-      }
-
       tile.mesh.position.x = tile.x;
       tile.mesh.position.y = tile.yBase + idleFloat;
-      tile.mesh.position.z = curveZ + tile.hover * 0.72 + prox * 0.14 + waveZ;
-      tile.mesh.rotation.y = -tile.x * 0.056 + waveZ * 0.09 + dragVel * 0.014;
-      tile.mesh.rotation.x = waveZ * 0.055;
+      tile.mesh.position.z = curveZ + tile.hover * 0.65 + prox * 0.08;
+      tile.mesh.rotation.y = -tile.x * 0.056 + dragVel * 0.014;
+      tile.mesh.rotation.x = 0;
 
-      const s = 1 + tile.hover * 0.055 + prox * 0.012;
+      const s = 1 + tile.hover * 0.048 + prox * 0.008;
       tile.mesh.scale.set(s, s, 1);
 
       tile.mat.uniforms.uHover.value = tile.hover;
-      tile.mat.uniforms.uFlash.value = waveFlash;
       tile.mat.uniforms.uProx.value = prox;
       tile.mat.uniforms.uLightDir.value.set(0.65 + mouse.x * 0.4, 0.72 + mouse.y * 0.4);
     }
@@ -593,13 +507,12 @@ function initThreeWall() {
   }
 
   animate(performance.now());
-  return { triggerWave };
 }
 
 /* ==========================================================================
-   2. ALICE EMBLEM EYES + BLINK + CLICK RIPPLE
+   2. ALICE EMBLEM EYES + BLINK + WINK
    ========================================================================== */
-function initAliceEmblem(triggerWave) {
+function initAliceEmblem() {
   const btn = document.getElementById('alice-emblem');
   const box = document.getElementById('alice-avatar-box');
   const eyeM = document.getElementById('alice-eye-m');
@@ -632,7 +545,6 @@ function initAliceEmblem(triggerWave) {
   btn.addEventListener('click', () => {
     box.classList.add('is-winking');
     setTimeout(() => box.classList.remove('is-winking'), 320);
-    triggerWave(0, 0.5);
   });
 }
 
@@ -739,8 +651,8 @@ function applyLanguage(lang) {
 /* ==========================================================================
    BOOT
    ========================================================================== */
-const wall = initThreeWall();
-initAliceEmblem(wall.triggerWave);
+initThreeWall();
+initAliceEmblem();
 initModal();
 applyReleaseUI();
 applyLanguage('zh');
