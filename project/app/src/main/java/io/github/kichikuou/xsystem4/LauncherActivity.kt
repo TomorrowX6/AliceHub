@@ -459,6 +459,7 @@ class LauncherActivity : ThemedActivity(), GameListObserver {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppSettings.clearLegacyDownloadRoutePref(this)
         AppSettings.applyPlatformNightMode(this)
         setContentView(R.layout.launcher)
         title = getString(R.string.select_game_title)

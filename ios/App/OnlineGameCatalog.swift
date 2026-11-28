@@ -321,11 +321,14 @@ struct OnlineGameManifest: Decodable {
     }
 
     static func fetch(from baseURL: URL) async throws -> Self {
-        var request = URLRequest(url: baseURL.appendingPathComponent("manifest.json"),
-                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
-        request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+        let canonicalBase = URL(string: AliceHubCDN.canonicalURL(baseURL.absoluteString)) ?? baseURL
+        let (data, response) = try await AliceHubCDN.fetchData(
+            from: canonicalBase.appendingPathComponent("manifest.json"),
+            timeoutInterval: 30,
+            maxAttempts: 3,
+            acceptJSON: true
+        )
+        guard response.statusCode == 200 else {
             throw ModError.message(hubText("无法获取游戏清单，请检查网络后重试"))
         }
         return try parse(data)

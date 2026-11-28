@@ -21,6 +21,7 @@ import android.widget.TextView
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -57,6 +58,8 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var refreshedSizeCdnUrl: String? = null
+    private var sizeRefreshJob: Job? = null
+    private var sizeRefreshUrl: String? = null
 
     private lateinit var gameList: GameList
     private var gameId: String = GameCatalog.ID_RANCE10
@@ -106,6 +109,7 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppSettings.clearLegacyDownloadRoutePref(this)
         setContentView(R.layout.activity_game_hub)
         actionBar?.setDisplayHomeAsUpEnabled(true)
         // Keeps the row ripples inside the cards' rounded corners.
@@ -527,16 +531,22 @@ class GameHubActivity : ThemedActivity(), GameListObserver {
         val cdnUrl = descriptor.onlineBaseCdnUrl ?: return
         val fetchUrl = AppSettings.canonicalCdnUrl(cdnUrl)
         if (refreshedSizeCdnUrl == fetchUrl) return
-        refreshedSizeCdnUrl = fetchUrl
-        scope.launch {
+        if (sizeRefreshJob?.isActive == true && sizeRefreshUrl == fetchUrl) return
+        sizeRefreshJob?.cancel()
+        sizeRefreshUrl = fetchUrl
+        sizeRefreshJob = scope.launch {
             val fetched = try {
                 withContext(Dispatchers.IO) {
                     OnlineInstaller.fetchManifestTotalBytes(fetchUrl)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (_: Throwable) {
                 -1L
             }
+            if (isFinishing || isDestroyed) return@launch
             if (fetched > 0L) {
+                refreshedSizeCdnUrl = fetchUrl
                 val prev = AppSettings.getCachedBaseGameSize(this@GameHubActivity, cdnUrl)
                 AppSettings.setCachedBaseGameSize(this@GameHubActivity, cdnUrl, fetched)
                 if (prev != fetched) {

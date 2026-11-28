@@ -56,6 +56,8 @@ struct OnlineGameChecks {
         let manifest = try OnlineGameManifest.parse(manifestData)
         let fetched = try await OnlineGameManifest.fetch(from: base)
         precondition(fetched.totalBytes == manifest.totalBytes && fetched.files.count == 6)
+        let retried = try await OnlineGameManifest.fetch(from: base.appendingPathComponent("flaky"))
+        precondition(retried.totalBytes == manifest.totalBytes && retried.files.count == 6)
         let original = try JSONSerialization.jsonObject(with: manifestData) as! [String: Any]
         let entry = (original["files"] as! [[String: Any]])[0]
         func rejects(_ changed: [String: Any]) throws {

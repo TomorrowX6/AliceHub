@@ -97,6 +97,7 @@ struct AliceHubApp: App {
     @AppStorage(HubLanguage.storageKey) private var language = HubLanguage.system.rawValue
 
     init() {
+        AliceHubCDN.clearLegacyPreferences()
         GameLibrary.titleResolver = { url, base in
             ModOverlay.displayName(url, baseName: base)
         }

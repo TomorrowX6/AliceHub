@@ -150,7 +150,7 @@ struct UncensoredPatchManifest: Equatable {
         let encoded = key.split(separator: "/").map {
             String($0).addingPercentEncoding(withAllowedCharacters: allowed) ?? String($0)
         }.joined(separator: "/")
-        let base = cdnBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let base = AliceHubCDN.canonicalURL(cdnBaseURL).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return Self(
             version: version.isEmpty ? "1.0" : version,
             gameId: gameId,
@@ -167,26 +167,69 @@ struct UncensoredPatchManifest: Equatable {
     }
 
     static func fetch(for descriptor: UncensoredGameDescriptor) async throws -> Self {
-        var request = URLRequest(url: descriptor.manifestURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw ModError.message(hubText("无法获取无码补丁信息，请检查网络"))
-        }
-        if http.expectedContentLength > Int64(maxManifestBytes) {
-            throw ModError.message(hubText("无码补丁清单过大"))
-        }
-        var data = Data()
-        if http.expectedContentLength > 0 {
-            data.reserveCapacity(Int(http.expectedContentLength))
-        }
-        for try await byte in bytes {
-            if data.count >= maxManifestBytes {
-                throw ModError.message(hubText("无码补丁清单过大"))
+        let base = AliceHubCDN.canonicalURL(descriptor.cdnBaseURL).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let manifestURL = URL(string: base + "/files/uncensored/manifest.json") ?? descriptor.manifestURL
+        let config = URLSessionConfiguration.ephemeral
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = 20
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+
+        var fetchedData: Data?
+        var lastError: Error?
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            var request = URLRequest(url: manifestURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+            request.setValue("AliceHub", forHTTPHeaderField: "User-Agent")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+            do {
+                let (bytes, response) = try await session.bytes(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw URLError(.badServerResponse)
+                }
+                if http.statusCode != 200 {
+                    let retryable = http.statusCode == 408 || http.statusCode == 429 || (500...599).contains(http.statusCode)
+                    if retryable && attempt < 2 {
+                        lastError = ModError.message(hubText("无法获取无码补丁信息，请检查网络"))
+                    } else {
+                        throw ModError.message(hubText("无法获取无码补丁信息，请检查网络"))
+                    }
+                } else {
+                    if http.expectedContentLength > Int64(maxManifestBytes) {
+                        throw ModError.message(hubText("无码补丁清单过大"))
+                    }
+                    var data = Data()
+                    if http.expectedContentLength > 0 {
+                        data.reserveCapacity(Int(http.expectedContentLength))
+                    }
+                    for try await byte in bytes {
+                        if data.count >= maxManifestBytes {
+                            throw ModError.message(hubText("无码补丁清单过大"))
+                        }
+                        data.append(byte)
+                    }
+                    fetchedData = data
+                    break
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let modError as ModError {
+                throw modError
+            } catch {
+                if Task.isCancelled { throw CancellationError() }
+                lastError = error
+                if attempt == 2 { throw error }
             }
-            data.append(byte)
+            if attempt < 2 {
+                try await Task.sleep(nanoseconds: UInt64(attempt + 1) * 600_000_000)
+            }
         }
-        return try parse(data, cdnBaseURL: descriptor.cdnBaseURL)
+        guard let data = fetchedData else {
+            throw lastError ?? ModError.message(hubText("无法获取无码补丁信息，请检查网络"))
+        }
+        return try parse(data, cdnBaseURL: base)
     }
 }
 
