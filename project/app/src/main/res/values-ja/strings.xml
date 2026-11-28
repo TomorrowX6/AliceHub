@@ -534,4 +534,23 @@
     <string name="storage_location_private">アプリ専用</string>
     <string name="storage_location_pending">アクセス許可が必要</string>
     <string name="onboarding_online_intro">AliceHub からゲームやアップデートを直接ダウンロードできます。設定でいつでも変更できます。</string>
+    <string name="settings_section_appearance">外観と表示</string>
+    <string name="settings_section_storage">ダウンロードと保存先</string>
+    <string name="settings_section_controls">操作</string>
+    <string name="settings_section_about">このアプリについて</string>
+    <string name="settings_color_palette">カラーパレット</string>
+    <string name="palette_monet">モネ動的配色</string>
+    <string name="palette_monet_short">モネ</string>
+    <string name="palette_indigo">インディゴ</string>
+    <string name="palette_indigo_short">藍</string>
+    <string name="palette_sakura">桜ピンク</string>
+    <string name="palette_sakura_short">桜</string>
+    <string name="palette_ocean">オーシャン</string>
+    <string name="palette_ocean_short">海</string>
+    <string name="palette_forest">フォレスト</string>
+    <string name="palette_forest_short">森</string>
+    <string name="palette_amber">アンバー</string>
+    <string name="palette_amber_short">琥珀</string>
+    <string name="palette_violet">バイオレット</string>
+    <string name="palette_violet_short">紫</string>
 </resources>

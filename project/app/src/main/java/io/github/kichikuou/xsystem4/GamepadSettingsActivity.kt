@@ -73,7 +73,7 @@ class GamepadSettingsActivity : ThemedActivity() {
         title = if (!gameTitle.isNullOrBlank()) "$gameTitle · $pageLabel" else pageLabel
 
         val rawGameAccent = rawGameId?.let { GameCatalog.descriptorFor(this, it).accentColor }
-        val accentColor = rawGameAccent?.let { UiKit.accentOnSurface(this, it) } ?: getColor(R.color.ui_primary)
+        val accentColor = rawGameAccent?.let { UiKit.accentOnSurface(this, it) } ?: UiKit.primaryColor(this)
 
         controller = GamepadConfigController(
             context = this,
@@ -89,7 +89,7 @@ class GamepadSettingsActivity : ThemedActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(getColor(R.color.ui_bg))
+            setBackgroundColor(UiKit.bgColor(this@GamepadSettingsActivity))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -117,7 +117,7 @@ class GamepadSettingsActivity : ThemedActivity() {
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(getColor(R.color.ui_surface))
+            setBackgroundColor(UiKit.surfaceColor(this@GamepadSettingsActivity))
             setPadding(dp(16), dp(10), dp(16), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -145,7 +145,7 @@ class GamepadSettingsActivity : ThemedActivity() {
             } else {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
-                    setColor(getColor(R.color.ui_btn_tonal))
+                    setColor(UiKit.btnTonalColor(this@GamepadSettingsActivity))
                     setStroke(dp(1).coerceAtLeast(1), getColor(R.color.ui_outline))
                 }
             }
@@ -173,7 +173,7 @@ class GamepadSettingsActivity : ThemedActivity() {
         val onAccentColor = if (rawGameAccent != null) {
             UiKit.contrastOn(saveBgColor)
         } else {
-            getColor(R.color.ui_on_primary)
+            UiKit.onPrimaryColor(this)
         }
 
         val primarySaveBtn = Button(this).apply {

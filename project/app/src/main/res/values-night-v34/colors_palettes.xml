@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 14+ official Material 3 Monet dynamic palette (Dark). -->
+    <color name="monet_bg">@android:color/system_surface_dark</color>
+    <color name="monet_surface">@android:color/system_surface_container_dark</color>
+    <color name="monet_surface_variant">@android:color/system_surface_container_high_dark</color>
+    <color name="monet_surface_dialog">@android:color/system_surface_container_high_dark</color>
+    <color name="monet_primary">@android:color/system_primary_dark</color>
+    <color name="monet_on_primary">@android:color/system_on_primary_dark</color>
+    <color name="monet_btn_tonal">@android:color/system_secondary_container_dark</color>
+    <color name="monet_tone_primary_bg">@android:color/system_primary_container_dark</color>
+    <color name="monet_tone_primary_fg">@android:color/system_on_primary_container_dark</color>
+</resources>

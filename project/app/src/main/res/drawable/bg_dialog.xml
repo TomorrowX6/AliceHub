@@ -3,6 +3,6 @@
     android:inset="16dp">
     <shape android:shape="rectangle">
         <corners android:radius="@dimen/ui_radius_dialog" />
-        <solid android:color="@color/ui_surface_dialog" />
+        <solid android:color="?attr/uiSurfaceDialog" />
     </shape>
 </inset>

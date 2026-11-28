@@ -7,7 +7,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
@@ -16,6 +20,7 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ReplacementSpan
 import android.util.LruCache
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -58,6 +63,25 @@ internal object UiKit {
     fun isNight(context: Context): Boolean =
         (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
+
+    fun themeColor(context: Context, attrRes: Int, fallbackColorRes: Int): Int {
+        val tv = TypedValue()
+        return if (context.theme != null && context.theme.resolveAttribute(attrRes, tv, true)) {
+            if (tv.resourceId != 0) context.getColor(tv.resourceId) else tv.data
+        } else {
+            context.getColor(fallbackColorRes)
+        }
+    }
+
+    fun primaryColor(context: Context): Int = themeColor(context, R.attr.uiPrimary, R.color.ui_primary)
+    fun onPrimaryColor(context: Context): Int = themeColor(context, R.attr.uiOnPrimary, R.color.ui_on_primary)
+    fun bgColor(context: Context): Int = themeColor(context, R.attr.uiBg, R.color.ui_bg)
+    fun surfaceColor(context: Context): Int = themeColor(context, R.attr.uiSurface, R.color.ui_surface)
+    fun surfaceVariantColor(context: Context): Int = themeColor(context, R.attr.uiSurfaceVariant, R.color.ui_surface_variant)
+    fun surfaceDialogColor(context: Context): Int = themeColor(context, R.attr.uiSurfaceDialog, R.color.ui_surface_dialog)
+    fun btnTonalColor(context: Context): Int = themeColor(context, R.attr.uiBtnTonal, R.color.ui_btn_tonal)
+    fun primaryToneBgColor(context: Context): Int = themeColor(context, R.attr.tonePrimaryBg, R.color.tone_primary_bg)
+    fun primaryToneFgColor(context: Context): Int = themeColor(context, R.attr.tonePrimaryFg, R.color.tone_primary_fg)
 
     fun withAlpha(color: Int, alpha: Int): Int =
         (color and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
@@ -104,7 +128,7 @@ internal object UiKit {
         return if (!resolvedId.isNullOrBlank()) {
             GameCatalog.descriptorFor(context, resolvedId).accentColor
         } else {
-            context.getColor(R.color.ui_primary)
+            primaryColor(context)
         }
     }
 
@@ -136,7 +160,7 @@ internal object UiKit {
         val ctx = button.context
         val onColor = accentOnSurface(ctx, accent)
         val radius = ctx.resources.getDimension(R.dimen.ui_radius_button)
-        val bgTint = blend(ctx.getColor(R.color.ui_surface), accent, if (isNight(ctx)) 0.22f else 0.11f)
+        val bgTint = blend(surfaceColor(ctx), accent, if (isNight(ctx)) 0.22f else 0.11f)
         val bgStates = android.graphics.drawable.StateListDrawable().apply {
             addState(
                 intArrayOf(-android.R.attr.state_enabled),
@@ -173,7 +197,7 @@ internal object UiKit {
         val surfaceBg = if (night) {
             ctx.getColor(R.color.tone_danger_bg)
         } else {
-            ctx.getColor(R.color.ui_surface)
+            surfaceColor(ctx)
         }
         val borderColor = withAlpha(dangerFg, if (night) 0x55 else 0x44)
         val bgStates = android.graphics.drawable.StateListDrawable().apply {
@@ -207,7 +231,7 @@ internal object UiKit {
     fun styleAccentChip(view: TextView, accent: Int, dot: Boolean = false) {
         val ctx = view.context
         val fg = accentOnSurface(ctx, accent)
-        val bg = blend(ctx.getColor(R.color.ui_surface), accent, if (isNight(ctx)) 0.30f else 0.15f)
+        val bg = blend(surfaceColor(ctx), accent, if (isNight(ctx)) 0.30f else 0.15f)
         view.setTextColor(fg)
         view.background = GradientDrawable().apply {
             cornerRadius = dp(ctx, 100f)
@@ -226,11 +250,12 @@ internal object UiKit {
     /** Pill-shaped status/tag chip. With [dot], a small leading status dot is shown. */
     fun styleChip(view: TextView, tone: Tone, dot: Boolean = false) {
         val ctx = view.context
-        val fg = ctx.getColor(tone.fgRes)
+        val fg = if (tone == Tone.PRIMARY) primaryToneFgColor(ctx) else ctx.getColor(tone.fgRes)
+        val bg = if (tone == Tone.PRIMARY) primaryToneBgColor(ctx) else ctx.getColor(tone.bgRes)
         view.setTextColor(fg)
         view.background = GradientDrawable().apply {
             cornerRadius = dp(ctx, 100f)
-            setColor(ctx.getColor(tone.bgRes))
+            setColor(bg)
         }
         if (dot) {
             val dotDrawable = ctx.getDrawable(R.drawable.chip_dot)!!.mutate()
@@ -266,7 +291,7 @@ internal object UiKit {
         val radius = context.resources.getDimension(radiusRes)
         val surface = GradientDrawable().apply {
             cornerRadius = radius
-            setColor(context.getColor(R.color.ui_surface))
+            setColor(surfaceColor(context))
             setStroke(dpInt(context, 1), context.getColor(R.color.ui_outline))
         }
         val washAlpha = if (isNight(context)) 0x30 else 0x1C
@@ -440,6 +465,96 @@ internal object UiKit {
                 )
             )
         }
+
+    /**
+     * Material You tri-tone circular palette swatch: top half = primary, bottom-left = tonal
+     * container, bottom-right = neutral surface tint, with an outer ring and centered check badge
+     * when selected.
+     */
+    fun paletteSwatchDrawable(
+        context: Context,
+        primary: Int,
+        onPrimary: Int,
+        tonalBg: Int,
+        canvasBg: Int,
+        selected: Boolean
+    ): Drawable = object : Drawable() {
+        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val checkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+        private val outlineColor = context.getColor(R.color.ui_outline)
+        private val ringWidth = dp(context, 2.2f)
+        private val ringGap = dp(context, 2.5f)
+        private val outlineWidth = dp(context, 1f).coerceAtLeast(1f)
+        private val arcRect = RectF()
+        private val checkPath = Path()
+
+        override fun draw(canvas: Canvas) {
+            val b = bounds
+            val cx = b.exactCenterX()
+            val cy = b.exactCenterY()
+            val outerR = minOf(b.width(), b.height()) / 2f
+            val innerR = (outerR - ringWidth - ringGap).coerceAtLeast(1f)
+
+            if (selected) {
+                strokePaint.color = primary
+                strokePaint.strokeWidth = ringWidth
+                canvas.drawCircle(cx, cy, outerR - ringWidth / 2f, strokePaint)
+            }
+
+            arcRect.set(cx - innerR, cy - innerR, cx + innerR, cy + innerR)
+
+            // Top semicircle: primary color
+            fillPaint.color = primary
+            canvas.drawArc(arcRect, 180f, 180f, true, fillPaint)
+
+            // Bottom-left quarter: tonal container
+            fillPaint.color = tonalBg
+            canvas.drawArc(arcRect, 90f, 90f, true, fillPaint)
+
+            // Bottom-right quarter: page canvas tint
+            fillPaint.color = canvasBg
+            canvas.drawArc(arcRect, 0f, 90f, true, fillPaint)
+
+            // Crisp hairline outline around the color disc
+            strokePaint.color = outlineColor
+            strokePaint.strokeWidth = outlineWidth
+            canvas.drawCircle(cx, cy, innerR - outlineWidth / 2f, strokePaint)
+
+            if (selected) {
+                val badgeR = innerR * 0.44f
+                fillPaint.color = primary
+                canvas.drawCircle(cx, cy, badgeR, fillPaint)
+
+                checkPaint.color = onPrimary
+                checkPaint.strokeWidth = dp(context, 1.9f)
+                checkPath.reset()
+                checkPath.moveTo(cx - badgeR * 0.46f, cy + badgeR * 0.04f)
+                checkPath.lineTo(cx - badgeR * 0.12f, cy + badgeR * 0.36f)
+                checkPath.lineTo(cx + badgeR * 0.48f, cy - badgeR * 0.32f)
+                canvas.drawPath(checkPath, checkPaint)
+            }
+        }
+
+        override fun setAlpha(alpha: Int) {
+            fillPaint.alpha = alpha
+            strokePaint.alpha = alpha
+            checkPaint.alpha = alpha
+        }
+
+        override fun setColorFilter(colorFilter: ColorFilter?) {
+            fillPaint.colorFilter = colorFilter
+            strokePaint.colorFilter = colorFilter
+            checkPaint.colorFilter = colorFilter
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+    }
 
     /** Centered icon stacked above a single concise empty-state label. */
     fun bindEmptyState(view: TextView, iconRes: Int, text: CharSequence) {

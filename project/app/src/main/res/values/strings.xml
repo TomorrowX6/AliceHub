@@ -535,4 +535,23 @@
     <string name="storage_location_private">App-specific</string>
     <string name="storage_location_pending">Access needed</string>
     <string name="onboarding_online_intro">Download games and updates directly from AliceHub. You can enable or disable this anytime in Settings.</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_storage">Downloads &amp; storage</string>
+    <string name="settings_section_controls">Controls</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_color_palette">Color palette</string>
+    <string name="palette_monet">Dynamic (Monet)</string>
+    <string name="palette_monet_short">Monet</string>
+    <string name="palette_indigo">Classic Indigo</string>
+    <string name="palette_indigo_short">Indigo</string>
+    <string name="palette_sakura">Sakura Rose</string>
+    <string name="palette_sakura_short">Sakura</string>
+    <string name="palette_ocean">Ocean Blue</string>
+    <string name="palette_ocean_short">Ocean</string>
+    <string name="palette_forest">Forest Sage</string>
+    <string name="palette_forest_short">Forest</string>
+    <string name="palette_amber">Warm Amber</string>
+    <string name="palette_amber_short">Amber</string>
+    <string name="palette_violet">Soft Violet</string>
+    <string name="palette_violet_short">Violet</string>
 </resources>

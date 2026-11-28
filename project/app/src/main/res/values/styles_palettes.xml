@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Monet dynamic wallpaper theme (Android 12+ system colors, Indigo fallback on API < 31). -->
+    <style name="Theme.Launcher.Palette.Monet" parent="Theme.Launcher">
+        <item name="uiBg">@color/monet_bg</item>
+        <item name="uiSurface">@color/monet_surface</item>
+        <item name="uiSurfaceVariant">@color/monet_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/monet_surface_dialog</item>
+        <item name="uiPrimary">@color/monet_primary</item>
+        <item name="uiOnPrimary">@color/monet_on_primary</item>
+        <item name="uiBtnTonal">@color/monet_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/monet_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/monet_tone_primary_fg</item>
+        <item name="android:dialogTheme">@style/Theme.Launcher.Palette.Monet.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Launcher.Palette.Monet.AlertDialog</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Monet.Dialog" parent="Theme.Launcher.Dialog">
+        <item name="uiBg">@color/monet_bg</item>
+        <item name="uiSurface">@color/monet_surface</item>
+        <item name="uiSurfaceVariant">@color/monet_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/monet_surface_dialog</item>
+        <item name="uiPrimary">@color/monet_primary</item>
+        <item name="uiOnPrimary">@color/monet_on_primary</item>
+        <item name="uiBtnTonal">@color/monet_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/monet_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/monet_tone_primary_fg</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Monet.AlertDialog" parent="Theme.Launcher.AlertDialog">
+        <item name="uiBg">@color/monet_bg</item>
+        <item name="uiSurface">@color/monet_surface</item>
+        <item name="uiSurfaceVariant">@color/monet_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/monet_surface_dialog</item>
+        <item name="uiPrimary">@color/monet_primary</item>
+        <item name="uiOnPrimary">@color/monet_on_primary</item>
+        <item name="uiBtnTonal">@color/monet_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/monet_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/monet_tone_primary_fg</item>
+    </style>
+
+    <!-- Sakura -->
+    <style name="Theme.Launcher.Palette.Sakura" parent="Theme.Launcher">
+        <item name="uiBg">@color/sakura_bg</item>
+        <item name="uiSurface">@color/sakura_surface</item>
+        <item name="uiSurfaceVariant">@color/sakura_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/sakura_surface_dialog</item>
+        <item name="uiPrimary">@color/sakura_primary</item>
+        <item name="uiOnPrimary">@color/sakura_on_primary</item>
+        <item name="uiBtnTonal">@color/sakura_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/sakura_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/sakura_tone_primary_fg</item>
+        <item name="android:dialogTheme">@style/Theme.Launcher.Palette.Sakura.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Launcher.Palette.Sakura.AlertDialog</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Sakura.Dialog" parent="Theme.Launcher.Dialog">
+        <item name="uiBg">@color/sakura_bg</item>
+        <item name="uiSurface">@color/sakura_surface</item>
+        <item name="uiSurfaceVariant">@color/sakura_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/sakura_surface_dialog</item>
+        <item name="uiPrimary">@color/sakura_primary</item>
+        <item name="uiOnPrimary">@color/sakura_on_primary</item>
+        <item name="uiBtnTonal">@color/sakura_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/sakura_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/sakura_tone_primary_fg</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Sakura.AlertDialog" parent="Theme.Launcher.AlertDialog">
+        <item name="uiBg">@color/sakura_bg</item>
+        <item name="uiSurface">@color/sakura_surface</item>
+        <item name="uiSurfaceVariant">@color/sakura_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/sakura_surface_dialog</item>
+        <item name="uiPrimary">@color/sakura_primary</item>
+        <item name="uiOnPrimary">@color/sakura_on_primary</item>
+        <item name="uiBtnTonal">@color/sakura_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/sakura_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/sakura_tone_primary_fg</item>
+    </style>
+
+    <!-- Ocean -->
+    <style name="Theme.Launcher.Palette.Ocean" parent="Theme.Launcher">
+        <item name="uiBg">@color/ocean_bg</item>
+        <item name="uiSurface">@color/ocean_surface</item>
+        <item name="uiSurfaceVariant">@color/ocean_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/ocean_surface_dialog</item>
+        <item name="uiPrimary">@color/ocean_primary</item>
+        <item name="uiOnPrimary">@color/ocean_on_primary</item>
+        <item name="uiBtnTonal">@color/ocean_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/ocean_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/ocean_tone_primary_fg</item>
+        <item name="android:dialogTheme">@style/Theme.Launcher.Palette.Ocean.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Launcher.Palette.Ocean.AlertDialog</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Ocean.Dialog" parent="Theme.Launcher.Dialog">
+        <item name="uiBg">@color/ocean_bg</item>
+        <item name="uiSurface">@color/ocean_surface</item>
+        <item name="uiSurfaceVariant">@color/ocean_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/ocean_surface_dialog</item>
+        <item name="uiPrimary">@color/ocean_primary</item>
+        <item name="uiOnPrimary">@color/ocean_on_primary</item>
+        <item name="uiBtnTonal">@color/ocean_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/ocean_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/ocean_tone_primary_fg</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Ocean.AlertDialog" parent="Theme.Launcher.AlertDialog">
+        <item name="uiBg">@color/ocean_bg</item>
+        <item name="uiSurface">@color/ocean_surface</item>
+        <item name="uiSurfaceVariant">@color/ocean_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/ocean_surface_dialog</item>
+        <item name="uiPrimary">@color/ocean_primary</item>
+        <item name="uiOnPrimary">@color/ocean_on_primary</item>
+        <item name="uiBtnTonal">@color/ocean_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/ocean_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/ocean_tone_primary_fg</item>
+    </style>
+
+    <!-- Forest -->
+    <style name="Theme.Launcher.Palette.Forest" parent="Theme.Launcher">
+        <item name="uiBg">@color/forest_bg</item>
+        <item name="uiSurface">@color/forest_surface</item>
+        <item name="uiSurfaceVariant">@color/forest_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/forest_surface_dialog</item>
+        <item name="uiPrimary">@color/forest_primary</item>
+        <item name="uiOnPrimary">@color/forest_on_primary</item>
+        <item name="uiBtnTonal">@color/forest_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/forest_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/forest_tone_primary_fg</item>
+        <item name="android:dialogTheme">@style/Theme.Launcher.Palette.Forest.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Launcher.Palette.Forest.AlertDialog</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Forest.Dialog" parent="Theme.Launcher.Dialog">
+        <item name="uiBg">@color/forest_bg</item>
+        <item name="uiSurface">@color/forest_surface</item>
+        <item name="uiSurfaceVariant">@color/forest_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/forest_surface_dialog</item>
+        <item name="uiPrimary">@color/forest_primary</item>
+        <item name="uiOnPrimary">@color/forest_on_primary</item>
+        <item name="uiBtnTonal">@color/forest_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/forest_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/forest_tone_primary_fg</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Forest.AlertDialog" parent="Theme.Launcher.AlertDialog">
+        <item name="uiBg">@color/forest_bg</item>
+        <item name="uiSurface">@color/forest_surface</item>
+        <item name="uiSurfaceVariant">@color/forest_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/forest_surface_dialog</item>
+        <item name="uiPrimary">@color/forest_primary</item>
+        <item name="uiOnPrimary">@color/forest_on_primary</item>
+        <item name="uiBtnTonal">@color/forest_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/forest_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/forest_tone_primary_fg</item>
+    </style>
+
+    <!-- Amber -->
+    <style name="Theme.Launcher.Palette.Amber" parent="Theme.Launcher">
+        <item name="uiBg">@color/amber_bg</item>
+        <item name="uiSurface">@color/amber_surface</item>
+        <item name="uiSurfaceVariant">@color/amber_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/amber_surface_dialog</item>
+        <item name="uiPrimary">@color/amber_primary</item>
+        <item name="uiOnPrimary">@color/amber_on_primary</item>
+        <item name="uiBtnTonal">@color/amber_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/amber_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/amber_tone_primary_fg</item>
+        <item name="android:dialogTheme">@style/Theme.Launcher.Palette.Amber.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Launcher.Palette.Amber.AlertDialog</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Amber.Dialog" parent="Theme.Launcher.Dialog">
+        <item name="uiBg">@color/amber_bg</item>
+        <item name="uiSurface">@color/amber_surface</item>
+        <item name="uiSurfaceVariant">@color/amber_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/amber_surface_dialog</item>
+        <item name="uiPrimary">@color/amber_primary</item>
+        <item name="uiOnPrimary">@color/amber_on_primary</item>
+        <item name="uiBtnTonal">@color/amber_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/amber_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/amber_tone_primary_fg</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Amber.AlertDialog" parent="Theme.Launcher.AlertDialog">
+        <item name="uiBg">@color/amber_bg</item>
+        <item name="uiSurface">@color/amber_surface</item>
+        <item name="uiSurfaceVariant">@color/amber_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/amber_surface_dialog</item>
+        <item name="uiPrimary">@color/amber_primary</item>
+        <item name="uiOnPrimary">@color/amber_on_primary</item>
+        <item name="uiBtnTonal">@color/amber_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/amber_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/amber_tone_primary_fg</item>
+    </style>
+
+    <!-- Violet -->
+    <style name="Theme.Launcher.Palette.Violet" parent="Theme.Launcher">
+        <item name="uiBg">@color/violet_bg</item>
+        <item name="uiSurface">@color/violet_surface</item>
+        <item name="uiSurfaceVariant">@color/violet_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/violet_surface_dialog</item>
+        <item name="uiPrimary">@color/violet_primary</item>
+        <item name="uiOnPrimary">@color/violet_on_primary</item>
+        <item name="uiBtnTonal">@color/violet_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/violet_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/violet_tone_primary_fg</item>
+        <item name="android:dialogTheme">@style/Theme.Launcher.Palette.Violet.Dialog</item>
+        <item name="android:alertDialogTheme">@style/Theme.Launcher.Palette.Violet.AlertDialog</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Violet.Dialog" parent="Theme.Launcher.Dialog">
+        <item name="uiBg">@color/violet_bg</item>
+        <item name="uiSurface">@color/violet_surface</item>
+        <item name="uiSurfaceVariant">@color/violet_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/violet_surface_dialog</item>
+        <item name="uiPrimary">@color/violet_primary</item>
+        <item name="uiOnPrimary">@color/violet_on_primary</item>
+        <item name="uiBtnTonal">@color/violet_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/violet_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/violet_tone_primary_fg</item>
+    </style>
+
+    <style name="Theme.Launcher.Palette.Violet.AlertDialog" parent="Theme.Launcher.AlertDialog">
+        <item name="uiBg">@color/violet_bg</item>
+        <item name="uiSurface">@color/violet_surface</item>
+        <item name="uiSurfaceVariant">@color/violet_surface_variant</item>
+        <item name="uiSurfaceDialog">@color/violet_surface_dialog</item>
+        <item name="uiPrimary">@color/violet_primary</item>
+        <item name="uiOnPrimary">@color/violet_on_primary</item>
+        <item name="uiBtnTonal">@color/violet_btn_tonal</item>
+        <item name="tonePrimaryBg">@color/violet_tone_primary_bg</item>
+        <item name="tonePrimaryFg">@color/violet_tone_primary_fg</item>
+    </style>
+</resources>

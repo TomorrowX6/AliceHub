@@ -1153,7 +1153,7 @@ class XSystem4Activity : SDLActivity() {
         }
         activeMessageBoxDialog = null
 
-        val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(this), R.style.Theme_Launcher)
+        val uiCtx = ContextThemeWrapper(AppSettings.wrapThemeContext(this), AppSettings.resolveThemeRes(this))
         val flags = args.getInt("flags", 0)
         val rawTitle = args.getString("title").orEmpty()
         val rawMessage = args.getString("message").orEmpty()
@@ -1285,7 +1285,7 @@ class XSystem4Activity : SDLActivity() {
             elevation = dp(20).toFloat()
             background = GradientDrawable().apply {
                 cornerRadius = cardRadius
-                setColor(uiCtx.getColor(R.color.ui_surface_dialog))
+                setColor(UiKit.surfaceDialogColor(uiCtx))
                 setStroke(dp(1), uiCtx.getColor(R.color.ui_outline))
             }
             clipToOutline = true
@@ -1359,7 +1359,7 @@ class XSystem4Activity : SDLActivity() {
                             setTextColor(uiCtx.getColor(R.color.tone_danger_fg))
                         } else {
                             background = uiCtx.getDrawable(R.drawable.bg_btn_filled)?.mutate()
-                            setTextColor(uiCtx.getColor(R.color.ui_on_primary))
+                            setTextColor(UiKit.onPrimaryColor(uiCtx))
                         }
                     } else {
                         background = uiCtx.getDrawable(R.drawable.bg_btn_tonal)?.mutate()

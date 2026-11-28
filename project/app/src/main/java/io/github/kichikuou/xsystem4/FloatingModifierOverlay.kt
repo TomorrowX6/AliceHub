@@ -62,7 +62,9 @@ class FloatingModifierOverlay(private val activity: Activity) {
     }
 
     private fun dialogBuilder(): AlertDialog.Builder =
-        object : AlertDialog.Builder(ContextThemeWrapper(activity, R.style.Theme_Launcher)) {
+        object : AlertDialog.Builder(
+            ContextThemeWrapper(activity, AppSettings.resolveThemeRes(activity))
+        ) {
             override fun create(): AlertDialog {
                 val dlg = super.create()
                 trackDialog(dlg)

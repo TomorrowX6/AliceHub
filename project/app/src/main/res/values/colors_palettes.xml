@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fallback Monet palette for API < 31 (overridden in values-v31 and values-v34). -->
+    <color name="monet_bg">@color/ui_bg</color>
+    <color name="monet_surface">@color/ui_surface</color>
+    <color name="monet_surface_variant">@color/ui_surface_variant</color>
+    <color name="monet_surface_dialog">@color/ui_surface_dialog</color>
+    <color name="monet_primary">@color/ui_primary</color>
+    <color name="monet_on_primary">@color/ui_on_primary</color>
+    <color name="monet_btn_tonal">@color/ui_btn_tonal</color>
+    <color name="monet_tone_primary_bg">@color/tone_primary_bg</color>
+    <color name="monet_tone_primary_fg">@color/tone_primary_fg</color>
+
+    <!-- Sakura (Rose / AliceHub pink) -->
+    <color name="sakura_bg">#FAF2F5</color>
+    <color name="sakura_surface">#FFFFFF</color>
+    <color name="sakura_surface_variant">#F4E6EC</color>
+    <color name="sakura_surface_dialog">#FFFBFD</color>
+    <color name="sakura_primary">#C43E78</color>
+    <color name="sakura_on_primary">#FFFFFF</color>
+    <color name="sakura_btn_tonal">#F8E3EC</color>
+    <color name="sakura_tone_primary_bg">#FBDCE9</color>
+    <color name="sakura_tone_primary_fg">#9A2258</color>
+
+    <!-- Ocean (Cyan-Blue) -->
+    <color name="ocean_bg">#F0F6FA</color>
+    <color name="ocean_surface">#FFFFFF</color>
+    <color name="ocean_surface_variant">#E3EEF5</color>
+    <color name="ocean_surface_dialog">#FAFDFF</color>
+    <color name="ocean_primary">#0277BD</color>
+    <color name="ocean_on_primary">#FFFFFF</color>
+    <color name="ocean_btn_tonal">#E1F0FA</color>
+    <color name="ocean_tone_primary_bg">#D7ECFB</color>
+    <color name="ocean_tone_primary_fg">#01579B</color>
+
+    <!-- Forest (Botanical Sage / Emerald) -->
+    <color name="forest_bg">#F1F7F4</color>
+    <color name="forest_surface">#FFFFFF</color>
+    <color name="forest_surface_variant">#E3EFE9</color>
+    <color name="forest_surface_dialog">#FAFEFC</color>
+    <color name="forest_primary">#287A56</color>
+    <color name="forest_on_primary">#FFFFFF</color>
+    <color name="forest_btn_tonal">#E0F2E9</color>
+    <color name="forest_tone_primary_bg">#D5EFE2</color>
+    <color name="forest_tone_primary_fg">#185B3E</color>
+
+    <!-- Amber (Warm Honey / Ochre) -->
+    <color name="amber_bg">#FAF5EE</color>
+    <color name="amber_surface">#FFFFFF</color>
+    <color name="amber_surface_variant">#F3E9DC</color>
+    <color name="amber_surface_dialog">#FFFDF9</color>
+    <color name="amber_primary">#A66000</color>
+    <color name="amber_on_primary">#FFFFFF</color>
+    <color name="amber_btn_tonal">#F8EBD8</color>
+    <color name="amber_tone_primary_bg">#FCE5C5</color>
+    <color name="amber_tone_primary_fg">#7C4500</color>
+
+    <!-- Violet (Soft Lavender) -->
+    <color name="violet_bg">#F5F2FA</color>
+    <color name="violet_surface">#FFFFFF</color>
+    <color name="violet_surface_variant">#ECE5F6</color>
+    <color name="violet_surface_dialog">#FDFBFF</color>
+    <color name="violet_primary">#6E46B8</color>
+    <color name="violet_on_primary">#FFFFFF</color>
+    <color name="violet_btn_tonal">#ECE4F8</color>
+    <color name="violet_tone_primary_bg">#E6DCFB</color>
+    <color name="violet_tone_primary_fg">#512DA8</color>
+</resources>

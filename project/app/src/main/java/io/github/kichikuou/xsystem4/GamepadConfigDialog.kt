@@ -39,7 +39,7 @@ class GamepadConfigController(
     // Switch has no Material thumb/track. Always use the Settings page theme
     // for these views, without changing the running game's Activity theme.
     val uiCtx: Context = ContextThemeWrapper(
-        AppSettings.wrapThemeContext(context), R.style.Theme_Launcher
+        AppSettings.wrapThemeContext(context), AppSettings.resolveThemeRes(context)
     )
     val normalizedKey: String? = GamepadBridge.normalizeGameProfileKey(profileKey)
 
@@ -85,10 +85,10 @@ class GamepadConfigController(
 
     private fun dp(v: Int): Int = UiKit.dpInt(uiCtx, v)
 
-    private fun rawAccent(): Int = accentColor ?: uiCtx.getColor(R.color.ui_primary)
+    private fun rawAccent(): Int = accentColor ?: UiKit.primaryColor(uiCtx)
 
     private fun onAccentColor(fillColor: Int): Int =
-        if (accentColor != null) UiKit.contrastOn(fillColor) else uiCtx.getColor(R.color.ui_on_primary)
+        if (accentColor != null) UiKit.contrastOn(fillColor) else UiKit.onPrimaryColor(uiCtx)
 
     private fun markDirty(value: Boolean = true) {
         dirty = value
@@ -531,7 +531,7 @@ class GamepadConfigController(
         setPadding(dp(14), dp(12), dp(14), dp(12))
         background = GradientDrawable().apply {
             cornerRadius = dp(14).toFloat()
-            setColor(uiCtx.getColor(R.color.ui_surface))
+            setColor(UiKit.surfaceColor(uiCtx))
             setStroke(dp(1).coerceAtLeast(1), uiCtx.getColor(R.color.ui_outline))
         }
     }
@@ -689,7 +689,7 @@ class GamepadConfigController(
         tv.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
         tv.background = GradientDrawable().apply {
             cornerRadius = dp(10).toFloat()
-            setColor(if (active) acc else uiCtx.getColor(R.color.ui_btn_tonal))
+            setColor(if (active) acc else UiKit.btnTonalColor(uiCtx))
             if (!active) setStroke(dp(1).coerceAtLeast(1), uiCtx.getColor(R.color.ui_outline))
         }
     }

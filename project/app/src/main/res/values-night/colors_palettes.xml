@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fallback Monet dark palette for API < 31 (overridden in values-night-v31 and values-night-v34). -->
+    <color name="monet_bg">@color/ui_bg</color>
+    <color name="monet_surface">@color/ui_surface</color>
+    <color name="monet_surface_variant">@color/ui_surface_variant</color>
+    <color name="monet_surface_dialog">@color/ui_surface_dialog</color>
+    <color name="monet_primary">@color/ui_primary</color>
+    <color name="monet_on_primary">@color/ui_on_primary</color>
+    <color name="monet_btn_tonal">@color/ui_btn_tonal</color>
+    <color name="monet_tone_primary_bg">@color/tone_primary_bg</color>
+    <color name="monet_tone_primary_fg">@color/tone_primary_fg</color>
+
+    <!-- Sakura (Dark) -->
+    <color name="sakura_bg">#140F12</color>
+    <color name="sakura_surface">#1F181C</color>
+    <color name="sakura_surface_variant">#2D2228</color>
+    <color name="sakura_surface_dialog">#271E23</color>
+    <color name="sakura_primary">#FFAFD0</color>
+    <color name="sakura_on_primary">#5E0D34</color>
+    <color name="sakura_btn_tonal">#3A2530</color>
+    <color name="sakura_tone_primary_bg">#56203B</color>
+    <color name="sakura_tone_primary_fg">#FFD8E7</color>
+
+    <!-- Ocean (Dark) -->
+    <color name="ocean_bg">#0D1318</color>
+    <color name="ocean_surface">#161F27</color>
+    <color name="ocean_surface_variant">#212E3A</color>
+    <color name="ocean_surface_dialog">#1C2731</color>
+    <color name="ocean_primary">#8AD0FF</color>
+    <color name="ocean_on_primary">#00344F</color>
+    <color name="ocean_btn_tonal">#1F3242</color>
+    <color name="ocean_tone_primary_bg">#123B58</color>
+    <color name="ocean_tone_primary_fg">#C7E7FF</color>
+
+    <!-- Forest (Dark) -->
+    <color name="forest_bg">#0E1411</color>
+    <color name="forest_surface">#17201B</color>
+    <color name="forest_surface_variant">#223029</color>
+    <color name="forest_surface_dialog">#1D2822</color>
+    <color name="forest_primary">#8EDDB5</color>
+    <color name="forest_on_primary">#003822</color>
+    <color name="forest_btn_tonal">#20342A</color>
+    <color name="forest_tone_primary_bg">#14422E</color>
+    <color name="forest_tone_primary_fg">#C0F3D8</color>
+
+    <!-- Amber (Dark) -->
+    <color name="amber_bg">#15120D</color>
+    <color name="amber_surface">#201B14</color>
+    <color name="amber_surface_variant">#30271C</color>
+    <color name="amber_surface_dialog">#292219</color>
+    <color name="amber_primary">#FFB95C</color>
+    <color name="amber_on_primary">#482900</color>
+    <color name="amber_btn_tonal">#382C1B</color>
+    <color name="amber_tone_primary_bg">#53360B</color>
+    <color name="amber_tone_primary_fg">#FFE0B2</color>
+
+    <!-- Violet (Dark) -->
+    <color name="violet_bg">#120F17</color>
+    <color name="violet_surface">#1C1824</color>
+    <color name="violet_surface_variant">#292336</color>
+    <color name="violet_surface_dialog">#231E2E</color>
+    <color name="violet_primary">#D2BCFF</color>
+    <color name="violet_on_primary">#3A1970</color>
+    <color name="violet_btn_tonal">#312845</color>
+    <color name="violet_tone_primary_bg">#462B78</color>
+    <color name="violet_tone_primary_fg">#EADDFF</color>
+</resources>

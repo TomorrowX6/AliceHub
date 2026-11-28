@@ -340,7 +340,7 @@ class OnboardingActivity : ThemedActivity() {
     }
 
     private fun LinearLayout.addPageIcon(drawable: Int) {
-        val accent = getColor(R.color.ui_primary)
+        val accent = UiKit.primaryColor(this@OnboardingActivity)
         val badge = ImageView(this@OnboardingActivity).apply {
             setImageResource(drawable)
             imageTintList = ColorStateList.valueOf(accent)
