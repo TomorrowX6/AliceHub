@@ -90,3 +90,5 @@ cmake --build build-switch --parallel 2
 - [kichikuou/xsystem4-android](https://github.com/kichikuou/xsystem4-android) — Original Android port framework
 
 Licensed under [GNU GPL-2.0](xsystem4/COPYING) (see also [xsystem35/COPYING](xsystem35/COPYING)).
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2FTomorrowX6%2FAliceHub?ref=badge_large)
