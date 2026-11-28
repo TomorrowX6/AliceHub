@@ -110,26 +110,32 @@ def inspect_apk(apk_path: Path) -> dict[str, Any]:
     if not apksigner:
         raise RuntimeError("apksigner not found in PATH")
     cert_out = subprocess.check_output(
-        [apksigner, "verify", "--print-certs-pem", str(apk_path)], text=True
+        [apksigner, "verify", "--print-certs", "--print-certs-pem", str(apk_path)],
+        text=True,
     )
     sha256_m = re.search(r"Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F]{64})", cert_out)
-    if not sha256_m:
-        raise RuntimeError(f"Could not extract APK signer SHA-256 from {apk_path}")
-    signer_sha256 = sha256_m.group(1).lower()
+    ders: list[bytes] = [
+        base64.b64decode(re.sub(r"\s+", "", m.group(1)))
+        for m in re.finditer(
+            r"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----",
+            cert_out,
+            re.S,
+        )
+    ]
+    if not ders:
+        raise RuntimeError(f"Could not extract PEM certificate from apksigner output for {apk_path}")
+
+    if sha256_m:
+        signer_sha256 = sha256_m.group(1).lower()
+        signer_der = next((d for d in ders if hashlib.sha256(d).hexdigest().lower() == signer_sha256), None)
+        if signer_der is None:
+            raise RuntimeError(f"Could not match DER certificate to digest {signer_sha256}")
+    else:
+        signer_der = ders[0]
+        signer_sha256 = hashlib.sha256(signer_der).hexdigest().lower()
 
     # Legacy F-Droid v1 `sig` is MD5 of the lowercase hex-encoded DER signing certificate.
-    sig_v1 = None
-    for m in re.finditer(
-        r"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----",
-        cert_out,
-        re.S,
-    ):
-        der = base64.b64decode(re.sub(r"\s+", "", m.group(1)))
-        if hashlib.sha256(der).hexdigest().lower() == signer_sha256:
-            sig_v1 = hashlib.md5(der.hex().encode("ascii")).hexdigest()
-            break
-    if not sig_v1:
-        raise RuntimeError(f"Could not extract DER signing certificate matching {signer_sha256}")
+    sig_v1 = hashlib.md5(signer_der.hex().encode("ascii")).hexdigest()
 
     return {
         "packageName": pkg_m.group(1),
