@@ -30,7 +30,7 @@ public class Wave5CatalogTest {
     @Test
     public void wave5CatalogOrderDescriptorsAndMetadataAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(170, order.size());
+        assertEquals(171, order.size());
 
         Object[][] specs = new Object[][]{
             {GameCatalog.ID_BLADEBRIDERS, "BladeBriders", true, "2014-10-24", 67.1, "https://vndb.org/v15652", "https://vndb.org/v15652"},

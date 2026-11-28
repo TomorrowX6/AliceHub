@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.StatFs
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
@@ -818,6 +819,222 @@ object NativeGameImport {
         }
     }
 
+    private fun copyCompanionFontFromTree(
+        context: Context,
+        tree: Uri,
+        rootFiles: List<Document>,
+        destGameDir: File
+    ) {
+        val queue = ArrayDeque<Pair<List<Document>, Int>>()
+        queue.add(rootFiles to 0)
+        while (queue.isNotEmpty()) {
+            val (docs, depth) = queue.removeFirst()
+            for (doc in docs) {
+                if (doc.folder) {
+                    if (depth < 2 && !skip(doc.name)) {
+                        queue.add(children(context, tree, doc.uri) to (depth + 1))
+                    }
+                    continue
+                }
+                if (!doc.name.equals("FONT.bmp", ignoreCase = true)) continue
+                val tmpFont = File(destGameDir, ".font_probe_${UUID.randomUUID()}.bmp")
+                try {
+                    val input = context.contentResolver.openInputStream(doc.uri) ?: continue
+                    input.use { src ->
+                        tmpFont.outputStream().buffered().use { dst -> src.copyTo(dst) }
+                    }
+                    if (Pc98FloppyExtractor.isValidPc98FontBmp(tmpFont)) {
+                        val finalFont = File(destGameDir, "FONT.bmp")
+                        if (!finalFont.exists()) {
+                            tmpFont.renameTo(finalFont)
+                        }
+                        return
+                    }
+                } catch (_: Throwable) {
+                } finally {
+                    if (tmpFont.exists()) tmpFont.delete()
+                }
+            }
+        }
+    }
+
+    private suspend fun importFloppyBundleFromTree(
+        context: Context,
+        tree: Uri,
+        rootFiles: List<Document>,
+        storage: File,
+        expectedAinName: String?,
+        targetGameId: String?,
+        progress: suspend (String) -> Unit
+    ): File? {
+        val fdiDocs = mutableListOf<Pair<String, Document>>()
+        val queue = ArrayDeque<Pair<List<Document>, Pair<String, Int>>>()
+        queue.add(rootFiles to ("" to 0))
+        while (queue.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            val (docs, meta) = queue.removeFirst()
+            val (dirKey, depth) = meta
+            for (doc in docs) {
+                if (doc.folder) {
+                    if (depth < 2 && !skip(doc.name) && !doc.name.equals("backup", ignoreCase = true) &&
+                        !doc.name.equals("BackData", ignoreCase = true) && !doc.name.equals("patchWM", ignoreCase = true)
+                    ) {
+                        queue.add(children(context, tree, doc.uri) to ("$dirKey/${doc.name}" to (depth + 1)))
+                    }
+                } else if (Pc98FloppyExtractor.isFdiName(doc.name)) {
+                    fdiDocs.add(dirKey to doc)
+                }
+            }
+        }
+        if (fdiDocs.isEmpty()) return null
+
+        val storageCanonical = storage.canonicalFile
+        val workDir = File(storageCanonical, ".import-fdi-${UUID.randomUUID()}").canonicalFile
+        if (workDir.parentFile != storageCanonical || !workDir.mkdir()) {
+            throw IOException("Cannot create FDI import scratch directory")
+        }
+        try {
+            val stagedFdis = mutableListOf<Pair<String, File>>()
+            for ((idx, pair) in fdiDocs.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                val (dirKey, doc) = pair
+                val staged = File(workDir, "src_${idx}_${doc.name.replace(Regex("[^A-Za-z0-9._-]"), "_")}")
+                val input = context.contentResolver.openInputStream(doc.uri)
+                    ?: throw IOException("Cannot open ${doc.name}")
+                input.use { src ->
+                    staged.outputStream().buffered().use { dst -> src.copyTo(dst) }
+                }
+                if (Pc98FloppyExtractor.isFdiFile(staged)) {
+                    stagedFdis.add(dirKey to staged)
+                } else {
+                    staged.delete()
+                }
+            }
+            if (stagedFdis.isEmpty()) return null
+
+            val ctx = currentCoroutineContext()
+            val checkCancel: () -> Unit = { ctx.ensureActive() }
+            val bootCandidates = stagedFdis.filter { (_, f) ->
+                Pc98FloppyExtractor.containsGameRoot(f, null, null, checkCancel)
+            }
+            if (bootCandidates.isEmpty()) return null
+            val preferredBoots = bootCandidates.filter { (_, f) ->
+                Pc98FloppyExtractor.containsGameRoot(f, expectedAinName, targetGameId, checkCancel)
+            }
+            val orderedBoots = preferredBoots + bootCandidates.filter { cand ->
+                preferredBoots.none { it.second.canonicalPath == cand.second.canonicalPath }
+            }
+
+            var assembledGameDir: File? = null
+            var assembledExtractDir: File? = null
+            val allowedExts = setOf("dat", "bmp", "ini")
+            for ((candIdx, candPair) in orderedBoots.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                val (chosenDirKey, chosenFile) = candPair
+                val extractDir = File(workDir, "extracted_$candIdx").apply { mkdirs() }
+                Pc98FloppyExtractor.extractFileToDirectory(
+                    fdiFile = chosenFile,
+                    outDir = extractDir,
+                    shouldSkip = { rel -> skip(rel) },
+                    throwInstallFailureOnNoSpace = true,
+                    checkCancelled = checkCancel
+                )
+                progress(context.getString(R.string.import_copy_progress, 0L, chosenFile.name))
+
+                val candidateGameDir = extractDir.walkTopDown()
+                    .filter { it.isDirectory }
+                    .firstOrNull { dir ->
+                        val names = dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+                        GameCatalog.isLegacySystem3GameFiles(names) || names.any { GameCatalog.isSystem35Scenario(it) }
+                    } ?: continue
+
+                val existingLower = candidateGameDir.listFiles()?.map { it.name.lowercase() }?.toMutableSet() ?: mutableSetOf()
+                for ((idx, pair) in stagedFdis.withIndex()) {
+                    currentCoroutineContext().ensureActive()
+                    val (dirKey, sib) = pair
+                    if (dirKey != chosenDirKey || sib.canonicalPath == chosenFile.canonicalPath) continue
+                    if (Pc98FloppyExtractor.containsGameRoot(sib, null, null, checkCancel)) continue
+                    val sibDir = File(workDir, "sib_${candIdx}_$idx").apply { mkdirs() }
+                    try {
+                        Pc98FloppyExtractor.extractFileToDirectory(
+                            fdiFile = sib,
+                            outDir = sibDir,
+                            shouldSkip = { rel -> skip(rel) },
+                            throwInstallFailureOnNoSpace = true,
+                            checkCancelled = checkCancel
+                        )
+                        sibDir.walkTopDown()
+                            .filter { it.isDirectory }
+                            .forEach { d ->
+                                checkCancel()
+                                val files = d.listFiles()?.filter { it.isFile }.orEmpty()
+                                if (files.any { it.name.equals("ADISK.DAT", true) }) return@forEach
+                                for (f in files) {
+                                    checkCancel()
+                                    if (f.extension.lowercase() !in allowedExts) continue
+                                    val key = f.name.lowercase()
+                                    if (key in existingLower) continue
+                                    f.copyTo(File(candidateGameDir, f.name), overwrite = false)
+                                    existingLower.add(key)
+                                }
+                            }
+                    } catch (e: GameList.InstallFailureException) {
+                        throw e
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                    }
+                }
+
+                if (GameCatalog.validateImportedGameDir(candidateGameDir, expectedAinName, targetGameId)) {
+                    assembledGameDir = candidateGameDir
+                    assembledExtractDir = extractDir
+                    break
+                }
+            }
+
+            val extractedGameDir = assembledGameDir
+                ?: throw GameList.InstallFailureException(R.string.import_wrong_game)
+            val extractDir = assembledExtractDir!!
+
+            currentCoroutineContext().ensureActive()
+            Pc98FloppyExtractor.copyCompanionFontIfNeeded(listOf(extractDir), extractedGameDir)
+            if (extractedGameDir.listFiles()?.none { it.isFile && it.name.equals("FONT.bmp", true) } == true) {
+                copyCompanionFontFromTree(context, tree, rootFiles, extractedGameDir)
+            }
+            currentCoroutineContext().ensureActive()
+
+            val gameFiles = extractedGameDir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+            val detectedId = GameCatalog.classifyDirectory(extractedGameDir, extractedGameDir.name)
+            val baseName = resolveCopyTreeBaseName(
+                primaryFileNames = gameFiles,
+                detectedGameId = detectedId,
+                targetGameId = targetGameId,
+                isMultiDiscSys3 = false,
+                readSmallFile = { name -> GameCatalog.readSmallRootFile(extractedGameDir, name) },
+                getFileSize = { name ->
+                    extractedGameDir.listFiles()?.firstOrNull { it.isFile && it.name.equals(name, true) }?.length()
+                }
+            )
+            var destination = File(storageCanonical, baseName).canonicalFile
+            val reserved = AppStorage.privateGameNamesForInstall(context, storageCanonical)
+            var index = 1
+            while (destination.exists() || AppStorage.gameDirectoryKey(destination.name) in reserved) {
+                destination = File(storageCanonical, "$baseName-${index++}").canonicalFile
+            }
+            if (destination.parentFile != storageCanonical) {
+                throw IOException("Invalid destination directory")
+            }
+            currentCoroutineContext().ensureActive()
+            if (!OnlineInstaller.moveFileOrDir(extractedGameDir, destination)) {
+                throw IOException("Cannot finish FDI game import")
+            }
+            return destination
+        } finally {
+            if (workDir.exists()) workDir.deleteRecursively()
+        }
+    }
+
     suspend fun copyTree(
         context: Context,
         tree: Uri,
@@ -853,7 +1070,19 @@ object NativeGameImport {
             entries.map { it.payload }
         }
 
-        val resolvedPrimary = primaryDocs ?: throw GameList.InstallFailureException(R.string.directory_no_game)
+        val resolvedPrimary = primaryDocs ?: run {
+            val fdiResult = importFloppyBundleFromTree(
+                context = context,
+                tree = tree,
+                rootFiles = rootFiles,
+                storage = storage,
+                expectedAinName = expectedAinName,
+                targetGameId = targetGameId,
+                progress = progress
+            )
+            if (fdiResult != null) return fdiResult
+            throw GameList.InstallFailureException(R.string.directory_no_game)
+        }
         if (!expectedAinName.isNullOrBlank() &&
             resolvedPrimary.none { !it.folder && !skip(it.name) && it.name.equals(expectedAinName, ignoreCase = true) }
         ) {
@@ -1023,6 +1252,11 @@ object NativeGameImport {
             }
             currentCoroutineContext().ensureActive()
             if (isRance06Import) normalizeRance06DungeonData(staging)
+            if (GameCatalog.isLegacySystem3GameFiles(primaryFileNames) &&
+                staging.listFiles()?.none { it.isFile && it.name.equals("FONT.bmp", true) } == true
+            ) {
+                copyCompanionFontFromTree(context, tree, rootFiles, staging)
+            }
             if (!GameCatalog.validateImportedGameDir(staging, expectedAinName, targetGameId)) {
                 throw GameList.InstallFailureException(R.string.import_wrong_game)
             }

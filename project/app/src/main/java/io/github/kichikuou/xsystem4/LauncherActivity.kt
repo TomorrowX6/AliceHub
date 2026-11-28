@@ -322,7 +322,8 @@ private class GameSelectAdapter(
             (desc.id == GameCatalog.ID_DPSSG2AKAI && GameCatalog.isDpsSg2AkaiAlias(q)) ||
             (desc.id == GameCatalog.ID_DPSSG3RABBIT && GameCatalog.isDpsSg3RabbitAlias(q)) ||
             (desc.id == GameCatalog.ID_DPSSG3SHINKON && GameCatalog.isDpsSg3ShinkonAlias(q)) ||
-            (desc.id == GameCatalog.ID_DPSSG3SOTSUGYOU && GameCatalog.isDpsSg3SotsugyouAlias(q))
+            (desc.id == GameCatalog.ID_DPSSG3SOTSUGYOU && GameCatalog.isDpsSg3SotsugyouAlias(q)) ||
+            (desc.id == GameCatalog.ID_FUKEI && GameCatalog.isFukeiAlias(q))
         ) {
             return true
         }

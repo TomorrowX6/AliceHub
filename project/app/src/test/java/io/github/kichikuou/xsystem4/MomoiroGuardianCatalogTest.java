@@ -17,7 +17,7 @@ public class MomoiroGuardianCatalogTest {
     @Test
     public void momoiroGuardianCatalogDescriptorMetadataAndCdnAreWired() {
         List<String> order = GameCatalog.builtInSelectOrder();
-        assertEquals(170, order.size());
+        assertEquals(171, order.size());
         assertTrue(order.contains(GameCatalog.ID_MOMOIROGUARDIAN));
 
         GameDescriptor desc = GameCatalog.INSTANCE.descriptorForWithResolver(

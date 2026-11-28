@@ -1737,6 +1737,8 @@ internal object ErrorReportKit {
                 context.getString(R.string.game_dpssg3shinkon_title)
             GameCatalog.isDpsSg3SotsugyouAlias(lower) ->
                 context.getString(R.string.game_dpssg3sotsugyou_title)
+            GameCatalog.isFukeiAlias(lower) ->
+                context.getString(R.string.game_fukei_title)
             lower.contains("escalayer") || lower.contains("エスカレイヤー") ||
                 lower.contains("超昂天使") || lower.contains("艾斯卡蕾雅") ->
                 context.getString(R.string.game_escalayer_title)

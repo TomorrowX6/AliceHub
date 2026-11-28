@@ -42,7 +42,7 @@ endif()
 target_compile_definitions(AliceHub PRIVATE ALICEHUB_GIT_COMMIT="${git_commit}")
 target_sources(AliceHub PRIVATE update_check.c update_screen.c)
 target_sources(AliceHub PRIVATE fs_util.c)
-target_sources(AliceHub PRIVATE import_screen.c local_import.c import_zip.c import_iso.c)
+target_sources(AliceHub PRIVATE import_screen.c local_import.c import_zip.c import_iso.c import_fdi.c)
 
 set(online_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(online_android "${online_root}/project/app/src/main")

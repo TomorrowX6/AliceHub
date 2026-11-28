@@ -137,6 +137,9 @@ final class GameLibrary: ObservableObject {
     static func hasLocalChineseMarkers(regularFiles: [URL], directoryContents: [URL] = []) -> Bool {
         hasLocalChineseMarkers(fileNames: regularFiles.map(\.lastPathComponent)) ||
             regularFiles.contains(where: isHarukaChineseScript) ||
+            regularFiles.contains(where: {
+                $0.lastPathComponent.lowercased() == "font.bmp" && Pc98FloppyExtractor.isChinesePc98FontBmp($0)
+            }) ||
             hasLocalChineseMarkerDirectories(directoryContents)
     }
 
@@ -315,6 +318,7 @@ final class GameLibrary: ObservableObject {
         ("intruder", ["intruder", "桜屋敷の探索", "樱屋敷的探索", "櫻屋敷的探索"]),
         ("crescent", ["crescentmoongirl", "crescentmoon", "クレセントムーン", "新月少女"]),
         ("tengu", ["abunaitengu", "あぶないてんぐ", "あぶない天狗", "危险的天狗", "危險的天狗"]),
+        ("fukei", ["fukeisanvx", "fukeisan", "fukei", "婦警さんvx", "婦警さん", "妇警小姐vx", "妇警小姐", "女警小姐vx", "女警小姐", "女警vx"]),
         ("nisenaguri", ["nisenaguri", "にせなぐり", "偽殴打", "伪殴打"]),
         ("carol", ["キャロル", "聖なる鐘が響く夜", "卡萝尔", "圣钟鸣响之夜"]),
         ("othellot", ["othellot", "おせろっと", "黑白棋娘"]),
@@ -615,6 +619,7 @@ final class GameLibrary: ObservableObject {
         let intruder = engine == .legacySystem3 && (legacyId == "intruder" || (legacyId == nil && adiskCrc == 0xa7520fb2))
         let crescent = engine == .legacySystem3 && (legacyId == "crescent" || (legacyId == nil && adiskCrc == 0x42351f2c))
         let tengu = engine == .legacySystem3 && ((legacyId == "tengu" || legacyId == "abunai_tengu") || (legacyId == nil && adiskCrc == 0xc942ff58))
+        let fukei = engine == .legacySystem3 && (legacyId == "fukei" || (legacyId == nil && adiskCrc == 0x026de326))
         let dps = engine == .legacySystem3 && (legacyId == "dps" || (legacyId == nil && adiskCrc == 0x69ea4865))
         let sdpsTono = engine == .legacySystem3 && ((legacyId == "sdps_tono" || legacyId == "sdpstono") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xbb1edff1))
         let sdpsKaizoku = engine == .legacySystem3 && ((legacyId == "sdps_kaizoku" || legacyId == "sdpskaizoku") || (legacyId == nil && adiskCrc == 0xc7a20cdf && bdiskCrc == 0xf81829e3))
@@ -662,6 +667,7 @@ final class GameLibrary: ObservableObject {
         else if intruder { displayName = "侵入者 -樱屋敷的探索-" }
         else if crescent { displayName = "新月少女" }
         else if tengu { displayName = "危险的天狗传说" }
+        else if fukei { displayName = "妇警小姐VX" }
         else if dps { displayName = "D.P.S. 梦幻程序系统" }
         else if sdpsTono { displayName = "Super D.P.S 远野之森" }
         else if sdpsKaizoku { displayName = "Super D.P.S 欢乐海盗生涯" }
@@ -713,6 +719,7 @@ final class GameLibrary: ObservableObject {
         let isCarol = engine == .system3 && (regularNamesLower.contains("キャロルsa.ald") || dirLower == "carol")
         let isDpsDir = engine == .legacySystem3 && dirLower == "dps"
         let isTenguDir = engine == .legacySystem3 && dirLower == "tengu"
+        let isFukeiDir = engine == .legacySystem3 && (dirLower == "fukei" || dirLower == "fukeisanvx")
 
         let detectedArtworkID: String?
         if isRance10 { detectedArtworkID = "rance10" }
@@ -739,6 +746,7 @@ final class GameLibrary: ObservableObject {
         else if intruder { detectedArtworkID = "intruder" }
         else if crescent { detectedArtworkID = "crescent" }
         else if tengu { detectedArtworkID = "tengu" }
+        else if fukei { detectedArtworkID = "fukei" }
         else if dps { detectedArtworkID = "dps" }
         else if sdpsTono { detectedArtworkID = "sdpstono" }
         else if sdpsKaizoku { detectedArtworkID = "sdpskaizoku" }
@@ -766,6 +774,7 @@ final class GameLibrary: ObservableObject {
         else if isCarol { detectedArtworkID = "carol" }
         else if isDpsDir { detectedArtworkID = "dps" }
         else if isTenguDir { detectedArtworkID = "tengu" }
+        else if isFukeiDir { detectedArtworkID = "fukei" }
         else { detectedArtworkID = nil }
 
         let artworkKey: String?

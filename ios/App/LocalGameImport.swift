@@ -220,6 +220,52 @@ enum LocalGameImport {
                 }
             }
         }
+        if primary == nil {
+            let fdiCandidates = try directories(source, forGameDiscovery: true)
+                .flatMap { try entries($0) }
+                .filter { !directory($0) && $0.pathExtension.lowercased() == "fdi" }
+                .sorted { $0.path < $1.path }
+            if !fdiCandidates.isEmpty {
+                let scratch = files.temporaryDirectory.appendingPathComponent("alicehub-fdi-folder-\(UUID().uuidString)", isDirectory: true)
+                try files.createDirectory(at: scratch, withIntermediateDirectories: true)
+                defer { try? files.removeItem(at: scratch) }
+                let preferred = fdiCandidates.filter { Pc98FloppyExtractor.containsGameRoot($0) }
+                let ordered = preferred + fdiCandidates.filter { !preferred.contains($0) }
+                var foundRoot: URL?
+                var winningFdi: URL?
+                for fdi in ordered {
+                    let stage = scratch.appendingPathComponent("stage-\(UUID().uuidString)", isDirectory: true)
+                    do {
+                        try ArchiveExtractor.extract(fdi, to: stage, shouldSkip: skipArchive)
+                    } catch ArchiveError.noSpace {
+                        throw ArchiveError.noSpace
+                    } catch {
+                        try? files.removeItem(at: stage)
+                        continue
+                    }
+                    let dirs = try directories(stage, forGameDiscovery: true)
+                    if let root = dirs.first(where: isArchiveGameRoot) ?? dirs.first(where: GameLibrary.isGame) {
+                        foundRoot = root
+                        winningFdi = fdi
+                        break
+                    }
+                    try? files.removeItem(at: stage)
+                }
+                guard let root = foundRoot else { throw LibraryError.notGame }
+                if let winningFdi, (try? GameLibrary.launchInfo(root).engine) == .legacySystem3 {
+                    try mergeSiblingFloppyVolumes(primaryArchive: winningFdi, into: root, work: scratch)
+                }
+                let rules = try LocalImportCleanup(root: root)
+                try merge(root, into: output, exclude: rules.skip)
+                try GameLibrary.normalizeRance06DungeonData(output)
+                if (try? GameLibrary.launchInfo(output).engine) == .legacySystem3 {
+                    Pc98FloppyExtractor.copyCompanionFontIfNeeded(searchRoot: scratch, into: output)
+                    Pc98FloppyExtractor.copyCompanionFontIfNeeded(searchRoot: source, into: output)
+                }
+                guard GameLibrary.isGame(output) else { throw LibraryError.notGame }
+                return
+            }
+        }
         guard let primary else { throw LibraryError.notGame }
         let rules = try LocalImportCleanup(root: primary.url)
         if rules.game == .ixseal {
@@ -252,6 +298,9 @@ enum LocalGameImport {
             try mergeInstallData(output, searchRoot: output, all: directories(output), rules: rules)
         }
         try GameLibrary.normalizeRance06DungeonData(output)
+        if primary.engine == .legacySystem3 {
+            Pc98FloppyExtractor.copyCompanionFontIfNeeded(searchRoot: source, into: output)
+        }
         guard GameLibrary.isGame(output) else { throw LibraryError.notGame }
     }
 
@@ -278,6 +327,36 @@ enum LocalGameImport {
             return hasSystem4Root(local) || launch.target.pathExtension.lowercased() == "ini" || !system4Code(local).isEmpty
         case .system3, .legacySystem3:
             return true
+        }
+    }
+
+    private static func mergeSiblingFloppyVolumes(primaryArchive: URL, into root: URL, work: URL) throws {
+        let dir = primaryArchive.deletingLastPathComponent()
+        let siblings = (try? entries(dir))?.filter {
+            !directory($0) &&
+                $0.pathExtension.lowercased() == "fdi" &&
+                $0.standardizedFileURL.path != primaryArchive.standardizedFileURL.path &&
+                !Pc98FloppyExtractor.containsGameRoot($0)
+        } ?? []
+        let allowedExts: Set<String> = ["dat", "bmp", "ini"]
+        for (idx, sibling) in siblings.enumerated() {
+            let sibStage = work.appendingPathComponent("fdi-sibling-\(idx)-\(UUID().uuidString)", isDirectory: true)
+            do {
+                try ArchiveExtractor.extract(sibling, to: sibStage, shouldSkip: skipArchive)
+            } catch ArchiveError.noSpace {
+                throw ArchiveError.noSpace
+            } catch {
+                try? files.removeItem(at: sibStage)
+                continue
+            }
+            defer { try? files.removeItem(at: sibStage) }
+            let sibDirs = (try? directories(sibStage, forGameDiscovery: true)) ?? [sibStage]
+            for sibDir in sibDirs {
+                if let local = try? names(sibDir), local.contains("adisk.dat") { continue }
+                try merge(sibDir, into: root, overwrite: false, move: true, exclude: { name, isDir in
+                    isDir || !allowedExts.contains((name as NSString).pathExtension.lowercased())
+                })
+            }
         }
     }
 
@@ -316,7 +395,8 @@ enum LocalGameImport {
                 $0.size == $1.size ? $0.url.path < $1.url.path : $0.size > $1.size
             }.map(\.url)
             let discs = candidates.filter {
-                ["iso", "mdf"].contains($0.pathExtension.lowercased()) && (try? Iso9660Extractor.containsGameRoot($0)) == true
+                (["iso", "mdf"].contains($0.pathExtension.lowercased()) && (try? Iso9660Extractor.containsGameRoot($0)) == true) ||
+                    ($0.pathExtension.lowercased() == "fdi" && Pc98FloppyExtractor.containsGameRoot($0))
             }
             for archive in discs + candidates.filter({ !discs.contains($0) }) {
                 let nested = work.appendingPathComponent("stage-\(UUID().uuidString)")
@@ -328,7 +408,13 @@ enum LocalGameImport {
                     try? files.removeItem(at: nested)
                     continue
                 }
-                if let found = try find(nested, depth: depth + 1) { return found }
+                if let found = try find(nested, depth: depth + 1) {
+                    if archive.pathExtension.lowercased() == "fdi",
+                       (try? GameLibrary.launchInfo(found.0).engine) == .legacySystem3 {
+                        try mergeSiblingFloppyVolumes(primaryArchive: archive, into: found.0, work: work)
+                    }
+                    return found
+                }
                 try files.removeItem(at: nested)
             }
             return nil
@@ -388,6 +474,9 @@ enum LocalGameImport {
             }
         }
         try GameLibrary.normalizeRance06DungeonData(root)
+        if (try? GameLibrary.launchInfo(root).engine) == .legacySystem3 {
+            Pc98FloppyExtractor.copyCompanionFontIfNeeded(searchRoot: work, into: root)
+        }
         try prune(root, rules: LocalImportCleanup(root: root))
     }
 

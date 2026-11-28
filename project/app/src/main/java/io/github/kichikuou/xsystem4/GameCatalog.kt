@@ -216,6 +216,7 @@ object GameCatalog {
     const val ID_DPSSG3RABBIT = "dpssg3rabbit"
     const val ID_DPSSG3SHINKON = "dpssg3shinkon"
     const val ID_DPSSG3SOTSUGYOU = "dpssg3sotsugyou"
+    const val ID_FUKEI = "fukei"
     const val PREFIX_CUSTOM = "custom:"
     const val GITHUB_URL = "https://github.com/TomorrowX6/AliceHub"
 
@@ -274,7 +275,9 @@ object GameCatalog {
     fun hasLocalChineseMarkers(dir: File?): Boolean {
         if (dir == null || !dir.isDirectory) return false
         val files = dir.listFiles()?.filter { it.isFile }.orEmpty()
-        return hasLocalChineseMarkers(files.map { it.name }) || files.any(::isHarukaChineseScript)
+        return hasLocalChineseMarkers(files.map { it.name }) ||
+            files.any(::isHarukaChineseScript) ||
+            files.any { it.name.equals("FONT.bmp", true) && Pc98FloppyExtractor.isChinesePc98FontBmp(it) }
     }
 
     private fun isHarukaChineseScript(file: File): Boolean {
@@ -842,6 +845,9 @@ object GameCatalog {
         }
         if (isTenguGameFiles(fileNames, readSmallFile)) {
             return ID_TENGU
+        }
+        if (isFukeiGameFiles(fileNames, readSmallFile)) {
+            return ID_FUKEI
         }
         if (isDpsGameFiles(fileNames, readSmallFile)) {
             return ID_DPS
@@ -3165,6 +3171,7 @@ object GameCatalog {
     private val INTRUDER_ADISK_CRC32S = setOf(0xa7520fb2L)
     private val CRESCENT_ADISK_CRC32S = setOf(0x42351f2cL)
     private val TENGU_ADISK_CRC32S = setOf(0xc942ff58L)
+    private val FUKEI_ADISK_CRC32S = setOf(0x026de326L)
     private val DPS_ADISK_CRC32S = setOf(0x69ea4865L)
     private val DPSSG1_BASE_ADISK_CRC32S = setOf(0xab4cda48L)
     private val DPSSG3_BASE_ADISK_CRC32S = setOf(0xb77ae133L)
@@ -6349,6 +6356,37 @@ object GameCatalog {
 
     fun isTenguGameDir(dir: File?): Boolean = dir?.isDirectory == true && isTenguGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
 
+    fun isFukeiAlias(raw: String): Boolean {
+        if (raw.isBlank()) return false
+        val n = nfkcLower(raw)
+        return n.contains("fukei-san") || n.contains("fukeisan") || n.contains("fukei_san") ||
+            n == "fukei" || Regex("(?<![a-z0-9])fukei(?![a-z0-9])").containsMatchIn(n) ||
+            n.contains("婦警さん") || n.contains("妇警小姐") || n.contains("婦警小姐") ||
+            n.contains("女警小姐") || n.contains("女警vx") || n.contains("policewoman vx")
+    }
+
+    @JvmOverloads
+    fun isFukeiGameFiles(fileNames: Collection<String>, readSmallFile: ((String) -> ByteArray?)? = null): Boolean {
+        if (!isLegacySystem3GameFiles(fileNames)) return false
+        val iniName = fileNames.firstOrNull { it.equals("system3.ini", true) }
+        if (iniName != null && readSmallFile != null) {
+            val raw = runCatching { readSmallFile(iniName) }.getOrNull()
+            val game = legacySystem3GameId(raw)
+            if (game == "fukei") return true
+            if (game != null) return false
+            val title = legacySystem3Title(raw)
+            if (!title.isNullOrBlank() && isFukeiAlias(title)) return true
+        }
+        val adiskName = fileNames.firstOrNull { it.equals("ADISK.DAT", true) }
+        if (adiskName != null && readSmallFile != null) {
+            val crc = legacyAdiskCrc32(runCatching { readSmallFile(adiskName) }.getOrNull())
+            if (crc != null && crc in FUKEI_ADISK_CRC32S) return true
+        }
+        return false
+    }
+
+    fun isFukeiGameDir(dir: File?): Boolean = dir?.isDirectory == true && isFukeiGameFiles(dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()) { readLegacyDiskPrefix(dir, it) }
+
     fun isDpsAlias(raw: String): Boolean {
         if (raw.isBlank()) return false
         val n = nfkcLower(raw)
@@ -7700,6 +7738,9 @@ object GameCatalog {
         if (isDpsSg3SotsugyouAlias(dirName)) {
             return ID_DPSSG3SOTSUGYOU
         }
+        if (isFukeiAlias(dirName)) {
+            return ID_FUKEI
+        }
         if (isOyakorankanAlias(dirName)) {
             return ID_OYAKORANKAN
         }
@@ -8151,6 +8192,9 @@ object GameCatalog {
         }
         if (!displayName.isNullOrBlank() && isDpsSg3SotsugyouAlias(displayName)) {
             return ID_DPSSG3SOTSUGYOU
+        }
+        if (!displayName.isNullOrBlank() && isFukeiAlias(displayName)) {
+            return ID_FUKEI
         }
         if (!displayName.isNullOrBlank() && isOyakorankanAlias(displayName)) {
             return ID_OYAKORANKAN
@@ -10907,6 +10951,21 @@ object GameCatalog {
                 supportsLocalMod = false,
                 isRance10 = false
             )
+            ID_FUKEI -> GameDescriptor(
+                id = ID_FUKEI,
+                title = stringResolver(R.string.game_fukei_title),
+                defaultDirName = "FukeiSanVX",
+                expectedAinName = null,
+                iconRes = R.drawable.ic_game_fukei,
+                accentColor = 0xFF1565C0.toInt(),
+                accentBorderColor = 0x6664B5F6,
+                iconFrameColor = 0xFF0D213B.toInt(),
+                supportsOnlineBaseInstall = false,
+                onlineBaseCdnUrl = null,
+                supportsOnlineMod = false,
+                supportsLocalMod = false,
+                isRance10 = false
+            )
             else -> {
                 val customDir = gameId.removePrefix(PREFIX_CUSTOM).ifBlank { "Game" }
                 val matched = gameList?.let { list ->
@@ -11102,7 +11161,8 @@ object GameCatalog {
         ID_DPSSG2AKAI,
         ID_DPSSG3RABBIT,
         ID_DPSSG3SHINKON,
-        ID_DPSSG3SOTSUGYOU
+        ID_DPSSG3SOTSUGYOU,
+        ID_FUKEI
     )
 
     private val BUILT_IN_SELECT_ORDER_SET: Set<String> = BUILT_IN_SELECT_ORDER.toHashSet()

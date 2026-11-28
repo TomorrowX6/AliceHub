@@ -27,11 +27,25 @@
         <string>org.gnu.gnu-zip-archive</string>
         <string>com.rarlab.rar-archive</string>
         <string>public.disk-image</string>
+        <string>io.github.alicehub.pc98-fdi</string>
       </array>
     </dict>
   </array>
   <key>UTImportedTypeDeclarations</key>
   <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>io.github.alicehub.pc98-fdi</string>
+      <key>UTTypeDescription</key><string>PC-98 Floppy Disk Image</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.disk-image</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><string>fdi</string>
+      </dict>
+    </dict>
     <dict>
       <key>UTTypeIdentifier</key><string>com.rarlab.rar-archive</string>
       <key>UTTypeDescription</key><string>RAR Archive</string>

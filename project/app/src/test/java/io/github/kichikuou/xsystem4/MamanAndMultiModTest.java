@@ -101,7 +101,7 @@ public class MamanAndMultiModTest {
             );
         }
 
-        assertEquals(170, GameCatalog.builtInSelectOrder().size());
+        assertEquals(171, GameCatalog.builtInSelectOrder().size());
         assertTrue(GameCatalog.builtInSelectOrder().contains(GameCatalog.ID_MAMAN));
 
         GameDescriptor desc = GameCatalog.INSTANCE.descriptorForWithResolver(

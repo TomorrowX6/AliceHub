@@ -59,7 +59,7 @@ class SwitchImportTest(unittest.TestCase):
         subprocess.run(
             ["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-I", str(hub),
              *(str(hub / source) for source in
-               ("model.c", "fs_util.c", "install_transaction.c", "local_import.c", "import_zip.c", "import_iso.c")),
+               ("model.c", "fs_util.c", "install_transaction.c", "local_import.c", "import_zip.c", "import_iso.c", "import_fdi.c")),
              "-x", "c", "-", *zlib, "-Wl,--wrap=rename", "-o", str(cls.runner)],
             input=r"""
 #include "install_transaction.h"
@@ -299,3 +299,106 @@ int main(int argc, char **argv)
         self.assertFalse(work.exists())
         self.assertTrue((games / "Existing").is_dir())
         self.assertTrue((sav / "save.dat").is_file())
+
+    def test_pc98_fdi_in_zip_copies_companion_font_bmp(self):
+        import struct
+        hdr_size = 4096
+        bps = 1024
+        tot_secs = 1232
+        fdd_size = bps * tot_secs
+        fdi = bytearray(hdr_size + fdd_size)
+        struct.pack_into("<8I", fdi, 0, 0, 0x90, hdr_size, fdd_size, bps, 8, 2, 77)
+        raw = bytearray(fdd_size)
+        raw[0:11] = b"\xeb\x3c\x90NEC  5.0"
+        struct.pack_into("<HBHBHHBH", raw, 11, bps, 1, 1, 2, 192, tot_secs, 0xFE, 2)
+        fat_off = bps
+        root_off = 5 * bps
+        data_off = 11 * bps
+
+        def set_fat12(c, val):
+            off = fat_off + (c * 3) // 2
+            cur = raw[off] | (raw[off + 1] << 8)
+            cur = ((cur & 0x000F) | ((val & 0x0FFF) << 4)) if (c & 1) else ((cur & 0xF000) | (val & 0x0FFF))
+            raw[off] = cur & 0xFF
+            raw[off + 1] = (cur >> 8) & 0xFF
+
+        def dir_ent(off, name8, ext3, attr, clus, size):
+            raw[off:off + 8] = name8.ljust(8, b" ")
+            raw[off + 8:off + 11] = ext3.ljust(3, b" ")
+            raw[off + 11] = attr
+            struct.pack_into("<HI", raw, off + 26, clus, size)
+
+        adisk = struct.pack("<HH", 2, 3) + b"\x00" * 1020
+        acg = b"GL3TEST" + b"\x00" * 25
+        for c in (2, 3, 4, 5):
+            set_fat12(c, 0xFFF)
+        dir_ent(root_off, b"IO", b"SYS", 0x27, 2, 16)
+        dir_ent(root_off + 32, b"FUKEI", b"", 0x10, 3, 0)
+        fukei_dir = data_off + (3 - 2) * bps
+        dir_ent(fukei_dir, b"ADISK", b"DAT", 0x20, 4, len(adisk))
+        dir_ent(fukei_dir + 32, b"ACG", b"DAT", 0x20, 5, len(acg))
+        raw[data_off + (4 - 2) * bps:data_off + (4 - 2) * bps + len(adisk)] = adisk
+        raw[data_off + (5 - 2) * bps:data_off + (5 - 2) * bps + len(acg)] = acg
+        fdi[hdr_size:] = raw
+
+        font_bmp = bytearray(62 + 256 * 2048)
+        font_bmp[0:2] = b"BM"
+        struct.pack_into("<III", font_bmp, 2, len(font_bmp), 0, 62)
+        struct.pack_into("<IiiHHII", font_bmp, 14, 40, 2048, 2048, 1, 1, 0, 256 * 2048)
+        struct.pack_into("<II", font_bmp, 54, 0x00000000, 0x00FFFFFF)
+
+        bundle = self.sd / "Fukei-san_VX.zip"
+        with zipfile.ZipFile(bundle, "w") as archive:
+            archive.writestr("FUKEI.fdi", bytes(fdi))
+            archive.writestr("FONT.bmp", bytes(font_bmp))
+            archive.writestr("dosbox.conf", "[autoexec]\n")
+        self.assertEqual(self.run_import(bundle), "local:system3:FUKEI")
+        installed = self.library / "system3/games/FUKEI"
+        self.assertEqual((installed / "ADISK.DAT").read_bytes(), adisk)
+        self.assertEqual((installed / "ACG.DAT").read_bytes(), acg)
+        self.assertEqual((installed / "FONT.bmp").read_bytes(), bytes(font_bmp))
+        self.assertFalse((installed / "IO.SYS").exists())
+
+        # Direct FDI import next to FONT.bmp copies immediate sibling font without recursing elsewhere
+        shutil.rmtree(installed)
+        direct_dir = self.sd / "direct_fukei"
+        direct_dir.mkdir()
+        (direct_dir / "FUKEI.fdi").write_bytes(bytes(fdi))
+        (direct_dir / "FONT.bmp").write_bytes(bytes(font_bmp))
+        self.assertEqual(self.run_import(direct_dir / "FUKEI.fdi"), "local:system3:FUKEI")
+        self.assertEqual((installed / "FONT.bmp").read_bytes(), bytes(font_bmp))
+
+        # Direct numbered multi-floppy FDI set merges companion BDISK.DAT from Disk 2
+        shutil.rmtree(installed)
+        multi_dir = self.sd / "multi_fdi"
+        multi_dir.mkdir()
+        raw2 = bytearray(fdd_size)
+        raw2[0:11] = b"\xeb\x3c\x90NEC  5.0"
+        struct.pack_into("<HBHBHHBH", raw2, 11, bps, 1, 1, 2, 192, tot_secs, 0xFE, 2)
+        off2 = fat_off + (2 * 3) // 2
+        raw2[off2] = 0xFF
+        raw2[off2 + 1] = 0x0F
+        bdisk = b"BDISK_COMPANION_PAYLOAD"
+        raw2[root_off:root_off + 8] = b"BDISK   "
+        raw2[root_off + 8:root_off + 11] = b"DAT"
+        raw2[root_off + 11] = 0x20
+        struct.pack_into("<HI", raw2, root_off + 26, 2, len(bdisk))
+        raw2[data_off:data_off + len(bdisk)] = bdisk
+        fdi2 = bytearray(hdr_size + fdd_size)
+        struct.pack_into("<8I", fdi2, 0, 0, 0x90, hdr_size, fdd_size, bps, 8, 2, 77)
+        fdi2[hdr_size:] = raw2
+        (multi_dir / "Fukei Disk 1.fdi").write_bytes(bytes(fdi))
+        (multi_dir / "Fukei Disk 2.fdi").write_bytes(bytes(fdi2))
+        (multi_dir / "FONT.bmp").write_bytes(bytes(font_bmp))
+        self.assertEqual(self.run_import(multi_dir / "Fukei Disk 1.fdi"), "local:system3:Fukei")
+        multi_installed = self.library / "system3/games/Fukei"
+        self.assertEqual((multi_installed / "ADISK.DAT").read_bytes(), adisk)
+        self.assertEqual((multi_installed / "BDISK.DAT").read_bytes(), bdisk)
+        self.assertEqual((multi_installed / "FONT.bmp").read_bytes(), bytes(font_bmp))
+
+        # Corrupt non-empty file with start_cluster == 0 must fail cleanly (no null fwrite)
+        corrupt = bytearray(fdi)
+        struct.pack_into("<H", corrupt, hdr_size + fukei_dir + 32 + 26, 0)
+        corrupt_path = self.sd / "corrupt_zero_cluster.fdi"
+        corrupt_path.write_bytes(bytes(corrupt))
+        self.run_import(corrupt_path, result=1)

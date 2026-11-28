@@ -47,7 +47,7 @@ class SwitchModsTest(unittest.TestCase):
                  "-I", str(HUB), "-I", str(ENGINE / "include"),
                  *(str(HUB / f"{s}.c") for s in (
                      "model", "fs_util", "install_transaction", "mods_catalog", "mods_install",
-                     "local_import", "import_zip", "import_iso")),
+                     "local_import", "import_zip", "import_iso", "import_fdi")),
                  str(ENGINE / "src/cJSON.c"), "-x", "c", "-", "-o", str(work / "test"),
                  "-larchive", "-lz", "-Wl,--wrap=rename"],
                 input=r"""
