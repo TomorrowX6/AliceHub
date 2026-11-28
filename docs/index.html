@@ -9,7 +9,7 @@
   <link rel="icon" type="image/png" href="assets/alice-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="site.css" />
 </head>
 <body>
@@ -27,6 +27,7 @@
       </a>
 
       <nav class="nav-right" aria-label="Utility">
+        <a href="#demos" class="nav-link nav-hide-sm" data-i18n="nav.demos">演示</a>
         <div class="lang-switch" role="group" aria-label="Language">
           <button type="button" class="lang-btn is-active" data-lang="zh">简</button>
           <button type="button" class="lang-btn" data-lang="en">EN</button>
@@ -75,12 +76,13 @@
             </button>
             <div>
               <h1 class="poster-title">AliceHub</h1>
-              <p class="poster-sub" data-i18n="hero.sub">AliceSoft System 1–4 多平台原生启动器</p>
+              <p class="poster-sub" data-i18n="hero.sub">AliceSoft System 多平台原生启动器</p>
             </div>
           </div>
 
           <div class="poster-actions">
             <span class="poster-hint" data-i18n="hero.hint">拖拽拨动 · 点击起波</span>
+            <a href="#demos" class="poster-link" data-i18n="hero.explore">功能演示</a>
             <a href="#download" class="poster-cta">
               <span data-i18n="hero.cta">获取版本</span>
               <code id="hero-ver">f0810b6</code>
@@ -92,10 +94,10 @@
     </section>
 
     <!-- =========================================================
-         02 // SWISS EDITORIAL SHEET (ZERO GENERIC CARD TEMPLATES)
+         02 // SWISS EDITORIAL SHEET + INTERACTIVE FEATURE DEMOS
          ========================================================= -->
     <div class="editorial-sheet">
-      <!-- Asymmetric 2-Column Manifesto + Hairline Spec Index -->
+      <!-- A. Asymmetric Manifesto + Hairline Spec Index -->
       <section id="about" class="ed-section">
         <div class="ed-wrap ed-grid reveal">
           <div class="ed-label" data-i18n="ed.about">说明</div>
@@ -127,7 +129,237 @@
         </div>
       </section>
 
-      <!-- Hairline Interactive Release Ledger -->
+      <!-- B. Interactive Core Feature Demonstrations (Tactile Workbench) -->
+      <section id="demos" class="ed-section ed-section-demos">
+        <div class="ed-wrap ed-grid reveal">
+          <div class="ed-label ed-demo-nav">
+            <span class="ed-label-title" data-i18n="demo.kicker">功能演示</span>
+            <div class="demo-tabs" role="tablist" aria-label="Interactive Demos">
+              <button type="button" class="demo-tab is-active" role="tab" aria-selected="true" data-demo="play">
+                <em>01</em>
+                <span data-i18n="demo.t1">局内字号与操控</span>
+              </button>
+              <button type="button" class="demo-tab" role="tab" aria-selected="false" data-demo="save">
+                <em>02</em>
+                <span data-i18n="demo.t2">PC ⇄ 移动存档转换</span>
+              </button>
+              <button type="button" class="demo-tab" role="tab" aria-selected="false" data-demo="router">
+                <em>03</em>
+                <span data-i18n="demo.t3">多格式导入与路由</span>
+              </button>
+              <button type="button" class="demo-tab" role="tab" aria-selected="false" data-demo="mods">
+                <em>04</em>
+                <span data-i18n="demo.t4">无损 MOD 与入口</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="ed-content">
+            <!-- DEMO 01: LIVE IN-GAME FONT SCALING, SCROLLBAR & VIRTUAL PAD -->
+            <div class="demo-pane is-active" data-pane="play">
+              <div class="demo-caption">
+                <h3 data-i18n="demo.play.title">PartsEngine 字号实时重排与虚拟手柄叠加</h3>
+                <p data-i18n="demo.play.desc">拖动滑块实时体验字体防溢出缩放、滚动条加宽，切换 GAL / RPG 按键布局或点击 » Ctrl 快进对话。</p>
+              </div>
+
+              <div class="sim-screen" id="sim-screen">
+                <div class="sim-bg">
+                  <img src="assets/games/rance10.webp" alt="" />
+                </div>
+
+                <!-- Top Floating Bar inside simulated game -->
+                <div class="sim-hud-top">
+                  <button type="button" class="sim-float-ball" id="sim-ball" title="Menu">
+                    <img src="assets/alice-icon.png" alt="" width="20" height="20" />
+                  </button>
+                  <button type="button" class="sim-ctrl" id="sim-ctrl">» Ctrl</button>
+                  <span class="sim-status" id="sim-status">xsystem4 · 60fps</span>
+                </div>
+
+                <!-- Simulated Dialogue Box + Live Widening Scrollbar -->
+                <div class="sim-dialogue-wrap">
+                  <div class="sim-dialogue" id="sim-dialogue">
+                    <div class="sim-speaker" id="sim-speaker">兰斯</div>
+                    <div class="sim-line" id="sim-line">「哼，人类灭亡危机？那就由本大爷在掌机上亲自解决吧。」</div>
+                  </div>
+                  <div class="sim-rail" aria-hidden="true">
+                    <span class="sim-thumb" id="sim-thumb"></span>
+                  </div>
+                </div>
+
+                <!-- Live Translucent Virtual Pad Layer -->
+                <div class="sim-vpad" id="sim-vpad" data-preset="gal">
+                  <div class="vpad-left">
+                    <button type="button" class="vp-key" data-sim-act="prev">◀</button>
+                    <button type="button" class="vp-key" data-sim-act="next">▶</button>
+                    <button type="button" class="vp-key vp-rpg" data-sim-act="up">▲</button>
+                    <button type="button" class="vp-key vp-rpg" data-sim-act="down">▼</button>
+                  </div>
+                  <div class="vpad-right">
+                    <button type="button" class="vp-btn" data-sim-act="menu">B</button>
+                    <button type="button" class="vp-btn vp-primary" data-sim-act="next">A</button>
+                    <button type="button" class="vp-btn vp-rpg" data-sim-act="skip">X</button>
+                    <button type="button" class="vp-btn vp-rpg" data-sim-act="shot">Y</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sim-controls">
+                <label class="ctrl-slider">
+                  <span data-i18n="demo.play.font">字号缩放</span>
+                  <input type="range" id="sim-font-range" min="75" max="160" value="105" />
+                  <code id="sim-font-val">105%</code>
+                </label>
+
+                <label class="ctrl-slider">
+                  <span data-i18n="demo.play.bar">滚动条宽度</span>
+                  <input type="range" id="sim-bar-range" min="100" max="300" value="160" />
+                  <code id="sim-bar-val">160%</code>
+                </label>
+
+                <div class="ctrl-seg" role="group" aria-label="Virtual Pad Preset">
+                  <button type="button" class="seg-btn" data-preset="off" data-i18n="demo.play.pOff">纯触控</button>
+                  <button type="button" class="seg-btn is-active" data-preset="gal">GAL</button>
+                  <button type="button" class="seg-btn" data-preset="rpg">RPG</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- DEMO 02: LIVE BIDIRECTIONAL PC <-> MOBILE SAVE CONVERTER -->
+            <div class="demo-pane" data-pane="save">
+              <div class="demo-caption">
+                <h3 data-i18n="demo.save.title">基于 .ain 结构定义的 PC ⇄ 移动端无损存档互通</h3>
+                <p data-i18n="demo.save.desc">导出 PC 存档时按游戏 .ain 重建 Windows 头部与压缩流，导入覆盖前自动生成可还原备份。</p>
+              </div>
+
+              <div class="save-workbench">
+                <div class="wb-bar">
+                  <div class="ctrl-seg" role="group" aria-label="Sample Title">
+                    <button type="button" class="seg-btn is-active" data-save-game="rance10">兰斯 10</button>
+                    <button type="button" class="seg-btn" data-save-game="evenicle2">夏娃年代记 2</button>
+                    <button type="button" class="seg-btn" data-save-game="escalayer_reboot">超昂天使 R</button>
+                  </div>
+                  <button type="button" class="wb-action" id="run-save-convert" data-i18n="demo.save.run">转换方向 ⇄</button>
+                </div>
+
+                <div class="save-pipeline">
+                  <div class="save-node">
+                    <span class="sn-k" id="save-src-kind">MOBILE X4SS</span>
+                    <strong class="sn-file" id="save-src-file">SaveData/0001.save</strong>
+                    <code class="sn-hex" id="save-src-hex">58 34 53 53 00 1A F2 09 78 9C E3 04</code>
+                  </div>
+
+                  <div class="save-mid">
+                    <span class="save-arrow" id="save-arrow">→</span>
+                    <code id="save-schema">Rance10.ain</code>
+                  </div>
+
+                  <div class="save-node save-node-out">
+                    <span class="sn-k sn-k-c" id="save-dst-kind">WINDOWS GD\x01\x01</span>
+                    <strong class="sn-file" id="save-dst-file">PC_SaveData/0001.save</strong>
+                    <code class="sn-hex" id="save-dst-hex">47 44 01 01 00 1A F2 09 78 9C E3 04</code>
+                  </div>
+                </div>
+
+                <div class="save-log" id="save-log">
+                  <span>[BACKUP] saves/rance10 → save_backups/auto_20261128.zip</span>
+                  <span>[SCHEMA] Verified 148 struct tables via Rance10.ain · CRC OK</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- DEMO 03: LIVE MULTI-FORMAT ARCHIVE / ISO AUTO-ROUTER -->
+            <div class="demo-pane" data-pane="router">
+              <div class="demo-caption">
+                <h3 data-i18n="demo.router.title">多格式直读解压与三套原生内核自动识别</h3>
+                <p data-i18n="demo.router.desc">点选不同格式的本地游戏包，预览流式解压、多碟合并、编码修复与三核自动路由。</p>
+              </div>
+
+              <div class="router-workbench">
+                <div class="router-files" role="group" aria-label="Sample Files">
+                  <button type="button" class="rf-btn is-active" data-route="oyakorankan">Oyakorankan_CHS.7z</button>
+                  <button type="button" class="rf-btn" data-route="kichikuou">Kichikuou_Disk1+2.iso</button>
+                  <button type="button" class="rf-btn" data-route="rance10">Rance10_v1.04.rar</button>
+                  <button type="button" class="rf-btn" data-route="rance1">Rance1_1989.zip</button>
+                </div>
+
+                <div class="router-stages">
+                  <div class="rs-step">
+                    <span class="rs-num">01 / EXTRACT</span>
+                    <strong id="rt-extract-title">libarchive 7z 固实流式直读</strong>
+                    <p id="rt-extract-desc">无需双倍暂存空间，自动修复 Shift-JIS / GBK 压缩包路径乱码。</p>
+                  </div>
+                  <div class="rs-step">
+                    <span class="rs-num">02 / ROUTE</span>
+                    <strong id="rt-engine-title">xsystem4 · System 4.x</strong>
+                    <p id="rt-engine-desc">检测到 AliceStart.CHS + CHS.TBL，自动绑定中文启动入口。</p>
+                  </div>
+                  <div class="rs-step">
+                    <span class="rs-num">03 / PIPELINE</span>
+                    <strong id="rt-caps-title">CHS.TBL 重映射 + CP932 弹窗识别</strong>
+                    <p id="rt-caps-desc">内置字宽防截断重排、未汉化系统弹窗智能识别与 PC 存档导出。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- DEMO 04: LIVE ATOMIC-BACKUP MODS & LAUNCH ENTRY SWITCHER -->
+            <div class="demo-pane" data-pane="mods">
+              <div class="demo-caption">
+                <h3 data-i18n="demo.mods.title">无损原子备份 MOD、去码补丁与启动入口切换</h3>
+                <p data-i18n="demo.mods.desc">模拟单作项目中心：自由开关补丁或切换启动入口，原版文件自动隔离备份，随时一键还原。</p>
+              </div>
+
+              <div class="mod-workbench">
+                <div class="mod-top">
+                  <div class="mod-game">
+                    <img src="assets/games/rance10.webp" alt="" width="38" height="38" />
+                    <div>
+                      <strong>兰斯 10 -决战-</strong>
+                      <code id="mod-entry-readout">ENTRY: AliceStart.CHS</code>
+                    </div>
+                  </div>
+                  <div class="ctrl-seg" role="group" aria-label="Launch Entry">
+                    <button type="button" class="seg-btn is-active" data-entry="AliceStart.CHS">AliceStart.CHS</button>
+                    <button type="button" class="seg-btn" data-entry="AliceStart.ini">AliceStart.ini</button>
+                  </div>
+                </div>
+
+                <div class="mod-rows">
+                  <label class="mod-row">
+                    <div>
+                      <strong>简体中文汉化补丁</strong>
+                      <span>Rance10.ain · CHS.TBL</span>
+                    </div>
+                    <input type="checkbox" class="mod-check" data-mod="cn" checked />
+                  </label>
+                  <label class="mod-row">
+                    <div>
+                      <strong>立绘去码补丁（独立管理）</strong>
+                      <span>Rance10CG.afa</span>
+                    </div>
+                    <input type="checkbox" class="mod-check" data-mod="uncensor" />
+                  </label>
+                  <label class="mod-row">
+                    <div>
+                      <strong>局内修改器 · 主播隐私遮罩</strong>
+                      <span>Live Memory Lock · Streamer Mode</span>
+                    </div>
+                    <input type="checkbox" class="mod-check" data-mod="modifier" />
+                  </label>
+                </div>
+
+                <div class="mod-foot">
+                  <span id="mod-backup-state">原子备份已保护 2 个原版文件 · 卸载后自动无损还原</span>
+                  <button type="button" class="mod-reset" id="mod-reset-btn" data-i18n="demo.mods.reset">一键还原原版</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C. Hairline Interactive Release Ledger -->
       <section id="download" class="ed-section ed-section-dl">
         <div class="ed-wrap ed-grid reveal">
           <div class="ed-label">

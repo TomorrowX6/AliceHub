@@ -63,11 +63,13 @@ const GAMES = [
 
 const I18N = {
   zh: {
+    'nav.demos': '演示',
     'nav.download': '下载',
     'filter.all': '全部',
     'filter.cn': '汉化',
-    'hero.sub': 'AliceSoft System 1–4 多平台原生启动器',
+    'hero.sub': 'AliceSoft System 多平台原生启动器',
     'hero.hint': '拖拽拨动 · 点击起波',
+    'hero.explore': '功能演示',
     'hero.cta': '获取版本',
     'ed.about': '说明',
     'ed.statement': '在手机与掌机上直接打开 AliceSoft 作品。<span>不依赖 Wine 或转译层，由三套开源原生内核驱动，支持压缩包与镜像导入、汉化与 MOD 补丁及跨平台存档互通。</span>',
@@ -78,6 +80,24 @@ const I18N = {
     'spec.v3': '原生触控手势、自定义虚拟按键与主流蓝牙 / USB 手柄',
     'spec.k4': '许可',
     'spec.v4': 'GNU GPL-2.0 开源免费，安装包不含任何游戏本体',
+    'demo.kicker': '功能演示',
+    'demo.t1': '局内字号与操控',
+    'demo.t2': 'PC ⇄ 移动存档转换',
+    'demo.t3': '多格式导入与路由',
+    'demo.t4': '无损 MOD 与入口',
+    'demo.play.title': 'PartsEngine 字号实时重排与虚拟手柄叠加',
+    'demo.play.desc': '拖动滑块实时体验字体防溢出缩放、滚动条加宽，切换 GAL / RPG 按键布局或点击 » Ctrl 快进对话。',
+    'demo.play.font': '字号缩放',
+    'demo.play.bar': '滚动条宽度',
+    'demo.play.pOff': '纯触控',
+    'demo.save.title': '基于 .ain 结构定义的 PC ⇄ 移动端无损存档互通',
+    'demo.save.desc': '导出 PC 存档时按游戏 .ain 重建 Windows 头部与压缩流，导入覆盖前自动生成可还原备份。',
+    'demo.save.run': '转换方向 ⇄',
+    'demo.router.title': '多格式直读解压与三套原生内核自动识别',
+    'demo.router.desc': '点选不同格式的本地游戏包，预览流式解压、多碟合并、编码修复与三核自动路由。',
+    'demo.mods.title': '无损原子备份 MOD、去码补丁与启动入口切换',
+    'demo.mods.desc': '模拟单作项目中心：自由开关补丁或切换启动入口，原版文件自动隔离备份，随时一键还原。',
+    'demo.mods.reset': '一键还原原版',
     'ed.download': '下载',
     'dl.android': 'Android 8.0+ · 直接安装',
     'dl.ios': 'iOS 15+ · 自签侧载',
@@ -88,11 +108,13 @@ const I18N = {
     'toast.qq': '已复制 QQ 群号：383917628',
   },
   en: {
+    'nav.demos': 'Demos',
     'nav.download': 'Download',
     'filter.all': 'All',
     'filter.cn': 'CN',
-    'hero.sub': 'Native multi-platform launcher for AliceSoft System 1–4',
+    'hero.sub': 'Native multi-platform launcher for AliceSoft System',
     'hero.hint': 'Drag to glide · Click to ripple',
+    'hero.explore': 'Live Demos',
     'hero.cta': 'Download',
     'ed.about': 'ABOUT',
     'ed.statement': 'Open AliceSoft games directly on phone and handheld. <span>No Wine or translation layers—driven by three open-source native engines with archive and disc import, translation & MOD patches, and cross-platform saves.</span>',
@@ -103,6 +125,24 @@ const I18N = {
     'spec.v3': 'Native touch gestures, customizable virtual pad, and standard Bluetooth / USB controllers',
     'spec.k4': 'LICENSE',
     'spec.v4': 'GNU GPL-2.0 free & open source — no game files are bundled',
+    'demo.kicker': 'INTERACTIVE',
+    'demo.t1': 'Font Scale & Controls',
+    'demo.t2': 'PC ⇄ Mobile Saves',
+    'demo.t3': 'Archive & Routing',
+    'demo.t4': 'Atomic MODs & Entry',
+    'demo.play.title': 'Live PartsEngine Font Scaling & Virtual Pad Overlay',
+    'demo.play.desc': 'Drag sliders to test non-overflow font scaling and wider scrollbars, switch GAL/RPG pads, or latch » Ctrl.',
+    'demo.play.font': 'Font Scale',
+    'demo.play.bar': 'Scrollbar',
+    'demo.play.pOff': 'Touch Only',
+    'demo.save.title': '.ain-Guided Bidirectional PC ⇄ Mobile Save Conversion',
+    'demo.save.desc': 'Rebuilds Windows save headers and compressed streams from .ain schemas with automatic pre-overwrite backups.',
+    'demo.save.run': 'Flip Direction ⇄',
+    'demo.router.title': 'Multi-Format Import & Automatic 3-Kernel Routing',
+    'demo.router.desc': 'Pick sample archives or disc images to preview streaming extraction, multi-disc merging, and engine detection.',
+    'demo.mods.title': 'Atomic-Backup MODs, Uncensored Patches & Launch Entries',
+    'demo.mods.desc': 'Toggle patches or switch launch entries—original game files are backed up atomically for one-tap restore.',
+    'demo.mods.reset': 'Restore Vanilla',
     'ed.download': 'DOWNLOAD',
     'dl.android': 'Android 8.0+ · Direct install',
     'dl.ios': 'iOS 15+ · Sideload IPA',
@@ -113,11 +153,13 @@ const I18N = {
     'toast.qq': 'Copied QQ Group: 383917628',
   },
   ja: {
+    'nav.demos': 'デモ',
     'nav.download': '入手',
     'filter.all': 'すべて',
     'filter.cn': '翻訳',
-    'hero.sub': 'AliceSoft System 1–4 マルチプラットフォーム実行環境',
+    'hero.sub': 'AliceSoft System マルチプラットフォーム実行環境',
     'hero.hint': 'ドラッグで移動 · クリックで波紋',
+    'hero.explore': '機能デモ',
     'hero.cta': 'ダウンロード',
     'ed.about': '概要',
     'ed.statement': 'スマホや携帯機でアリスソフト作品をそのまま起動。<span>Wine や命令変換に頼らず、3つのオープンソース・ネイティブエンジンで動作。アーカイブ読込・MOD／翻訳パッチ・機種間セーブ連携に対応します。</span>',
@@ -128,6 +170,24 @@ const I18N = {
     'spec.v3': 'ネイティブタッチ・カスタマイズ可能な仮想パッド・各種コントローラー対応',
     'spec.k4': 'ライセンス',
     'spec.v4': 'GNU GPL-2.0 オープンソース（ゲーム本体は含まれません）',
+    'demo.kicker': '機能デモ',
+    'demo.t1': '文字拡大と仮想操作',
+    'demo.t2': 'PC ⇄ セーブ変換',
+    'demo.t3': '自動展開と判別',
+    'demo.t4': '非破壊 MOD と起動',
+    'demo.play.title': 'PartsEngine リアルタイム文字拡大＆仮想パッド',
+    'demo.play.desc': 'スライダーで文字拡大とスクロールバー調整を体験。GAL / RPG 配置切替や » Ctrl 早送りにも対応。',
+    'demo.play.font': '文字サイズ',
+    'demo.play.bar': 'バー幅',
+    'demo.play.pOff': 'タッチのみ',
+    'demo.save.title': '.ain 構造参照による PC ⇄ モバイル双方向セーブ変換',
+    'demo.save.desc': 'ゲームの .ain を参照し Windows 版ヘッダへ無劣化変換。上書き前の自動バックアップも実行します。',
+    'demo.save.run': '変換方向を切替 ⇄',
+    'demo.router.title': '全形式直展開＆3系統ネイティブエンジン自動判別',
+    'demo.router.desc': '各種アーカイブや ISO を選んで、ストリーミング展開・複数ディスク統合・起動ルーティングを確認。',
+    'demo.mods.title': '非破壊バックアップ MOD・修正解除＆起動エントリ切替',
+    'demo.mods.desc': 'パッチの ON/OFF や起動エントリを切替。元ファイルは自動退避され、いつでもワンタップで復元できます。',
+    'demo.mods.reset': '初期状態へ復元',
     'ed.download': '入手',
     'dl.android': 'Android 8.0+ · 直接導入',
     'dl.ios': 'iOS 15+ · 署名して導入',
@@ -143,7 +203,7 @@ let currentLang = 'zh';
 let focusedGame = GAMES[0];
 
 /* ==========================================================================
-   THREE.JS INTERACTIVE 3D CURVED COVER WALL + INERTIA DRAG + SHADER FX
+   1. THREE.JS INTERACTIVE 3D CURVED COVER WALL (TRUE SRGB BRIGHTNESS FIXED!)
    ========================================================================== */
 function initThreeWall() {
   const canvas = document.getElementById('webgl-stage');
@@ -169,7 +229,7 @@ function initThreeWall() {
   const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 80);
   camera.position.set(0, 0, 12.8);
 
-  /* --- 1. Deep Obsidian Atmospheric Aurora Backdrop --- */
+  /* Deep Obsidian Atmospheric Aurora Backdrop */
   const auroraMat = new THREE.ShaderMaterial({
     depthWrite: false,
     uniforms: {
@@ -194,9 +254,9 @@ function initThreeWall() {
         vec2 c2 = vec2(0.28 + cos(uTime * 0.18) * 0.08 - uMouse.x * 0.06, -0.14 + sin(uTime * 0.22) * 0.06);
         float g1 = exp(-dot(p - c1, p - c1) * 5.0);
         float g2 = exp(-dot(p - c2, p - c2) * 4.8);
-        vec3 col = vec3(0.024, 0.024, 0.035)
-          + vec3(0.88, 0.29, 0.52) * g1 * 0.14
-          + vec3(0.22, 0.74, 0.97) * g2 * 0.13;
+        vec3 col = vec3(0.026, 0.026, 0.038)
+          + vec3(0.88, 0.29, 0.52) * g1 * 0.13
+          + vec3(0.22, 0.74, 0.97) * g2 * 0.12;
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -205,12 +265,12 @@ function initThreeWall() {
   auroraPlane.position.set(0, 0, -14);
   scene.add(auroraPlane);
 
-  /* --- 2. 3D Cursor Volumetric Light Probe + Click Shockwave Torus Rings --- */
+  /* 3D Cursor Volumetric Light Probe + Click Shockwave Torus Rings */
   const probeMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    uniforms: { uIntensity: { value: 0.24 } },
+    uniforms: { uIntensity: { value: 0.18 } },
     vertexShader: `
       varying vec2 vUv;
       void main() {
@@ -239,7 +299,7 @@ function initThreeWall() {
   const shockRings = [];
   const shockGeo = new THREE.TorusGeometry(1.0, 0.018, 8, 96);
 
-  /* --- 3. 5-Row Panoramic Curved 3D Cover Wall (35 Painted Titles) --- */
+  /* 5-Row Panoramic Curved 3D Cover Wall (True sRGB faithful brightness!) */
   const wallGroup = new THREE.Group();
   scene.add(wallGroup);
 
@@ -275,8 +335,8 @@ function initThreeWall() {
       float mask = 1.0 - smoothstep(-0.008, 0.008, d);
       if (mask < 0.01) discard;
 
-      // Subtle chromatic RGB shimmer on click ripple wave crests
-      vec2 shift = vec2(uFlash * 0.012, 0.0);
+      // Sample faithful sRGB directly (NoColorSpace prevents double-gamma darkening)
+      vec2 shift = vec2(uFlash * 0.011, 0.0);
       vec3 tex = vec3(
         texture2D(uMap, clamp(vUv + shift, 0.002, 0.998)).r,
         texture2D(uMap, vUv).g,
@@ -284,22 +344,22 @@ function initThreeWall() {
       );
 
       float luma = dot(tex, vec3(0.299, 0.587, 0.114));
-      vec3 col = mix(tex, vec3(luma * 0.35), uDim * 0.88);
+      vec3 col = mix(tex, vec3(luma * 0.42), uDim * 0.85);
 
-      // Rich unobstructed gallery brightness
-      float bright = mix(0.78, 1.12, clamp(uHover + uProx * 0.22, 0.0, 1.0)) * (1.0 - uDim * 0.68);
+      // Vibrant true-color resting brightness (0.94) + gentle hover/proximity lift
+      float bright = mix(0.94, 1.12, clamp(uHover + uProx * 0.2, 0.0, 1.0)) * (1.0 - uDim * 0.65);
       col *= bright;
 
-      // Specular glass sweep
-      float spec = smoothstep(0.32, 0.95, 1.0 - abs(dot(p, normalize(uLightDir)) - 0.08));
-      col += vec3(0.88, 0.95, 1.0) * spec * (0.04 + uProx * 0.085 + uHover * 0.13 + uFlash * 0.18);
+      // Subtle diagonal specular glass sheen
+      float spec = smoothstep(0.36, 0.96, 1.0 - abs(dot(p, normalize(uLightDir)) - 0.08));
+      col += vec3(0.9, 0.96, 1.0) * spec * (0.03 + uProx * 0.07 + uHover * 0.11 + uFlash * 0.16);
 
       // Crisp luminous glass edge highlight
-      float rim = smoothstep(-0.022, -0.004, d) * mask;
-      vec3 rimCol = mix(vec3(1.0), vec3(0.22, 0.74, 0.97), clamp(uHover + uFlash + uProx * 0.4, 0.0, 1.0));
-      col += rimCol * rim * (0.14 + uProx * 0.18 + uHover * 0.6 + uFlash * 0.62);
+      float rim = smoothstep(-0.02, -0.004, d) * mask;
+      vec3 rimCol = mix(vec3(1.0), vec3(0.22, 0.74, 0.97), clamp(uHover + uFlash + uProx * 0.35, 0.0, 1.0));
+      col += rimCol * rim * (0.14 + uProx * 0.14 + uHover * 0.52 + uFlash * 0.56);
 
-      gl_FragColor = vec4(col, mask * (1.0 - uDim * 0.55));
+      gl_FragColor = vec4(col, mask * (1.0 - uDim * 0.52));
     }
   `;
 
@@ -316,7 +376,7 @@ function initThreeWall() {
   function getTexture(slug) {
     if (!textures.has(slug)) {
       const tex = texLoader.load(`assets/games/${slug}.webp`);
-      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.colorSpace = THREE.NoColorSpace; // Raw sRGB for custom ShaderMaterial (no dark gamma crush!)
       tex.minFilter = THREE.LinearMipmapLinearFilter;
       tex.generateMipmaps = true;
       textures.set(slug, tex);
@@ -328,7 +388,7 @@ function initThreeWall() {
   const meshes = [];
 
   for (let r = 0; r < ROWS; r++) {
-    const yBase = (2 - r) * SPACING_Y + 0.55; // Slightly lifted to clear bottom poster bar
+    const yBase = (2 - r) * SPACING_Y + 0.55;
     const rowShift = (r % 2) * (SPACING_X * 0.5);
     for (let c = 0; c < COLS; c++) {
       const game = GAMES[(ROW_OFFSETS[r] + c) % GAMES.length];
@@ -369,8 +429,8 @@ function initThreeWall() {
     }
   }
 
-  /* --- 4. Floating 3D Volumetric Bokeh Dust --- */
-  const PARTICLE_COUNT = 140;
+  /* Floating 3D Volumetric Bokeh Dust */
+  const PARTICLE_COUNT = 120;
   const pPos = new Float32Array(PARTICLE_COUNT * 3);
   const pScale = new Float32Array(PARTICLE_COUNT);
   const pColor = new Float32Array(PARTICLE_COUNT * 3);
@@ -381,8 +441,8 @@ function initThreeWall() {
     pPos[i * 3] = (Math.random() - 0.5) * 26;
     pPos[i * 3 + 1] = (Math.random() - 0.5) * 14;
     pPos[i * 3 + 2] = -3.5 + Math.random() * 9.5;
-    pScale[i] = 9 + Math.random() * 20;
-    pSpeed[i] = 0.12 + Math.random() * 0.26;
+    pScale[i] = 8 + Math.random() * 18;
+    pSpeed[i] = 0.12 + Math.random() * 0.25;
     const c = palette[i % palette.length];
     pColor[i * 3] = c.r;
     pColor[i * 3 + 1] = c.g;
@@ -417,14 +477,14 @@ function initThreeWall() {
       void main() {
         float d = length(gl_PointCoord - 0.5);
         if (d > 0.5) discard;
-        gl_FragColor = vec4(vColor, pow(1.0 - d * 2.0, 2.4) * 0.30);
+        gl_FragColor = vec4(vColor, pow(1.0 - d * 2.0, 2.4) * 0.28);
       }
     `,
   });
   const particles = new THREE.Points(pGeo, pMat);
   scene.add(particles);
 
-  /* --- 5. Interaction: Raycast Hover, Inertia Drag, Click Ripple & Scroll Pause --- */
+  /* Interaction: Raycast Hover, Inertia Drag, Click Ripple & Scroll Pause */
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2(99, 99);
   const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
@@ -444,7 +504,7 @@ function initThreeWall() {
     const rMat = new THREE.MeshBasicMaterial({
       color: waves.length % 2 === 0 ? 0x38bdf8 : 0xe14b86,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.52,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -494,7 +554,6 @@ function initThreeWall() {
     dragging = false;
     canvas.classList.remove('is-dragging');
 
-    // If tap/click rather than drag, emit liquid-glass 3D ripple at clicked tile
     if (dragMoved < 8) {
       const nx = (e.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
       const ny = -(e.clientY / Math.max(1, window.innerHeight)) * 2 + 1;
@@ -534,7 +593,6 @@ function initThreeWall() {
     pMat.uniforms.uPixelRatio.value = dpr;
   }, { passive: true });
 
-  /* --- 6. Render Loop (Auto-pauses when editorial sheet covers viewport) --- */
   let lastTime = performance.now();
   let elapsed = 0;
   let rayTick = 0;
@@ -572,7 +630,7 @@ function initThreeWall() {
         const sr = shockRings[i];
         sr.t += dt;
         sr.mesh.scale.setScalar(0.35 + sr.t * 5.8);
-        sr.mat.opacity = Math.max(0, 0.55 * Math.exp(-sr.t * 2.1));
+        sr.mat.opacity = Math.max(0, 0.52 * Math.exp(-sr.t * 2.1));
         if (sr.t > 1.8) {
           wallGroup.remove(sr.mesh);
           sr.mat.dispose();
@@ -629,11 +687,11 @@ function initThreeWall() {
 
         tile.mesh.position.x = tile.x;
         tile.mesh.position.y = tile.yBase + idleFloat;
-        tile.mesh.position.z = curveZ + tile.hover * 0.72 + prox * 0.15 - tile.dim * 1.05 + waveZ;
+        tile.mesh.position.z = curveZ + tile.hover * 0.72 + prox * 0.14 - tile.dim * 1.05 + waveZ;
         tile.mesh.rotation.y = -tile.x * 0.056 + waveZ * 0.09 + dragVel * 0.014;
         tile.mesh.rotation.x = waveZ * 0.055;
 
-        const s = 1 + tile.hover * 0.055 + prox * 0.015;
+        const s = 1 + tile.hover * 0.055 + prox * 0.012;
         tile.mesh.scale.set(s, s, 1);
 
         tile.mat.uniforms.uHover.value = tile.hover;
@@ -665,7 +723,288 @@ function initThreeWall() {
 }
 
 /* ==========================================================================
-   FLOATING ALICE EMBLEM EYES + BLINK + CLICK PULSE
+   2. INTERACTIVE CORE FEATURE DEMOS WORKBENCH
+   ========================================================================== */
+function initInteractiveDemos() {
+  /* --- Tab Switching --- */
+  const tabs = Array.from(document.querySelectorAll('.demo-tab'));
+  const panes = Array.from(document.querySelectorAll('.demo-pane'));
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.demo;
+      tabs.forEach((t) => {
+        const active = t === tab;
+        t.classList.toggle('is-active', active);
+        t.setAttribute('aria-selected', String(active));
+      });
+      panes.forEach((p) => p.classList.toggle('is-active', p.dataset.pane === target));
+    });
+  });
+
+  /* --- DEMO 01: Live In-Game Font Scale, Scrollbar & Virtual Pad --- */
+  const LINES = {
+    zh: [
+      ['兰斯', '「哼，人类灭亡危机？那就由本大爷在掌机上亲自解决吧。」'],
+      ['希露', '「兰斯大人，拖动下方滑块即可实时缩放 PartsEngine 字体且不截断哦。」'],
+      ['兰斯', '「噢！连右侧滚动条都能加宽，还有 GAL / RPG 虚拟手柄随时切换。」'],
+      ['AliceHub', '点击 » Ctrl 可锁定 60fps 持续快进，双指轻触或按 B 呼出右键菜单。'],
+    ],
+    en: [
+      ['Rance', '"Humanity in crisis? Fine, I will clear it natively on handheld."'],
+      ['Sill', '"Drag the slider below to scale PartsEngine text cleanly without clipping."'],
+      ['Rance', '"Nice! Even the scrollbar widens, plus instant GAL & RPG pad layouts."'],
+      ['AliceHub', 'Latch » Ctrl for smooth 60fps fast-forward, or tap B / 2-finger for menu.'],
+    ],
+    ja: [
+      ['ランス', '「人類滅亡の危機だと？ 俺様が携帯機でネイティブ解決してやるぜ。」'],
+      ['シィル', '「下のスライダーで PartsEngine の文字サイズを崩れず拡大できますよ。」'],
+      ['ランス', '「おおっ、スクロールバーも太くなるし、GAL / RPG パッドも即切替だな。」'],
+      ['AliceHub', '» Ctrl で 60fps 早送り固定、B または 2 本指タップで右クリックメニュー。'],
+    ],
+  };
+
+  let lineIdx = 0;
+  let ctrlTimer = null;
+  const simSpeaker = document.getElementById('sim-speaker');
+  const simLine = document.getElementById('sim-line');
+  const simStatus = document.getElementById('sim-status');
+  const simCtrl = document.getElementById('sim-ctrl');
+  const simVpad = document.getElementById('sim-vpad');
+  const fontRange = document.getElementById('sim-font-range');
+  const fontVal = document.getElementById('sim-font-val');
+  const barRange = document.getElementById('sim-bar-range');
+  const barVal = document.getElementById('sim-bar-val');
+  const simThumb = document.getElementById('sim-thumb');
+
+  function renderSimLine() {
+    const bank = LINES[currentLang] || LINES.zh;
+    const [spk, txt] = bank[lineIdx % bank.length];
+    if (simSpeaker) simSpeaker.textContent = spk;
+    if (simLine) simLine.textContent = txt;
+  }
+
+  function advanceLine(delta) {
+    const bank = LINES[currentLang] || LINES.zh;
+    lineIdx = (lineIdx + delta + bank.length) % bank.length;
+    renderSimLine();
+  }
+
+  if (fontRange && fontVal && simLine) {
+    const syncFont = () => {
+      const v = Number(fontRange.value);
+      fontVal.textContent = `${v}%`;
+      simLine.style.fontSize = `${(14.5 * v / 100).toFixed(1)}px`;
+    };
+    fontRange.addEventListener('input', syncFont);
+    syncFont();
+  }
+
+  if (barRange && barVal && simThumb) {
+    const syncBar = () => {
+      const v = Number(barRange.value);
+      barVal.textContent = `${v}%`;
+      simThumb.style.width = `${Math.round(4 + (v - 100) * 0.04)}px`;
+    };
+    barRange.addEventListener('input', syncBar);
+    syncBar();
+  }
+
+  document.querySelectorAll('[data-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const preset = btn.dataset.preset;
+      document.querySelectorAll('[data-preset]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      if (simVpad) simVpad.dataset.preset = preset;
+    });
+  });
+
+  document.querySelectorAll('[data-sim-act]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.simAct;
+      if (act === 'prev') advanceLine(-1);
+      else if (act === 'next' || act === 'skip') advanceLine(1);
+      else if (act === 'shot' && simStatus) simStatus.textContent = 'PNG SCREENSHOT SAVED';
+      else if (act === 'menu' && simStatus) simStatus.textContent = 'RIGHT-CLICK MENU';
+      else if (simStatus) simStatus.textContent = `D-PAD ${act.toUpperCase()}`;
+    });
+  });
+
+  if (simCtrl) {
+    simCtrl.addEventListener('click', () => {
+      const on = simCtrl.classList.toggle('is-on');
+      if (ctrlTimer) {
+        clearInterval(ctrlTimer);
+        ctrlTimer = null;
+      }
+      if (on) {
+        if (simStatus) simStatus.textContent = '» CTRL LATCHED · 60fps';
+        ctrlTimer = setInterval(() => advanceLine(1), 950);
+      } else if (simStatus) {
+        simStatus.textContent = 'xsystem4 · 60fps';
+      }
+    });
+  }
+
+  /* --- DEMO 02: Bidirectional PC <-> Mobile Save Converter --- */
+  const SAVE_SAMPLES = {
+    rance10: {
+      schema: 'Rance10.ain',
+      mKind: 'MOBILE X4SS',
+      pKind: 'WINDOWS GD\\x01\\x01',
+      mFile: 'saves/rance10/0001.save',
+      pFile: 'PC_SaveData/0001.save',
+      mHex: '58 34 53 53 00 1A F2 09 78 9C E3 04',
+      pHex: '47 44 01 01 00 1A F2 09 78 9C E3 04',
+      logOut: ['[BACKUP] saves/rance10 → save_backups/auto_20261128.zip', '[SCHEMA] Verified 148 struct tables via Rance10.ain · CRC OK'],
+      logIn: ['[BACKUP] Pre-overwrite snapshot saved · one-tap restore ready', '[IMPORT] Converted Windows GD\\x01\\x01 → native X4SS · 0 errors'],
+    },
+    evenicle2: {
+      schema: 'Evenicle2.ain',
+      mKind: 'MOBILE GSAVE',
+      pKind: 'PC GSAVE v8 + .CMT',
+      mFile: 'saves/evenicle2/0004.gsave',
+      pFile: 'PC_SaveData/0004.gsave',
+      mHex: '47 53 56 08 40 00 A2 11 19 88 C0 02',
+      pHex: '47 53 56 08 FF 01 A2 11 19 88 C0 02',
+      logOut: ['[BACKUP] saves/evenicle2 → save_backups/auto_20261128.zip', '[EXPORT] Repaired .gsave + thumbnail .cmt metadata for Windows'],
+      logIn: ['[BACKUP] Isolated existing mobile saves before import', '[IMPORT] Mounted PC .gsave + .cmt into Evenicle 2 slot #04'],
+    },
+    escalayer_reboot: {
+      schema: 'EscalayerR.ain',
+      mKind: 'MOBILE <memory>',
+      pKind: 'PC RSM RAW',
+      mFile: 'saves/escalayer_r/SaveData.rsm',
+      pFile: 'PC_SaveData/SaveData.rsm',
+      mHex: '52 53 4D 06 7C E9 10 4A 00 3F B4 12',
+      pHex: '52 53 4D 00 00 14 00 00 00 3F B4 12',
+      logOut: ['[MEMORY] Snapshotted virtual <memory> slot cleanly', '[EXPORT] Decoded RSM v6 header for Windows PC compatibility'],
+      logIn: ['[BACKUP] Archived previous <memory> state automatically', '[IMPORT] Restored Windows SaveData.rsm into isolated directory'],
+    },
+  };
+
+  let curSaveKey = 'rance10';
+  let saveToPc = true;
+
+  function renderSaveDemo() {
+    const d = SAVE_SAMPLES[curSaveKey];
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('save-src-kind', saveToPc ? d.mKind : d.pKind);
+    set('save-src-file', saveToPc ? d.mFile : d.pFile);
+    set('save-src-hex', saveToPc ? d.mHex : d.pHex);
+    set('save-dst-kind', saveToPc ? d.pKind : d.mKind);
+    set('save-dst-file', saveToPc ? d.pFile : d.mFile);
+    set('save-dst-hex', saveToPc ? d.pHex : d.mHex);
+    set('save-schema', d.schema);
+    const log = document.getElementById('save-log');
+    if (log) {
+      const lines = saveToPc ? d.logOut : d.logIn;
+      log.innerHTML = lines.map((l) => `<span>${l}</span>`).join('');
+    }
+  }
+
+  document.querySelectorAll('[data-save-game]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      curSaveKey = btn.dataset.saveGame;
+      document.querySelectorAll('[data-save-game]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      renderSaveDemo();
+    });
+  });
+
+  const flipSaveBtn = document.getElementById('run-save-convert');
+  if (flipSaveBtn) {
+    flipSaveBtn.addEventListener('click', () => {
+      saveToPc = !saveToPc;
+      renderSaveDemo();
+    });
+  }
+  renderSaveDemo();
+
+  /* --- DEMO 03: Multi-Format Archive / ISO Auto-Router --- */
+  const ROUTES = {
+    oyakorankan: {
+      zh: ['libarchive 7z 固实流式直读', '免双倍暂存空间，自动修复压缩包内 Shift-JIS / GBK 路径乱码。', 'xsystem4 · System 4.x', '检测到 AliceStart.CHS 与 CHS.TBL，自动绑定中文启动入口。', 'CHS.TBL 重映射 + CP932 弹窗识别', '自动区分汉化文本与未汉化系统提示框，支持虚拟手柄与 PC 存档。'],
+      en: ['Streaming 7z Solid Extraction', 'Zero 2× staging space; repairs garbled Shift-JIS / GBK paths automatically.', 'xsystem4 · System 4.x', 'Detected AliceStart.CHS + CHS.TBL and bound the localized boot entry.', 'CHS.TBL Remap + CP932 Popups', 'Separates remapped CJK dialogue from raw CP932 system dialogs cleanly.'],
+      ja: ['7z ソリッド・ストリーミング展開', '2倍の一時領域不要。Shift-JIS / GBK の文字化けパスを自動修復。', 'xsystem4 · System 4.x', 'AliceStart.CHS と CHS.TBL を検出し専用エントリへ自動接続。', 'CHS.TBL 置換＆CP932 判定', '翻訳テキストと未翻訳システムダイアログを正確に判別表示します。'],
+    },
+    kichikuou: {
+      zh: ['ISO9660 / Joliet 双碟自动合并', '直读 2048/2352/2448 扇区镜像，自动合并 Disk1/Disk2 音频与脚本。', 'xsystem35 · System 3.5–3.9', '检测到 System39.ain 与 *SA.ALD，路由至 xsystem35 原生内核。', '原生 MIDI 合成 + 虚拟 CD 音轨', '内置 MIDI 合成器与 playlist.txt CDDA 音轨，切后台自动挂起音频。'],
+      en: ['ISO9660 / Joliet Multi-Disc Merge', 'Reads 2048/2352/2448 sector disc images and merges multi-disc assets.', 'xsystem35 · System 3.5–3.9', 'Detected System39.ain + *SA.ALD; routed to native xsystem35 kernel.', 'Native MIDI Synth + Virtual CDDA', 'Built-in MIDI synthesizer and playlist.txt CD tracks with background pause.'],
+      ja: ['ISO9660 / Joliet 複数ディスク統合', '2048/2352/2448 セクタの ISO/MDF を直読し Disk1/2 を自動統合。', 'xsystem35 · System 3.5–3.9', 'System39.ain と *SA.ALD を検出し xsystem35 ネイティブ起動。', 'ネイティブ MIDI＆仮想 CD 音源', '内蔵 MIDI シンセと playlist.txt 音源に対応、バックグラウンド自動停止。'],
+    },
+    rance10: {
+      zh: ['RAR5 流式直读 + 增量补丁覆盖', '直接流式解压大字典 RAR 归档，自动按目录隔离多版本实例。', 'xsystem4 · AIN v12–v14.1', '检测到 Rance10.ain + PartsEngine，启用多实例存档与高优调度。', '离线存档编辑 + 60fps 稳帧', '支持多实例独立存档/MOD、实时字号缩放、修改器与 PC 互通导出。'],
+      en: ['Streaming RAR5 + Patch Overlay', 'Extracts large-dictionary RAR archives cleanly with multi-instance folders.', 'xsystem4 · AIN v12–v14.1', 'Detected Rance10.ain + PartsEngine; enabled multi-instance save scoping.', 'Save Editor + 60fps Scheduling', 'Independent saves & MODs per folder, live font scale, modifiers & PC export.'],
+      ja: ['RAR5 直展開＆差分パッチ統合', '大容量 RAR を省容量展開し、複数バージョンのフォルダを分離管理。', 'xsystem4 · AIN v12–v14.1', 'Rance10.ain と PartsEngine を検出、独立インスタンス環境を構成。', 'セーブ編集＆60fps 制御', 'フォルダ別セーブ/MOD 管理、文字拡大、PC 互換出力を標準搭載。'],
+    },
+    rance1: {
+      zh: ['ZIP 轻量直读与编码校验', '秒级提取早期 DAT 数据包，保留原始目录结构并建立独立存档槽。', 'system3-sdl2 · System 1–3', '检测到 ADISK.DAT + ACG.DAT（1989 架构），路由至 system3-sdl2。', '原生触控 + 轻量快进', '完整兼容早期调色板绘制、直觉触控点击与独立作品存档管理。'],
+      en: ['Instant ZIP Extract & Check', 'Extracts classic 1989 DAT packages cleanly with scoped save storage.', 'system3-sdl2 · System 1–3', 'Detected ADISK.DAT + ACG.DAT; routed automatically to system3-sdl2.', 'Direct Touch + Fast Skip', 'Faithful indexed palette rendering with native touch input and fast skip.'],
+      ja: ['ZIP 軽量展開＆構成チェック', '初期 DAT パッケージを即座に展開し作品別のセーブ領域を用意。', 'system3-sdl2 · System 1–3', 'ADISK.DAT + ACG.DAT を検出し system3-sdl2 へ自動ルーティング。', 'ネイティブタッチ＆スキップ', '初期パレット描画を忠実に再現し、タッチ操作と高速スキップに対応。'],
+    },
+  };
+
+  let curRouteKey = 'oyakorankan';
+  function renderRouteDemo() {
+    const arr = (ROUTES[curRouteKey][currentLang] || ROUTES[curRouteKey].zh);
+    const ids = ['rt-extract-title', 'rt-extract-desc', 'rt-engine-title', 'rt-engine-desc', 'rt-caps-title', 'rt-caps-desc'];
+    ids.forEach((id, i) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = arr[i];
+    });
+  }
+
+  document.querySelectorAll('[data-route]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      curRouteKey = btn.dataset.route;
+      document.querySelectorAll('[data-route]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      renderRouteDemo();
+    });
+  });
+  renderRouteDemo();
+
+  /* --- DEMO 04: Atomic-Backup MODs & Launch Entry --- */
+  const entryReadout = document.getElementById('mod-entry-readout');
+  const backupState = document.getElementById('mod-backup-state');
+  const checks = Array.from(document.querySelectorAll('.mod-check'));
+
+  function syncModState() {
+    const activeCount = checks.filter((c) => c.checked).length;
+    if (!backupState) return;
+    const files = activeCount === 0 ? 0 : activeCount + 1;
+    backupState.textContent = currentLang === 'en'
+      ? (activeCount ? `Atomic backup protects ${files} vanilla files · one-tap restore ready` : 'Vanilla state active · 0 files modified')
+      : currentLang === 'ja'
+        ? (activeCount ? `元ファイル ${files} 件を自動退避済み・ワンタップ復元可能` : '初期状態（変更ファイル 0 件）')
+        : (activeCount ? `原子备份已保护 ${files} 个原版文件 · 卸载后自动无损还原` : '当前为纯净原版状态 · 未修改任何原版文件');
+  }
+
+  document.querySelectorAll('[data-entry]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-entry]').forEach((b) => b.classList.toggle('is-active', b === btn));
+      if (entryReadout) entryReadout.textContent = `ENTRY: ${btn.dataset.entry}`;
+    });
+  });
+
+  checks.forEach((c) => c.addEventListener('change', syncModState));
+
+  const resetBtn = document.getElementById('mod-reset-btn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      checks.forEach((c) => { c.checked = false; });
+      syncModState();
+    });
+  }
+
+  return {
+    refreshLang: () => {
+      renderSimLine();
+      renderRouteDemo();
+      syncModState();
+    },
+  };
+}
+
+/* ==========================================================================
+   3. FLOATING ALICE EMBLEM EYES + BLINK + CLICK PULSE
    ========================================================================== */
 function initAliceEmblem(triggerWave) {
   const btn = document.getElementById('alice-emblem');
@@ -705,7 +1044,7 @@ function initAliceEmblem(triggerWave) {
 }
 
 /* ==========================================================================
-   HUD, REVEALS, I18N & LIVE GITHUB RELEASE SYNC
+   4. HUD, REVEALS, I18N & LIVE GITHUB RELEASE SYNC
    ========================================================================== */
 function updateHudFocus(game) {
   focusedGame = game;
@@ -730,26 +1069,6 @@ function initReveals() {
     });
   }, { threshold: 0.05, rootMargin: '0px 0px 40px 0px' });
   els.forEach((el) => io.observe(el));
-}
-
-function applyLanguage(lang) {
-  if (!I18N[lang]) return;
-  currentLang = lang;
-  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang === 'ja' ? 'ja' : 'en';
-
-  document.querySelectorAll('.lang-btn').forEach((b) => {
-    b.classList.toggle('is-active', b.dataset.lang === lang);
-  });
-
-  const dict = I18N[lang];
-  document.querySelectorAll('[data-i18n]').forEach((el) => {
-    const k = el.dataset.i18n;
-    if (!(k in dict)) return;
-    if (k === 'ed.statement') el.innerHTML = dict[k];
-    else el.textContent = dict[k];
-  });
-
-  updateHudFocus(focusedGame);
 }
 
 function applyReleaseUI() {
@@ -800,11 +1119,34 @@ function showToast(msg) {
    BOOT
    ========================================================================== */
 const wall = initThreeWall();
+const demos = initInteractiveDemos();
 initAliceEmblem(wall.triggerWave);
 initReveals();
-applyLanguage('zh');
 applyReleaseUI();
 fetchLatestRelease();
+
+function applyLanguage(lang) {
+  if (!I18N[lang]) return;
+  currentLang = lang;
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang === 'ja' ? 'ja' : 'en';
+
+  document.querySelectorAll('.lang-btn').forEach((b) => {
+    b.classList.toggle('is-active', b.dataset.lang === lang);
+  });
+
+  const dict = I18N[lang];
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const k = el.dataset.i18n;
+    if (!(k in dict)) return;
+    if (k === 'ed.statement') el.innerHTML = dict[k];
+    else el.textContent = dict[k];
+  });
+
+  updateHudFocus(focusedGame);
+  demos.refreshLang();
+}
+
+applyLanguage('zh');
 
 document.querySelectorAll('.lang-btn').forEach((b) => {
   b.addEventListener('click', () => applyLanguage(b.dataset.lang));
