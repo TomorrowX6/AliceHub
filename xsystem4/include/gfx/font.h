@@ -17,6 +17,7 @@
 #ifndef SYSTEM4_FONT_H
 #define SYSTEM4_FONT_H
 
+#include <math.h>
 #include "system4.h"
 #include "gfx/gfx.h"
 
@@ -118,6 +119,20 @@ static inline float text_style_edge_width(struct text_style *ts)
 	return max(max(ts->edge_up, ts->edge_down), max(ts->edge_left, ts->edge_right));
 }
 
+// Both bold and outline dilate the base glyph bitmap independently, so each
+// side extends by max(ceil(edge), ceil(bold)) rather than their sum.
+static inline float text_style_side_pad(float edge, float bold_width)
+{
+	float e = edge > 0.0f ? ceilf(edge) : 0.0f;
+	float b = bold_width > 0.0f ? ceilf(bold_width) : 0.0f;
+	return max(e, b);
+}
+
+static inline float text_style_edge_pad(struct text_style *ts)
+{
+	return text_style_side_pad(text_style_edge_width(ts), ts->bold_width);
+}
+
 static inline bool text_style_has_edge(struct text_style *ts)
 {
 	return text_style_edge_width(ts) > 0.01f;
@@ -185,7 +200,9 @@ float gfx_get_actual_font_size_round_down(unsigned face, float size);
 
 static inline float text_style_height(struct text_style *ts)
 {
-	return ts->size + ceilf(ts->bold_width)*2 + ts->edge_up + ts->edge_down;
+	return ts->size
+		+ text_style_side_pad(ts->edge_up, ts->bold_width)
+		+ text_style_side_pad(ts->edge_down, ts->bold_width);
 }
 
 #endif /* SYSTEM4_FONT_H */

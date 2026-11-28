@@ -368,8 +368,9 @@ static const char *parts_text_append_display_char(struct parts_text *t, const ch
 	float edge_w = text_style_edge_width(&eff_ts);
 	bool has_edge = edge_w > 0.01f;
 	float sx = max(1.0f, eff_ts.scale_x);
-	int pad_x = (int)ceilf((edge_w + ceilf(eff_ts.bold_width)) * sx) + 2;
-	int pad_y = (int)ceilf(max(eff_ts.edge_up, eff_ts.edge_down) + ceilf(eff_ts.bold_width)) + 2;
+	int pad_x = (int)ceilf(text_style_edge_pad(&eff_ts) * sx) + 2;
+	int pad_y = (int)ceilf(max(text_style_side_pad(eff_ts.edge_up, eff_ts.bold_width),
+			text_style_side_pad(eff_ts.edge_down, eff_ts.bold_width))) + 2;
 	int base_w = max(1, (int)ceilf(gfx_size_char(&eff_ts, glyph_bytes)));
 	int height = max(1, (int)ceilf(text_style_height(&eff_ts)));
 	int tex_w = base_w + pad_x * 2;
