@@ -1569,75 +1569,119 @@ static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 	}
 }
 
+#define CJK_DIALOG_PHRASE_NOUN    1u
+#define CJK_DIALOG_PHRASE_GRAMMAR 2u
+
 /* Recognized CP932 System 4 dialog keywords and sentence endings.
  * Matched strictly on 2-byte pair boundaries inside valid Shift-JIS runs so
  * arbitrary dual-valid GBK text (e.g. 傑傑傑傑, 偽鈔偵測機) is never overridden. */
-static bool cjk_dialog_run_has_sjis_phrase_ex(const uint8_t *run, const uint8_t *end,
+static unsigned cjk_dialog_run_sjis_phrase_flags(const uint8_t *run, const uint8_t *end,
 		bool require_unremapped_kana)
 {
 	static const struct {
 		const uint8_t bytes[10];
 		uint8_t len;
+		uint8_t flag;
 	} phrases[] = {
-		{ { 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75 }, 6 },                         // セーブ
-		{ { 0x83, 0x8d, 0x81, 0x5b, 0x83, 0x68 }, 6 },                         // ロード
-		{ { 0x83, 0x66, 0x81, 0x5b, 0x83, 0x5e }, 6 },                         // データ
-		{ { 0x83, 0x47, 0x83, 0x89, 0x81, 0x5b }, 6 },                         // エラー
-		{ { 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b }, 8 },             // ファイル
-		{ { 0x83, 0x56, 0x83, 0x58, 0x83, 0x65, 0x83, 0x80 }, 8 },             // システム
-		{ { 0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b }, 8 },             // タイトル
-		{ { 0x83, 0x81, 0x83, 0x62, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x57 }, 10 },// メッセージ
-		{ { 0x83, 0x81, 0x83, 0x82, 0x83, 0x8a }, 6 },                         // メモリ
-		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8 },             // しました
-		{ { 0x82, 0xea, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8 },             // れました
-		{ { 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ますか？
-		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9 }, 8 },             // しますか
-		{ { 0x82, 0xe8, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9 }, 8 },             // りますか
-		{ { 0x82, 0xc5, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ですか？
-		{ { 0x82, 0xb7, 0x82, 0xe9, 0x81, 0x48 }, 6 },                         // する？
-		{ { 0x82, 0xdc, 0x82, 0xb9, 0x82, 0xf1 }, 6 },                         // ません
-		{ { 0x82, 0xc4, 0x82, 0xa2, 0x82, 0xdc, 0x82, 0xb7 }, 8 },             // ています
-		{ { 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73 }, 6 },                         // に失敗
-		{ { 0x95, 0x73, 0x90, 0xb3, 0x82, 0xc5, 0x82, 0xb7 }, 8 },             // 不正です
-		{ { 0x82, 0xad, 0x82, 0xbe, 0x82, 0xb3, 0x82, 0xa2 }, 8 },             // ください
-		{ { 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42 }, 8 },             // ました。
+		{ { 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75 }, 6, CJK_DIALOG_PHRASE_NOUN },                         // セーブ
+		{ { 0x83, 0x8d, 0x81, 0x5b, 0x83, 0x68 }, 6, CJK_DIALOG_PHRASE_NOUN },                         // ロード
+		{ { 0x83, 0x66, 0x81, 0x5b, 0x83, 0x5e }, 6, CJK_DIALOG_PHRASE_NOUN },                         // データ
+		{ { 0x83, 0x47, 0x83, 0x89, 0x81, 0x5b }, 6, CJK_DIALOG_PHRASE_NOUN },                         // エラー
+		{ { 0x83, 0x74, 0x83, 0x40, 0x83, 0x43, 0x83, 0x8b }, 8, CJK_DIALOG_PHRASE_NOUN },             // ファイル
+		{ { 0x83, 0x56, 0x83, 0x58, 0x83, 0x65, 0x83, 0x80 }, 8, CJK_DIALOG_PHRASE_NOUN },             // システム
+		{ { 0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b }, 8, CJK_DIALOG_PHRASE_NOUN },             // タイトル
+		{ { 0x83, 0x81, 0x83, 0x62, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x57 }, 10, CJK_DIALOG_PHRASE_NOUN },// メッセージ
+		{ { 0x83, 0x81, 0x83, 0x82, 0x83, 0x8a }, 6, CJK_DIALOG_PHRASE_NOUN },                         // メモリ
+		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // しました
+		{ { 0x82, 0xea, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // れました
+		{ { 0x82, 0xea, 0x82, 0xdc, 0x82, 0xb7 }, 6, CJK_DIALOG_PHRASE_GRAMMAR },                      // れます
+		{ { 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // ますか？
+		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9 }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // しますか
+		{ { 0x82, 0xe8, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9 }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // りますか
+		{ { 0x82, 0xc5, 0x82, 0xb7, 0x82, 0xa9 }, 6, CJK_DIALOG_PHRASE_GRAMMAR },                      // ですか
+		{ { 0x82, 0xb7, 0x82, 0xe9, 0x81, 0x48 }, 6, CJK_DIALOG_PHRASE_GRAMMAR },                      // する？
+		{ { 0x82, 0xdc, 0x82, 0xb9, 0x82, 0xf1 }, 6, CJK_DIALOG_PHRASE_GRAMMAR },                      // ません
+		{ { 0x82, 0xc4, 0x82, 0xa2, 0x82, 0xdc, 0x82, 0xb7 }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // ています
+		{ { 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73 }, 6, CJK_DIALOG_PHRASE_GRAMMAR },                      // に失敗
+		{ { 0x95, 0x73, 0x90, 0xb3, 0x82, 0xc5, 0x82, 0xb7 }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // 不正です
+		{ { 0x82, 0xad, 0x82, 0xbe, 0x82, 0xb3, 0x82, 0xa2 }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // ください
+		{ { 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42 }, 8, CJK_DIALOG_PHRASE_GRAMMAR },          // ました。
+		{ { 0x82, 0xdc, 0x82, 0xb7, 0x81, 0x42 }, 6, CJK_DIALOG_PHRASE_GRAMMAR },                      // ます。
+		{ { 0x82, 0xc5, 0x82, 0xb7, 0x81, 0x42 }, 6, CJK_DIALOG_PHRASE_GRAMMAR },                      // です。
 	};
+	unsigned flags = 0;
 	size_t run_len = (size_t)(end - run);
 	for (size_t i = 0; i < sizeof(phrases) / sizeof(phrases[0]); i++) {
+		if (flags & phrases[i].flag)
+			continue;
 		size_t plen = phrases[i].len;
 		if (plen > run_len)
 			continue;
 		for (size_t off = 0; off <= run_len - plen; off += 2) {
 			if (memcmp(run + off, phrases[i].bytes, plen))
 				continue;
-			if (!require_unremapped_kana)
-				return true;
+			if (!require_unremapped_kana) {
+				flags |= phrases[i].flag;
+				break;
+			}
 			bool ok = true;
 			for (size_t k = 0; k < plen; k += 2) {
 				uint8_t b1 = run[off + k];
 				uint8_t b2 = run[off + k + 1];
-				bool is_kana = (b1 == 0x82 && b2 >= 0x9f && b2 <= 0xf1)
-					|| (b1 == 0x83 && b2 >= 0x40 && b2 <= 0x96);
-				if (is_kana && mai_s2u[b1 - 0x80][b2 - 0x40] != (uint16_t)s2u[b1 - 0x80][b2 - 0x40]) {
+				bool check_unremapped = (b1 == 0x82 && b2 >= 0x9f && b2 <= 0xf1)
+					|| (b1 == 0x83 && b2 >= 0x40 && b2 <= 0x96)
+					|| (b1 == 0x81 && (b2 == 0x42 || b2 == 0x48 || b2 == 0x5b));
+				if (check_unremapped
+						&& mai_s2u[b1 - 0x80][b2 - 0x40] != (uint16_t)s2u[b1 - 0x80][b2 - 0x40]) {
 					ok = false;
 					break;
 				}
 			}
-			if (ok)
-				return true;
+			if (ok) {
+				flags |= phrases[i].flag;
+				break;
+			}
 		}
+		if (flags == (CJK_DIALOG_PHRASE_NOUN | CJK_DIALOG_PHRASE_GRAMMAR))
+			break;
 	}
-	return false;
+	return flags;
 }
 
 static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *end)
 {
-	return cjk_dialog_run_has_sjis_phrase_ex(run, end, false);
+	return cjk_dialog_run_sjis_phrase_flags(run, end, false) != 0;
 }
 
-static bool cjk_dialog_mai_line_is_cp932(const uint8_t *line, const uint8_t *end)
+static bool cjk_dialog_is_sjis_jp_particle(uint8_t b1, uint8_t b2)
 {
-	const uint8_t *s = line;
+	if (b1 != 0x82)
+		return false;
+	switch (b2) {
+	case 0xaa: // が
+	case 0xc5: // で
+	case 0xc6: // と
+	case 0xc9: // に
+	case 0xcc: // の
+	case 0xcd: // は
+	case 0xd6: // へ
+	case 0xf0: // を
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool cjk_dialog_mai_is_cp932(const uint8_t *src, size_t len)
+{
+	const uint8_t *s = src;
+	const uint8_t *end = src + len;
+	unsigned phrase_flags = 0;
+	size_t unremapped_hira = 0;
+	size_t unremapped_kata = 0;
+	size_t han_count = 0;
+	bool has_jp_particle = false;
+
 	while (s < end) {
 		if (!SJIS_2BYTE(*s) || s + 1 >= end || sjis_display_pair(s) <= 0) {
 			s++;
@@ -1646,9 +1690,30 @@ static bool cjk_dialog_mai_line_is_cp932(const uint8_t *line, const uint8_t *end
 		const uint8_t *run = s;
 		while (s + 1 < end && SJIS_2BYTE(*s) && sjis_display_pair(s) > 0)
 			s += 2;
-		if (cjk_dialog_run_has_sjis_phrase_ex(run, s, true))
-			return true;
+		phrase_flags |= cjk_dialog_run_sjis_phrase_flags(run, s, true);
+		for (const uint8_t *p = run; p < s; p += 2) {
+			uint8_t b1 = p[0];
+			uint8_t b2 = p[1];
+			bool remapped = mai_s2u[b1 - 0x80][b2 - 0x40] != (uint16_t)s2u[b1 - 0x80][b2 - 0x40];
+			if (!remapped && b1 == 0x82 && b2 >= 0x9f && b2 <= 0xf1) {
+				unremapped_hira++;
+				if (cjk_dialog_is_sjis_jp_particle(b1, b2))
+					has_jp_particle = true;
+			} else if (!remapped && b1 == 0x83 && b2 >= 0x40 && b2 <= 0x96) {
+				unremapped_kata++;
+			} else if (remapped || b1 >= 0x88) {
+				han_count++;
+			}
+		}
 	}
+
+	size_t total_kana = unremapped_hira + unremapped_kata;
+	if ((phrase_flags & CJK_DIALOG_PHRASE_GRAMMAR) && unremapped_hira > 0
+			&& (total_kana * 2 >= han_count || han_count <= 4))
+		return true;
+	if ((phrase_flags & CJK_DIALOG_PHRASE_NOUN) && unremapped_hira > 0
+			&& has_jp_particle && total_kana >= han_count)
+		return true;
 	return false;
 }
 
@@ -1663,75 +1728,80 @@ static char *cjk_dialog_mai_text_to_utf8(const uint8_t *src, size_t len)
 	// In CHS.TBL / UIF / mai/word.mai patches, translated dialogs use the custom
 	// Shift-JIS remap table, whereas untranslated system dialogs (e.g. "タイトルに
 	// 戻りますか？") remain raw CP932 (occasionally embedding a GBK GameName or path).
+	// Classify the dialog as a whole so multiline continuation lines stay consistent
+	// and a lone katakana loanword inside a translated Chinese dialog never overrides
+	// CHS.TBL decoding.
+	if (!cjk_dialog_mai_is_cp932(src, len))
+		return cjk2utf_impl((const char *)src, len, sys4_text_is_gbk, true);
+
 	uint8_t *dst = xmalloc(len * 3 + 1);
 	uint8_t *dstp = dst;
-	const uint8_t *p = src;
+	const uint8_t *s = src;
 	const uint8_t *end = src + len;
 
-	while (p < end) {
-		const uint8_t *line_end = p;
-		while (line_end < end && *line_end != '\n' && *line_end != '\r')
-			line_end++;
-		if (cjk_dialog_mai_line_is_cp932(p, line_end)) {
-			const uint8_t *s = p;
-			while (s < line_end) {
-				if (*s <= 0x7f) {
-					*dstp++ = *s++;
-					continue;
-				}
-				// Detect embedded GBK runs (e.g. GBK GameName inside 『%s』)
-				// that start with a non-CP932-2byte or unmapped CP932 pair.
-				bool non_cp932_start = (*s >= 0xa1 && *s <= 0xdf)
-					|| (SJIS_2BYTE(*s) && s + 1 < line_end && sjis_display_pair(s) <= 0);
-				if (non_cp932_start && gbk_display_pair_bounded(s, line_end)
-						&& gbk_lookup(s[0], s[1]) > 0
-						&& !(*s >= 0xa1 && *s <= 0xdf && s[1] < 0xa1)) {
-					const uint8_t *q = s;
-					bool all_hw = true;
-					bool has_gbk_evidence = false;
-					while (gbk_display_pair_bounded(q, line_end)
-							&& gbk_lookup(q[0], q[1]) > 0
-							&& !cjk_dialog_is_sjis_punct_pair(q)
-							&& !cjk_dialog_is_sjis_kana_pair(q)) {
-						if (q[0] < 0xa1 || q[0] > 0xdf || q[1] < 0xa1 || q[1] > 0xdf)
-							all_hw = false;
-						if ((q[0] >= 0xa1 && q[0] <= 0xf7 && q[1] >= 0xa1)
-								|| sjis_display_pair(q) <= 0)
-							has_gbk_evidence = true;
-						q += 2;
-					}
-					bool clean_end = (q == line_end) || (*q <= 0x7f)
-						|| (SJIS_2BYTE(*q) && q + 1 < line_end && sjis_display_pair(q) > 0);
-					if (q > s && has_gbk_evidence && clean_end
-							&& !(all_hw && cjk_dialog_is_sjis_hw_kana_run(s, q))) {
-						for (const uint8_t *g = s; g < q; g += 2)
-							encode_utf8_bmp(gbk_lookup(g[0], g[1]), &dstp);
-						s = q;
-						continue;
-					}
-				}
-				if (*s >= 0xa1 && *s <= 0xdf) {
-					encode_utf8_bmp(0xff60 + (*s++ - 0xa0), &dstp);
-				} else if (SJIS_2BYTE(*s) && s + 1 < line_end) {
-					int u = sjis_display_pair(s);
-					encode_utf8_bmp(u > 0 ? u : 0xfffd, &dstp);
-					s += 2;
-				} else {
-					encode_utf8_bmp(0xfffd, &dstp);
-					s++;
-				}
-			}
-		} else if (line_end > p) {
-			char *part = cjk2utf_impl((const char *)p, (size_t)(line_end - p),
-					sys4_text_is_gbk, true);
-			size_t plen = strlen(part);
-			memcpy(dstp, part, plen);
-			dstp += plen;
-			free(part);
+	while (s < end) {
+		if (*s <= 0x7f) {
+			*dstp++ = *s++;
+			continue;
 		}
-		p = line_end;
-		while (p < end && (*p == '\n' || *p == '\r'))
-			*dstp++ = *p++;
+		// Consume maximal half-width katakana runs (0xa1..0xdf) before trying
+		// embedded-GBK pairing so odd-length or known half-width words like
+		// ｴﾗｰ / ﾌｧｲﾙ are never partially re-paired into GBK glyphs (e.g. ｴ装).
+		if (*s >= 0xa1 && *s <= 0xdf) {
+			const uint8_t *hw_end = s;
+			while (hw_end < end && *hw_end >= 0xa1 && *hw_end <= 0xdf)
+				hw_end++;
+			bool clean_hw_end = (hw_end == end) || (*hw_end <= 0x7f)
+				|| (hw_end + 1 < end && *hw_end <= 0x9f
+					&& SJIS_2BYTE(*hw_end) && sjis_display_pair(hw_end) > 0);
+			if (clean_hw_end && cjk_dialog_is_sjis_hw_kana_run(s, hw_end)) {
+				for (const uint8_t *p = s; p < hw_end; p++)
+					encode_utf8_bmp(0xff60 + (*p - 0xa0), &dstp);
+				s = hw_end;
+				continue;
+			}
+		}
+		// Detect embedded GBK runs (e.g. GBK GameName inside 『%s』 or GBK path)
+		// that start with a non-CP932-2byte or unmapped CP932 pair.
+		bool non_cp932_start = (*s >= 0xa1 && *s <= 0xdf)
+			|| (SJIS_2BYTE(*s) && s + 1 < end && sjis_display_pair(s) <= 0);
+		if (non_cp932_start && gbk_display_pair_bounded(s, end)
+				&& gbk_lookup(s[0], s[1]) > 0
+				&& !(*s >= 0xa1 && *s <= 0xdf && s[1] < 0xa1)) {
+			const uint8_t *q = s;
+			bool all_hw = true;
+			bool has_gbk_evidence = false;
+			while (gbk_display_pair_bounded(q, end)
+					&& gbk_lookup(q[0], q[1]) > 0
+					&& !cjk_dialog_is_sjis_punct_pair(q)
+					&& !cjk_dialog_is_sjis_kana_pair(q)) {
+				if (q[0] < 0xa1 || q[0] > 0xdf || q[1] < 0xa1 || q[1] > 0xdf)
+					all_hw = false;
+				if ((q[0] >= 0xa1 && q[0] <= 0xf7 && q[1] >= 0xa1)
+						|| sjis_display_pair(q) <= 0)
+					has_gbk_evidence = true;
+				q += 2;
+			}
+			bool clean_end = (q == end) || (*q <= 0x7f)
+				|| (SJIS_2BYTE(*q) && q + 1 < end && sjis_display_pair(q) > 0);
+			if (q > s && has_gbk_evidence && clean_end
+					&& !(all_hw && cjk_dialog_is_sjis_hw_kana_run(s, q))) {
+				for (const uint8_t *g = s; g < q; g += 2)
+					encode_utf8_bmp(gbk_lookup(g[0], g[1]), &dstp);
+				s = q;
+				continue;
+			}
+		}
+		if (*s >= 0xa1 && *s <= 0xdf) {
+			encode_utf8_bmp(0xff60 + (*s++ - 0xa0), &dstp);
+		} else if (SJIS_2BYTE(*s) && s + 1 < end) {
+			int u = sjis_display_pair(s);
+			encode_utf8_bmp(u > 0 ? u : 0xfffd, &dstp);
+			s += 2;
+		} else {
+			encode_utf8_bmp(0xfffd, &dstp);
+			s++;
+		}
 	}
 	*dstp = '\0';
 	return (char *)dst;

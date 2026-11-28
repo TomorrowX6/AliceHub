@@ -893,6 +893,94 @@ int main(void)
     check_decode("oyako_chs_cn_with_hira_nick", oyako_cn_with_hira_nick, sizeof(oyako_cn_with_hira_nick) - 1,
         "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe3\x81\x8a\xe3\x81\xa4\xe3\x82\x86");
 
+    // 8f. Translated CHS.TBL dialog containing a literal katakana keyword ("セーブ") must NOT bypass CHS.TBL.
+    const uint8_t oyako_cn_with_katakana_kw[] = {
+        // 移动目标超出范围 セーブ
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x97, 0xc1, 0x8f, 0x6f, 0x96, 0x5c, 0x8c, 0x4c,
+        ' ', 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x00
+    };
+    check_decode("oyako_chs_cn_with_katakana_kw", oyako_cn_with_katakana_kw,
+        sizeof(oyako_cn_with_katakana_kw) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe8\xb6\x85\xe5\x87\xba\xe8\x8c\x83\xe5\x9b\xb4 "
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96");
+
+    // 8g. Translated CHS.TBL dialog with both hiragana nickname ("おつゆ") and katakana keyword ("セーブ").
+    const uint8_t oyako_cn_with_nick_and_kw[] = {
+        // 移动目标超出范围おつゆセーブ
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x97, 0xc1, 0x8f, 0x6f, 0x96, 0x5c, 0x8c, 0x4c,
+        0x82, 0xa8, 0x82, 0xc2, 0x82, 0xe4, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x00
+    };
+    check_decode("oyako_chs_cn_with_nick_and_kw", oyako_cn_with_nick_and_kw,
+        sizeof(oyako_cn_with_nick_and_kw) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe8\xb6\x85\xe5\x87\xba\xe8\x8c\x83\xe5\x9b\xb4"
+        "\xe3\x81\x8a\xe3\x81\xa4\xe3\x82\x86\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96");
+
+    // 8h. Multiline untranslated CP932 dialog: continuation lines lacking recognized phrases
+    //     must still decode as CP932 so remapped kanji (保存終了/戻失) do not become mojibake.
+    const uint8_t oyako_multiline_cont[] = {
+        // セーブに失敗しました\n保存終了\n戻失
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x0a,
+        0x95, 0xdb, 0x91, 0xb6, 0x8f, 0x49, 0x97, 0xb9, 0x0a,
+        0x96, 0xdf, 0x8e, 0xb8, 0x00
+    };
+    check_decode("oyako_chs_multiline_cont", oyako_multiline_cont, sizeof(oyako_multiline_cont) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\n"
+        "\xe4\xbf\x9d\xe5\xad\x98\xe7\xb5\x82\xe4\xba\x86\n"
+        "\xe6\x88\xbb\xe5\xa4\xb1");
+
+    // 8i. Multiline untranslated CP932 error with GBK Chinese path on continuation line.
+    const uint8_t oyako_multiline_gbk_path[] = {
+        // エラーが発生しました。\nC:\Users\中文\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 'U', 's', 'e', 'r', 's', '\\', 0xd6, 0xd0, 0xce, 0xc4, '\\',
+        's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_multiline_gbk_path", oyako_multiline_gbk_path,
+        sizeof(oyako_multiline_gbk_path) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\Users\\\xe4\xb8\xad\xe6\x96\x87\\save.asd");
+
+    // 8j. Untranslated CP932 dialog using katakana noun + Japanese particle without verb ending.
+    const uint8_t oyako_noun_particle[] = {
+        // タイトルに戻る
+        0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b, 0x82, 0xc9, 0x96, 0xdf, 0x82, 0xe9, 0x00
+    };
+    check_decode("oyako_chs_noun_particle", oyako_noun_particle, sizeof(oyako_noun_particle) - 1,
+        "\xe3\x82\xbf\xe3\x82\xa4\xe3\x83\x88\xe3\x83\xab\xe3\x81\xab\xe6\x88\xbb\xe3\x82\x8b");
+
+    // 8k. Half-width katakana runs (e.g. ｴﾗｰ / ﾌｧｲﾙ) inside untranslated CP932 dialogs under CHS.TBL
+    //     must stay half-width katakana and never partially pair into GBK (e.g. ｴ装).
+    const uint8_t oyako_hw_err_dot[] = {
+        // ｴﾗｰ.asd の保存に失敗しました
+        0xb4, 0xd7, 0xb0, '.', 'a', 's', 'd', ' ',
+        0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9, 0x8e, 0xb8,
+        0x94, 0x73, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("oyako_chs_hw_kana_err_dot", oyako_hw_err_dot, sizeof(oyako_hw_err_dot) - 1,
+        "\xef\xbd\xb4\xef\xbe\x97\xef\xbd\xb0.asd "
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    const uint8_t oyako_hw_err_kana[] = {
+        // セーブ ｴﾗｰが発生しました
+        0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, ' ',
+        0xb4, 0xd7, 0xb0, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("oyako_chs_hw_kana_err_before_kana", oyako_hw_err_kana, sizeof(oyako_hw_err_kana) - 1,
+        "\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96 \xef\xbd\xb4\xef\xbe\x97\xef\xbd\xb0"
+        "\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
+    const uint8_t oyako_hw_file[] = {
+        // ﾌｧｲﾙの保存に失敗しました
+        0xcc, 0xa7, 0xb2, 0xd9, 0x82, 0xcc, 0x95, 0xdb, 0x91, 0xb6, 0x82, 0xc9,
+        0x8e, 0xb8, 0x94, 0x73, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x00
+    };
+    check_decode("oyako_chs_hw_kana_file", oyako_hw_file, sizeof(oyako_hw_file) - 1,
+        "\xef\xbe\x8c\xef\xbd\xa7\xef\xbd\xb2\xef\xbe\x99"
+        "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
+
     sys4_reset_mai_word_table();
     return 0;
 }
