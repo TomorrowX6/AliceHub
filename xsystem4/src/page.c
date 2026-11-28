@@ -434,6 +434,29 @@ struct page *copy_page(struct page *src)
 {
 	if (!src)
 		return NULL;
+	if (src->type == DELEGATE_PAGE) {
+		int width = delegate_stride();
+		int live_vars = 0;
+		for (int i = 0; i < src->nr_vars; i += width) {
+			if (heap_get_seq(src->values[i].i) == (uint32_t)src->values[i + 2].i)
+				live_vars += width;
+		}
+		struct page *dst = alloc_page(DELEGATE_PAGE, src->index, live_vars);
+		int out = 0;
+		for (int i = 0; i < src->nr_vars; i += width) {
+			if (heap_get_seq(src->values[i].i) != (uint32_t)src->values[i + 2].i)
+				continue;
+			dst->values[out + 0] = src->values[i + 0];
+			dst->values[out + 1] = src->values[i + 1];
+			dst->values[out + 2] = src->values[i + 2];
+			if (width == 4) {
+				dst->values[out + 3] = src->values[i + 3];
+				heap_ref(dst->values[out + 3].i);
+			}
+			out += width;
+		}
+		return dst;
+	}
 	struct page *dst = alloc_page(src->type, src->index, src->nr_vars);
 	if (src->type == ARRAY_PAGE) {
 		dst->array = src->array;

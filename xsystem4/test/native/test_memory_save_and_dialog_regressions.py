@@ -818,6 +818,82 @@ int main(void)
     // 7. Standard SJIS mode (non-GBK) passes straight through to CP932 decoding.
     sys4_set_text_gbk(false);
     check_decode("sjis_mode", esca_cp932, sizeof(esca_cp932) - 1, esca_utf8);
+
+    // 8. Longinus CHS.TBL remap mode (sys4_mai_active=true, e.g. Oyakorankan):
+    //    Untranslated CP932 system dialogs (return-to-title, quit with GBK GameName,
+    //    save failure, invalid char ID) must NOT be corrupted by CHS.TBL kanji remapping,
+    //    while translated CHS.TBL dialogs remain decoded through CHS.TBL.
+    uint16_t chs_tbl[65536];
+    memset(chs_tbl, 0, sizeof(chs_tbl));
+    // Exact Oyakorankan CHS.TBL mappings that caused 戻->裁, 失->惘, 終->扔, 了->赧, 正->暴, 保->腹, 存->汪, 敗->秋
+    chs_tbl[0x96df] = 0xb2c3; // 戻 -> 裁
+    chs_tbl[0x8eb8] = 0xe3af; // 失 -> 惘
+    chs_tbl[0x8f49] = 0xc8d3; // 終 -> 扔
+    chs_tbl[0x97b9] = 0xf4f6; // 了 -> 赧
+    chs_tbl[0x90b3] = 0xb1a9; // 正 -> 暴
+    chs_tbl[0x95db] = 0xb8b9; // 保 -> 腹
+    chs_tbl[0x91b6] = 0xcdf4; // 存 -> 汪
+    chs_tbl[0x9473] = 0xc7ef; // 敗 -> 秋
+    // Translated Chinese alert ("移动目标超出范围" encoded as CP932 倍廓目煽涼出暴鍬)
+    chs_tbl[0x947b] = 0xd2c6; // 倍 -> 移
+    chs_tbl[0x8a73] = 0xb6af; // 廓 -> 动
+    chs_tbl[0x96da] = 0xc4bf; // 目 -> 目
+    chs_tbl[0x90f5] = 0xb1ea; // 煽 -> 标
+    chs_tbl[0x97c1] = 0xb3ac; // 涼 -> 超
+    chs_tbl[0x8f6f] = 0xb3f6; // 出 -> 出
+    chs_tbl[0x965c] = 0xb7b6; // 暴 -> 范 (distinct test slot)
+    chs_tbl[0x8c4c] = 0xcea7; // 鍬 -> 围
+    assert(sys4_load_chs_tbl_mem(chs_tbl, sizeof(chs_tbl)));
+
+    // 8a. Exact Oyakorankan return-to-title confirmation popup (full-width ？ and ASCII ?).
+    const uint8_t oyako_title[] = {
+        // タイトルに戻りますか？\n\n※セーブされていないデータは失われます
+        0x83, 0x5e, 0x83, 0x43, 0x83, 0x67, 0x83, 0x8b, 0x82, 0xc9, 0x96, 0xdf,
+        0x82, 0xe8, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x0a, 0x0a,
+        0x81, 0xa6, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x75, 0x82, 0xb3, 0x82, 0xea,
+        0x82, 0xc4, 0x82, 0xa2, 0x82, 0xc8, 0x82, 0xa2, 0x83, 0x66, 0x81, 0x5b,
+        0x83, 0x5e, 0x82, 0xcd, 0x8e, 0xb8, 0x82, 0xed, 0x82, 0xea, 0x82, 0xdc, 0x82, 0xb7, 0x00
+    };
+    check_decode("oyako_chs_return_title", oyako_title, sizeof(oyako_title) - 1,
+        "\xe3\x82\xbf\xe3\x82\xa4\xe3\x83\x88\xe3\x83\xab\xe3\x81\xab\xe6\x88\xbb\xe3\x82\x8a\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f\n\n"
+        "\xe2\x80\xbb\xe3\x82\xbb\xe3\x83\xbc\xe3\x83\x96\xe3\x81\x95\xe3\x82\x8c\xe3\x81\xa6\xe3\x81\x84\xe3\x81\xaa\xe3\x81\x84"
+        "\xe3\x83\x87\xe3\x83\xbc\xe3\x82\xbf\xe3\x81\xaf\xe5\xa4\xb1\xe3\x82\x8f\xe3\x82\x8c\xe3\x81\xbe\xe3\x81\x99");
+
+    // 8b. Exact Oyakorankan quit dialog embedding GBK GameName "母娘乱館" inside CP932 『%s』.
+    const uint8_t oyako_quit[] = {
+        0x81, 0x77, 0xc4, 0xb8, 0xc4, 0xef, 0xc2, 0xd2, 0xf0, 0x5e, 0x81, 0x78,
+        0x82, 0xf0, 0x8f, 0x49, 0x97, 0xb9, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x00
+    };
+    check_decode("oyako_chs_quit_gbk_gamename", oyako_quit, sizeof(oyako_quit) - 1,
+        "\xe3\x80\x8e\xe6\xaf\x8d\xe5\xa8\x98\xe4\xb9\xb1\xe9\xa4\xa8\xe3\x80\x8f"
+        "\xe3\x82\x92\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
+
+    // 8c. Untranslated CP932 error dialogs under CHS.TBL stay clean CP932.
+    check_decode("oyako_chs_save_error", esca_cp932, sizeof(esca_cp932) - 1, esca_utf8);
+    const uint8_t oyako_invalid_id[] = {
+        // キャラＩＤが不正です
+        0x83, 0x4c, 0x83, 0x83, 0x83, 0x89, 0x82, 0x68, 0x82, 0x63,
+        0x82, 0xaa, 0x95, 0x73, 0x90, 0xb3, 0x82, 0xc5, 0x82, 0xb7, 0x00
+    };
+    check_decode("oyako_chs_invalid_id", oyako_invalid_id, sizeof(oyako_invalid_id) - 1,
+        "\xe3\x82\xad\xe3\x83\xa3\xe3\x83\xa9\xef\xbc\xa9\xef\xbc\xa4\xe3\x81\x8c\xe4\xb8\x8d\xe6\xad\xa3\xe3\x81\xa7\xe3\x81\x99");
+
+    // 8d. Translated CHS.TBL Chinese dialog MUST still decode through CHS.TBL.
+    const uint8_t oyako_cn_alert[] = {
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x97, 0xc1, 0x8f, 0x6f, 0x96, 0x5c, 0x8c, 0x4c, 0x00
+    };
+    check_decode("oyako_chs_translated_cn", oyako_cn_alert, sizeof(oyako_cn_alert) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe8\xb6\x85\xe5\x87\xba\xe8\x8c\x83\xe5\x9b\xb4");
+
+    // 8e. Translated CHS.TBL dialog with an embedded hiragana nickname (no JP dialog grammar) stays Chinese.
+    const uint8_t oyako_cn_with_hira_nick[] = {
+        // 移动目标おつゆ
+        0x94, 0x7b, 0x8a, 0x73, 0x96, 0xda, 0x90, 0xf5, 0x82, 0xa8, 0x82, 0xc2, 0x82, 0xe4, 0x00
+    };
+    check_decode("oyako_chs_cn_with_hira_nick", oyako_cn_with_hira_nick, sizeof(oyako_cn_with_hira_nick) - 1,
+        "\xe7\xa7\xbb\xe5\x8a\xa8\xe7\x9b\xae\xe6\xa0\x87\xe3\x81\x8a\xe3\x81\xa4\xe3\x82\x86");
+
+    sys4_reset_mai_word_table();
     return 0;
 }
 """

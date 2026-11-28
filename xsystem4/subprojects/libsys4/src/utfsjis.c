@@ -1572,7 +1572,8 @@ static void cjk_dialog_scan_sjis_run(const uint8_t *run, const uint8_t *end,
 /* Recognized CP932 System 4 dialog keywords and sentence endings.
  * Matched strictly on 2-byte pair boundaries inside valid Shift-JIS runs so
  * arbitrary dual-valid GBK text (e.g. 傑傑傑傑, 偽鈔偵測機) is never overridden. */
-static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *end)
+static bool cjk_dialog_run_has_sjis_phrase_ex(const uint8_t *run, const uint8_t *end,
+		bool require_unremapped_kana)
 {
 	static const struct {
 		const uint8_t bytes[10];
@@ -1588,12 +1589,16 @@ static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *en
 		{ { 0x83, 0x81, 0x83, 0x62, 0x83, 0x5a, 0x81, 0x5b, 0x83, 0x57 }, 10 },// メッセージ
 		{ { 0x83, 0x81, 0x83, 0x82, 0x83, 0x8a }, 6 },                         // メモリ
 		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8 },             // しました
+		{ { 0x82, 0xea, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd }, 8 },             // れました
 		{ { 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ますか？
+		{ { 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9 }, 8 },             // しますか
+		{ { 0x82, 0xe8, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9 }, 8 },             // りますか
 		{ { 0x82, 0xc5, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48 }, 8 },             // ですか？
 		{ { 0x82, 0xb7, 0x82, 0xe9, 0x81, 0x48 }, 6 },                         // する？
 		{ { 0x82, 0xdc, 0x82, 0xb9, 0x82, 0xf1 }, 6 },                         // ません
 		{ { 0x82, 0xc4, 0x82, 0xa2, 0x82, 0xdc, 0x82, 0xb7 }, 8 },             // ています
 		{ { 0x82, 0xc9, 0x8e, 0xb8, 0x94, 0x73 }, 6 },                         // に失敗
+		{ { 0x95, 0x73, 0x90, 0xb3, 0x82, 0xc5, 0x82, 0xb7 }, 8 },             // 不正です
 		{ { 0x82, 0xad, 0x82, 0xbe, 0x82, 0xb3, 0x82, 0xa2 }, 8 },             // ください
 		{ { 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42 }, 8 },             // ました。
 	};
@@ -1603,11 +1608,133 @@ static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *en
 		if (plen > run_len)
 			continue;
 		for (size_t off = 0; off <= run_len - plen; off += 2) {
-			if (!memcmp(run + off, phrases[i].bytes, plen))
+			if (memcmp(run + off, phrases[i].bytes, plen))
+				continue;
+			if (!require_unremapped_kana)
+				return true;
+			bool ok = true;
+			for (size_t k = 0; k < plen; k += 2) {
+				uint8_t b1 = run[off + k];
+				uint8_t b2 = run[off + k + 1];
+				bool is_kana = (b1 == 0x82 && b2 >= 0x9f && b2 <= 0xf1)
+					|| (b1 == 0x83 && b2 >= 0x40 && b2 <= 0x96);
+				if (is_kana && mai_s2u[b1 - 0x80][b2 - 0x40] != (uint16_t)s2u[b1 - 0x80][b2 - 0x40]) {
+					ok = false;
+					break;
+				}
+			}
+			if (ok)
 				return true;
 		}
 	}
 	return false;
+}
+
+static bool cjk_dialog_run_has_sjis_phrase(const uint8_t *run, const uint8_t *end)
+{
+	return cjk_dialog_run_has_sjis_phrase_ex(run, end, false);
+}
+
+static bool cjk_dialog_mai_line_is_cp932(const uint8_t *line, const uint8_t *end)
+{
+	const uint8_t *s = line;
+	while (s < end) {
+		if (!SJIS_2BYTE(*s) || s + 1 >= end || sjis_display_pair(s) <= 0) {
+			s++;
+			continue;
+		}
+		const uint8_t *run = s;
+		while (s + 1 < end && SJIS_2BYTE(*s) && sjis_display_pair(s) > 0)
+			s += 2;
+		if (cjk_dialog_run_has_sjis_phrase_ex(run, s, true))
+			return true;
+	}
+	return false;
+}
+
+static bool cjk_dialog_is_sjis_kana_pair(const uint8_t *p)
+{
+	return (p[0] == 0x82 && p[1] >= 0x9f && p[1] <= 0xf1)
+		|| (p[0] == 0x83 && p[1] >= 0x40 && p[1] <= 0x96);
+}
+
+static char *cjk_dialog_mai_text_to_utf8(const uint8_t *src, size_t len)
+{
+	// In CHS.TBL / UIF / mai/word.mai patches, translated dialogs use the custom
+	// Shift-JIS remap table, whereas untranslated system dialogs (e.g. "タイトルに
+	// 戻りますか？") remain raw CP932 (occasionally embedding a GBK GameName or path).
+	uint8_t *dst = xmalloc(len * 3 + 1);
+	uint8_t *dstp = dst;
+	const uint8_t *p = src;
+	const uint8_t *end = src + len;
+
+	while (p < end) {
+		const uint8_t *line_end = p;
+		while (line_end < end && *line_end != '\n' && *line_end != '\r')
+			line_end++;
+		if (cjk_dialog_mai_line_is_cp932(p, line_end)) {
+			const uint8_t *s = p;
+			while (s < line_end) {
+				if (*s <= 0x7f) {
+					*dstp++ = *s++;
+					continue;
+				}
+				// Detect embedded GBK runs (e.g. GBK GameName inside 『%s』)
+				// that start with a non-CP932-2byte or unmapped CP932 pair.
+				bool non_cp932_start = (*s >= 0xa1 && *s <= 0xdf)
+					|| (SJIS_2BYTE(*s) && s + 1 < line_end && sjis_display_pair(s) <= 0);
+				if (non_cp932_start && gbk_display_pair_bounded(s, line_end)
+						&& gbk_lookup(s[0], s[1]) > 0
+						&& !(*s >= 0xa1 && *s <= 0xdf && s[1] < 0xa1)) {
+					const uint8_t *q = s;
+					bool all_hw = true;
+					bool has_gbk_evidence = false;
+					while (gbk_display_pair_bounded(q, line_end)
+							&& gbk_lookup(q[0], q[1]) > 0
+							&& !cjk_dialog_is_sjis_punct_pair(q)
+							&& !cjk_dialog_is_sjis_kana_pair(q)) {
+						if (q[0] < 0xa1 || q[0] > 0xdf || q[1] < 0xa1 || q[1] > 0xdf)
+							all_hw = false;
+						if ((q[0] >= 0xa1 && q[0] <= 0xf7 && q[1] >= 0xa1)
+								|| sjis_display_pair(q) <= 0)
+							has_gbk_evidence = true;
+						q += 2;
+					}
+					bool clean_end = (q == line_end) || (*q <= 0x7f)
+						|| (SJIS_2BYTE(*q) && q + 1 < line_end && sjis_display_pair(q) > 0);
+					if (q > s && has_gbk_evidence && clean_end
+							&& !(all_hw && cjk_dialog_is_sjis_hw_kana_run(s, q))) {
+						for (const uint8_t *g = s; g < q; g += 2)
+							encode_utf8_bmp(gbk_lookup(g[0], g[1]), &dstp);
+						s = q;
+						continue;
+					}
+				}
+				if (*s >= 0xa1 && *s <= 0xdf) {
+					encode_utf8_bmp(0xff60 + (*s++ - 0xa0), &dstp);
+				} else if (SJIS_2BYTE(*s) && s + 1 < line_end) {
+					int u = sjis_display_pair(s);
+					encode_utf8_bmp(u > 0 ? u : 0xfffd, &dstp);
+					s += 2;
+				} else {
+					encode_utf8_bmp(0xfffd, &dstp);
+					s++;
+				}
+			}
+		} else if (line_end > p) {
+			char *part = cjk2utf_impl((const char *)p, (size_t)(line_end - p),
+					sys4_text_is_gbk, true);
+			size_t plen = strlen(part);
+			memcpy(dstp, part, plen);
+			dstp += plen;
+			free(part);
+		}
+		p = line_end;
+		while (p < end && (*p == '\n' || *p == '\r'))
+			*dstp++ = *p++;
+	}
+	*dstp = '\0';
+	return (char *)dst;
 }
 
 static bool cjk_dialog_run_is_strong_sjis(const uint8_t *run, const uint8_t *end,
@@ -1667,7 +1794,11 @@ char *cjk_dialog_text_to_utf8(const char *_src, size_t len)
 		if (nul)
 			len = (size_t)(nul - _src);
 	}
-	if (!len || !sys4_text_is_gbk || sys4_mai_active)
+	if (!len)
+		return mai_sjis2utf(_src, len);
+	if (sys4_mai_active)
+		return cjk_dialog_mai_text_to_utf8((const uint8_t *)_src, len);
+	if (!sys4_text_is_gbk)
 		return mai_sjis2utf(_src, len);
 
 	const uint8_t *src = (const uint8_t *)_src;

@@ -37,17 +37,92 @@ uint32_t heap_next_seq;
 int32_t *heap_free_stack = NULL;
 size_t heap_free_ptr = 0;
 
-static int *delegate_slots;
-static size_t nr_delegate_slots, delegate_slots_capacity;
+struct delegate_ref_entry {
+	int slot;
+	uint32_t seq;
+};
 
-static void unregister_delegate_page(int slot)
+struct delegate_target_refs {
+	struct delegate_ref_entry *entries;
+	uint32_t nr;
+	uint32_t cap;
+};
+
+static void free_delegate_target_refs(int slot)
 {
-	int index = heap[slot].delegate_index;
-	if (index < 0) return;
-	int last = delegate_slots[--nr_delegate_slots];
-	delegate_slots[index] = last;
-	heap[last].delegate_index = index;
-	heap[slot].delegate_index = -1;
+	struct delegate_target_refs *refs = heap[slot].dg_refs;
+	if (refs) {
+		free(refs->entries);
+		free(refs);
+		heap[slot].dg_refs = NULL;
+	}
+	heap[slot].has_delegate_target = false;
+}
+
+static void register_delegate_target_ref(int target, int dg_slot)
+{
+	if (!heap_index_valid(target) || !page_index_valid(dg_slot))
+		return;
+	uint32_t dg_seq = heap[dg_slot].seq;
+	heap[target].has_delegate_target = true;
+	struct delegate_target_refs *refs = heap[target].dg_refs;
+	if (!refs) {
+		refs = xcalloc(1, sizeof(*refs));
+		heap[target].dg_refs = refs;
+	}
+	for (uint32_t i = 0; i < refs->nr; ) {
+		struct delegate_ref_entry e = refs->entries[i];
+		if (e.slot == dg_slot && e.seq == dg_seq)
+			return;
+		if (!page_index_valid(e.slot) || heap[e.slot].seq != e.seq) {
+			refs->entries[i] = refs->entries[--refs->nr];
+			continue;
+		}
+		i++;
+	}
+	if (refs->nr == refs->cap) {
+		refs->cap = refs->cap ? refs->cap * 2 : 4;
+		refs->entries = xrealloc(refs->entries, refs->cap * sizeof(*refs->entries));
+	}
+	refs->entries[refs->nr++] = (struct delegate_ref_entry){
+		.slot = dg_slot,
+		.seq = dg_seq,
+	};
+}
+
+static void prune_dead_delegate_entries(struct page *page, int **deferred_envs,
+		size_t *nr_deferred, size_t *cap_deferred, int *stack_envs)
+{
+	int width = delegate_stride();
+	for (int i = 0; i < page->nr_vars; ) {
+		if (heap_get_seq(page->values[i].i) == (uint32_t)page->values[i + 2].i) {
+			i += width;
+			continue;
+		}
+		int index = i / width;
+		int env = width == 4 ? page->values[i + 3].i : -1;
+		memmove(page->values + i, page->values + i + width,
+				(size_t)(page->nr_vars - i - width) * sizeof(*page->values));
+		page->nr_vars -= width;
+		if (index < page->delegate.cursor)
+			page->delegate.cursor--;
+		if (index < page->delegate.end)
+			page->delegate.end--;
+		if (env >= 0) {
+			if (*nr_deferred == *cap_deferred) {
+				size_t next_cap = *cap_deferred * 2;
+				if (*deferred_envs == stack_envs) {
+					int *grown = xmalloc(next_cap * sizeof(int));
+					memcpy(grown, stack_envs, *nr_deferred * sizeof(int));
+					*deferred_envs = grown;
+				} else {
+					*deferred_envs = xrealloc(*deferred_envs, next_cap * sizeof(int));
+				}
+				*cap_deferred = next_cap;
+			}
+			(*deferred_envs)[(*nr_deferred)++] = env;
+		}
+	}
 }
 
 static const char *vm_ptrtype_strtab[] = {
@@ -70,7 +145,7 @@ void heap_grow(size_t new_size)
 		heap[i].ref = 0;
 		heap[i].has_delegate_target = false;
 		heap[i].exiting = false;
-		heap[i].delegate_index = -1;
+		heap[i].dg_refs = NULL;
 		heap_free_stack[i] = i;
 	}
 	heap_size = new_size;
@@ -84,6 +159,7 @@ void heap_init(void)
 		heap_free_stack = xmalloc(INITIAL_HEAP_SIZE * sizeof(int32_t));
 	} else {
 		for (size_t i = 0; i < heap_size; i++) {
+			free_delegate_target_refs((int)i);
 			if (heap[i].ref <= 0)
 				continue;
 			switch (heap[i].type) {
@@ -102,9 +178,8 @@ void heap_init(void)
 
 	for (size_t i = 0; i < heap_size; i++) {
 		heap_free_stack[i] = i;
-		heap[i].delegate_index = -1;
+		heap[i].dg_refs = NULL;
 	}
-	nr_delegate_slots = 0;
 	heap_free_ptr = 1; // global page at index 0
 	heap_next_seq = 1;
 }
@@ -122,7 +197,7 @@ int32_t heap_alloc_slot(enum vm_pointer_type type)
 	heap[slot].has_delegate_target = false;
 	heap[slot].exiting = false;
 	heap[slot].page = NULL;
-	heap[slot].delegate_index = -1;
+	heap[slot].dg_refs = NULL;
 #ifdef DEBUG_HEAP
 	heap[slot].alloc_addr = instr_ptr;
 	memset(heap[slot].ref_addr, 0, sizeof(heap[slot].ref_addr));
@@ -136,8 +211,7 @@ int32_t heap_alloc_slot(enum vm_pointer_type type)
 
 static void heap_free_slot(int32_t slot)
 {
-	unregister_delegate_page(slot);
-	heap[slot].has_delegate_target = false;
+	free_delegate_target_refs(slot);
 	heap[slot].exiting = false;
 	heap[slot].seq = 0;
 	heap_free_stack[--heap_free_ptr] = slot;
@@ -320,17 +394,27 @@ void heap_mark_delegate_target(int slot)
 		heap[slot].has_delegate_target = true;
 }
 
+void heap_clear_delegate_refs(int slot)
+{
+	if (slot >= 0 && (size_t)slot < heap_size)
+		free_delegate_target_refs(slot);
+}
+
 void heap_refresh_delegate_targets(void)
 {
+	for (size_t i = 0; i < heap_size; i++)
+		free_delegate_target_refs((int)i);
 	int width = delegate_stride();
-	for (size_t d = 0; d < nr_delegate_slots; d++) {
-		struct page *page = heap[delegate_slots[d]].page;
+	for (size_t slot = 0; slot < heap_size; slot++) {
+		if (heap[slot].ref <= 0 || heap[slot].type != VM_PAGE)
+			continue;
+		struct page *page = heap[slot].page;
 		if (!page || page->type != DELEGATE_PAGE)
 			continue;
 		for (int i = 0; i < page->nr_vars; i += width) {
 			int target = page->values[i].i;
 			if (target >= 0 && (uint32_t)page->values[i + 2].i == heap_get_seq(target))
-				heap_mark_delegate_target(target);
+				register_delegate_target_ref(target, (int)slot);
 		}
 	}
 }
@@ -342,51 +426,67 @@ void heap_set_page(int slot, struct page *page)
 		VM_ERROR("Invalid page index: %d", slot);
 #endif
 	heap[slot].page = page;
-	if (page && page->type == DELEGATE_PAGE) {
-		if (heap[slot].delegate_index < 0) {
-			if (nr_delegate_slots == delegate_slots_capacity) {
-				delegate_slots_capacity = max(delegate_slots_capacity * 2, 64);
-				delegate_slots = xrealloc(delegate_slots, delegate_slots_capacity * sizeof(*delegate_slots));
-			}
-			heap[slot].delegate_index = nr_delegate_slots;
-			delegate_slots[nr_delegate_slots++] = slot;
-		}
+	if (page && page->type == DELEGATE_PAGE && page->nr_vars > 0) {
 		int width = delegate_stride();
 		for (int i = 0; i < page->nr_vars; i += width) {
 			int target = page->values[i].i;
 			if (target >= 0 && (uint32_t)page->values[i + 2].i == heap_get_seq(target))
-				heap_mark_delegate_target(target);
+				register_delegate_target_ref(target, slot);
 		}
-	} else {
-		unregister_delegate_page(slot);
 	}
 }
 
 void heap_copy_delegate_targets(int source, int destination)
 {
 	if (ain->version < 11 || source == destination
-			|| !heap_index_valid(source) || !heap[source].has_delegate_target)
+			|| !heap_index_valid(source) || !heap[source].dg_refs || !heap[source].dg_refs->nr)
 		return;
 	struct page *object = heap_get_page(source);
 	if (!object || object->type != STRUCT_PAGE)
 		return;
 	uint32_t seq = heap_get_seq(source);
+	int width = delegate_stride();
+	int stack_envs[32];
+	int *deferred_envs = stack_envs;
+	size_t nr_deferred = 0, cap_deferred = sizeof(stack_envs) / sizeof(stack_envs[0]);
+
 	// v12 value copies inherit the source object's event subscriptions. The
 	// bindings remain weak: deleting either object removes only its own entry.
-	// Iterate live delegate pages rather than the entire (mostly local) heap.
-	for (size_t d = 0; d < nr_delegate_slots; d++) {
-		int slot = delegate_slots[d];
-		struct page *page = heap_get_delegate_page(slot);
+	// Iterate only the per-target reverse index instead of every delegate page.
+	struct delegate_target_refs *refs = heap[source].dg_refs;
+	for (uint32_t d = 0; d < refs->nr; ) {
+		struct delegate_ref_entry e = refs->entries[d];
+		if (!page_index_valid(e.slot) || heap[e.slot].seq != e.seq
+				|| !heap[e.slot].page || heap[e.slot].page->type != DELEGATE_PAGE) {
+			refs->entries[d] = refs->entries[--refs->nr];
+			continue;
+		}
+		struct page *page = heap[e.slot].page;
+		prune_dead_delegate_entries(page, &deferred_envs, &nr_deferred, &cap_deferred, stack_envs);
 		int count = page->nr_vars;
-		int width = delegate_stride();
+		bool matched = false;
 		for (int i = 0; i < count; i += width) {
 			if (page->values[i].i != source || (uint32_t)page->values[i + 2].i != seq)
 				continue;
 			page = delegate_append_captured(page, destination, page->values[i + 1].i,
 				width == 4 ? page->values[i + 3].i : -1);
-			heap_set_page(slot, page);
+			heap[e.slot].page = page;
+			matched = true;
+		}
+		if (matched) {
+			register_delegate_target_ref(destination, e.slot);
+			d++;
+		} else {
+			refs->entries[d] = refs->entries[--refs->nr];
 		}
 	}
+	if (!refs->nr)
+		heap[source].has_delegate_target = false;
+
+	for (size_t i = 0; i < nr_deferred; i++)
+		heap_unref(deferred_envs[i]);
+	if (deferred_envs != stack_envs)
+		free(deferred_envs);
 }
 
 void heap_string_assign(int slot, struct string *string)

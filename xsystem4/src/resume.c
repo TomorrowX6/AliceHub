@@ -1238,7 +1238,7 @@ static void delete_heap(void)
 		}
 		heap[i].ref = 0;
 		heap[i].seq = 0;
-		heap[i].has_delegate_target = false;
+		heap_clear_delegate_refs((int)i);
 	}
 
 	heap_free_ptr = 0;
