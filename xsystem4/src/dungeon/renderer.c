@@ -31,6 +31,7 @@
 #include "dungeon/skybox.h"
 #include "gfx/gfx.h"
 #include "sact.h"
+#include "vm.h"
 
 enum {
 	COLOR_TEXTURE_UNIT,
@@ -923,7 +924,7 @@ static void draw_cell(struct dungeon_renderer *r, struct dgn_cell *cell, bool re
 	if (r->draw_event_markers && cell->floor_event && !render_opaque) {
 		const struct marker_info *info = get_marker_info(r, cell->floor_event);
 		if (info) {
-			uint32_t t = SDL_GetTicks();
+			uint32_t t = (uint32_t)vm_time();
 			draw_floor_marker(r, info, x, y, z, t);
 			draw_floating_marker(r, info, x, y, z, cell->event_blend_rate, t, view_transform);
 		}
@@ -1061,7 +1062,7 @@ static void prepare_raster_shader(struct gfx_render_job *job, void *data)
 	struct dungeon_renderer *r = data;
 	float width = job->world_transform[0];
 	glUniform1f(r->raster_shader.amp, width != 0.0f ? r->raster_amp / width : 0.0f);
-	glUniform1f(r->raster_shader.t, SDL_GetTicks() / 1000.f);
+	glUniform1f(r->raster_shader.t, (uint32_t)vm_time() / 1000.f);
 }
 
 static void load_raster_shader(struct raster_shader *s)

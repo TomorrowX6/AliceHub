@@ -26,6 +26,7 @@
 #include "asset_manager.h"
 #include "reign.h"
 #include "sact.h"
+#include "vm.h"
 
 // TODO: Respect RE_plugin.shadow_map_resolution_level
 #define SHADOW_WIDTH 512
@@ -403,7 +404,7 @@ struct RE_renderer *RE_renderer_new(enum RE_plugin_version version)
 	init_renderer_gl_resources(r);
 	r->billboard_textures_by_no = ht_create(256);
 	r->billboard_textures_by_path = ht_create(256);
-	r->last_frame_timestamp = SDL_GetTicks();
+	r->last_frame_timestamp = (uint32_t)vm_time();
 	gfx_register_reset_callback(re_renderer_on_gl_reset, r);
 	return r;
 }
@@ -1497,7 +1498,7 @@ void RE_update_model(struct RE_plugin *plugin)
 	struct RE_renderer *r = plugin->renderer;
 	if (!r || plugin->suspended)
 		return;
-	uint32_t timestamp = SDL_GetTicks();
+	uint32_t timestamp = (uint32_t)vm_time();
 	RE_build_model(plugin, timestamp - r->last_frame_timestamp);
 	r->last_frame_timestamp = timestamp;
 }

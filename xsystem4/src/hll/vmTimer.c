@@ -19,6 +19,7 @@
 #include "gfx/gfx.h"
 #include "hll.h"
 #include "id_pool.h"
+#include "vm.h"
 
 struct vm_timer {
 	uint64_t origin;
@@ -65,7 +66,7 @@ static void vmTimer_Set(int handle, int time)
 	struct vm_timer *timer = id_pool_get(&pool, handle);
 	if (!timer)
 		return;
-	timer->origin = SDL_GetTicks64() - time;
+	timer->origin = vm_time64() - time;
 }
 
 static int vmTimer_Get(int handle)
@@ -73,12 +74,12 @@ static int vmTimer_Get(int handle)
 	struct vm_timer *timer = id_pool_get(&pool, handle);
 	if (!timer)
 		return 0;
-	return SDL_GetTicks64() - timer->origin;
+	return vm_time64() - timer->origin;
 }
 
 static void vmTimer_Wait(int time)
 {
-	gfx_android_delay(time);
+	vm_sleep(time);
 }
 
 static void vmTimer_Pass(int handle, int time)
@@ -86,9 +87,9 @@ static void vmTimer_Pass(int handle, int time)
 	struct vm_timer *timer = id_pool_get(&pool, handle);
 	if (!timer)
 		return;
-	int ms = timer->origin + time - SDL_GetTicks64();
+	int ms = timer->origin + time - vm_time64();
 	if (ms > 0)
-		gfx_android_delay(ms);
+		vm_sleep(ms);
 }
 
 HLL_LIBRARY(vmTimer,

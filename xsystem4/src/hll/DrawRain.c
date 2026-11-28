@@ -21,6 +21,7 @@
 #include "plugin.h"
 #include "sact.h"
 #include "sprite.h"
+#include "vm.h"
 #include "xsystem4.h"
 
 static const char plugin_name[] = "DrawRain";
@@ -55,7 +56,7 @@ static void DrawRain_update(struct sact_sprite *sp)
 	struct draw_rain_plugin *plugin = (struct draw_rain_plugin *)sp->plugin;
 	if (!plugin->started)
 		return;
-	uint32_t timestamp = SDL_GetTicks();
+	uint32_t timestamp = (uint32_t)vm_time();
 	if (timestamp - plugin->timestamp < 16)
 		return;
 	plugin->timestamp = timestamp;

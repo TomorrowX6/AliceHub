@@ -1,9 +1,17 @@
 package io.github.kichikuou.xsystem4;
 
+import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Looper;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.ListView;
+import android.widget.SeekBar;
+import android.widget.TextView;
 
 import org.json.JSONObject;
 import org.junit.After;
@@ -13,7 +21,10 @@ import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
+import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
+import org.robolectric.shadows.ShadowAlertDialog;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +32,7 @@ import java.nio.file.Files;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -222,5 +234,134 @@ public class PerGameUiScaleTest {
         Button evSbBtn = evAct.findViewById(R.id.btn_mod_scrollbar);
         assertTrue("Expected 100% in " + evFontBtn.getText(), evFontBtn.getText().toString().contains("100%"));
         assertTrue("Expected 100% in " + evSbBtn.getText(), evSbBtn.getText().toString().contains("100%"));
+    }
+
+    @Test
+    public void gameSpeedIsIsolatedPerGameClampedFormattedAndPersisted() throws Exception {
+        GameModifierBridge bridge = GameModifierBridge.INSTANCE;
+        assertEquals(100, bridge.getGameSpeedPercent(context, "Rance10"));
+        assertEquals("1.0x", bridge.formatGameSpeed(100));
+        assertEquals("1x", bridge.formatGameSpeed(100, true));
+        assertEquals("1.5x", bridge.formatGameSpeed(150));
+        assertEquals("1.25x", bridge.formatGameSpeed(125));
+        assertEquals("2.0x", bridge.formatGameSpeed(200));
+        assertEquals("2x", bridge.formatGameSpeed(200, true));
+        assertEquals("0.5x", bridge.formatGameSpeed(10));
+        assertEquals("5.0x", bridge.formatGameSpeed(900));
+
+        bridge.setGameSpeedPercent(context, "Rance10", 250);
+        bridge.setGameSpeedPercent(context, "/games/DohnaDohna/", 999);
+        bridge.setGameSpeedPercent(context, "Evenicle", 20);
+
+        assertEquals(250, bridge.getGameSpeedPercent(context, "Rance10"));
+        assertEquals(500, bridge.getGameSpeedPercent(context, "DohnaDohna"));
+        assertEquals(50, bridge.getGameSpeedPercent(context, "Evenicle"));
+        assertEquals(100, bridge.getGameSpeedPercent(context, "Rance02"));
+
+        // Resetting back to 100% removes entry from persisted map
+        bridge.setGameSpeedPercent(context, "Evenicle", 100);
+        JSONObject diskJson = new JSONObject(new String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8));
+        JSONObject speedMap = diskJson.getJSONObject("game_speed_pct");
+        assertEquals(250, speedMap.getInt("Rance10"));
+        assertEquals(500, speedMap.getInt("DohnaDohna"));
+        assertFalse(speedMap.has("Evenicle"));
+
+        // Deleting modifier_config.json restores from SharedPreferences fallback
+        assertTrue(configFile.delete());
+        assertEquals(250, bridge.getGameSpeedPercent(context, "Rance10"));
+        assertEquals(500, bridge.getGameSpeedPercent(context, "DohnaDohna"));
+        assertEquals(100, bridge.getGameSpeedPercent(context, "Evenicle"));
+    }
+
+    @Test
+    public void floatingOverlaySpeedMenuBadgePreviewAndRevertWork() {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity host = controller.get();
+            FloatingModifierOverlay overlay = new FloatingModifierOverlay(host);
+            overlay.attach();
+
+            TextView badge = overlay.getSpeedBadgeForTest();
+            assertNotNull(badge);
+            assertEquals(View.GONE, badge.getVisibility());
+
+            // 1. Floating main menu lists Game Speed as the first entry
+            overlay.openMainMenu();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog menuDialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(menuDialog.isShowing());
+            ListView menuList = menuDialog.getListView();
+            assertNotNull(menuList);
+            String firstItem = menuList.getAdapter().getItem(0).toString();
+            assertTrue("Expected speed item first, got: " + firstItem,
+                    firstItem.contains("1.0x"));
+
+            // Click first menu entry -> opens Game Speed dialog
+            menuList.performItemClick(menuList.getChildAt(0), 0, 0);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog speedDialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(speedDialog.isShowing());
+            assertNotNull(findFirstView(speedDialog.getWindow().getDecorView(), SeekBar.class));
+            assertNotNull(findButtonWithText(speedDialog.getWindow().getDecorView(), "-0.25x"));
+            assertNotNull(findButtonWithText(speedDialog.getWindow().getDecorView(), "+0.25x"));
+            Button btn2x = findButtonWithText(speedDialog.getWindow().getDecorView(), "2.0x");
+            assertNotNull(btn2x);
+            assertNotNull(findButtonWithText(speedDialog.getWindow().getDecorView(), "5.0x"));
+
+            // Tapping 2.0x previews badge immediately; tapping Cancel reverts badge back to GONE
+            btn2x.performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals(View.VISIBLE, badge.getVisibility());
+            assertEquals("2x", badge.getText().toString());
+            speedDialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals(View.GONE, badge.getVisibility());
+
+            // Opening again, picking 3.0x and pressing OK keeps badge visible at 3x
+            overlay.showGameSpeedDialog();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog speedDialog2 = ShadowAlertDialog.getLatestAlertDialog();
+            Button btn3x = findButtonWithText(speedDialog2.getWindow().getDecorView(), "3.0x");
+            assertNotNull(btn3x);
+            btn3x.performClick();
+            speedDialog2.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals(View.VISIBLE, badge.getVisibility());
+            assertEquals("3x", badge.getText().toString());
+
+            // Neutral Reset button restores 1.0x and hides badge
+            overlay.showGameSpeedDialog();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog speedDialog3 = ShadowAlertDialog.getLatestAlertDialog();
+            speedDialog3.getButton(AlertDialog.BUTTON_NEUTRAL).performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals(View.GONE, badge.getVisibility());
+            overlay.detach();
+        }
+    }
+
+    private static <T extends View> T findFirstView(View root, Class<T> clazz) {
+        if (clazz.isInstance(root)) return clazz.cast(root);
+        if (root instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) root;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                T found = findFirstView(vg.getChildAt(i), clazz);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private static Button findButtonWithText(View root, String text) {
+        if (root instanceof Button && text.equals(((Button) root).getText().toString())) {
+            return (Button) root;
+        }
+        if (root instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) root;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                Button found = findButtonWithText(vg.getChildAt(i), text);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 }

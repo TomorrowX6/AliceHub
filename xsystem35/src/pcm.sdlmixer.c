@@ -27,6 +27,7 @@
 #include <stdint.h>
 
 #include "portab.h"
+#include "sdl_compat.h"
 #include "system.h"
 #include "ald_manager.h"
 #include "dri.h"
@@ -255,7 +256,7 @@ bool muspcm_start(int slot, int loop) {
 	if (!mixer_channel_play(slot, slots[slot].sound, loop - 1))
 		return false;
 
-	slots[slot].start_time = sys_get_ticks();
+	slots[slot].start_time = SDL_GetTicks();
 	return true;
 }
 
@@ -295,7 +296,7 @@ int muspcm_getpos(int slot) {
 	if (!mixer_channel_playing(slot))
 		return 0;
 
-	int pos = sys_get_ticks() - slots[slot].start_time;
+	int pos = SDL_GetTicks() - slots[slot].start_time;
 	if (pos == 0)
 		pos = 1;  // because 0 means "not playing"
 

@@ -400,9 +400,11 @@ class XSystem4Activity : SDLActivity() {
         GameModifierBridge.markAlreadyLoaded()
         try {
             GameModifierBridge.syncNativeConfigPath(this)
+            val scaleKey = currentUiScaleGameKey()
             if (!isSystem3xGame()) {
-                GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+                GameModifierBridge.syncUiScaleToNative(this, scaleKey)
             }
+            GameModifierBridge.syncGameSpeedToNative(this, scaleKey)
             syncAllLocksToNative()
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
             activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())
@@ -895,11 +897,14 @@ class XSystem4Activity : SDLActivity() {
             GameModifierBridge.syncNativeConfigPath(this)
             val curSeq = GameModifierBridge.getConfigSeq(this)
             if (curSeq != lastSyncedConfigSeq) {
+                val scaleKey = currentUiScaleGameKey()
                 if (!isSystem3xGame()) {
-                    GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+                    GameModifierBridge.syncUiScaleToNative(this, scaleKey)
                 }
+                GameModifierBridge.syncGameSpeedToNative(this, scaleKey)
                 syncAllLocksToNative()
                 syncOverlayPreferences()
+                modifierOverlay?.refreshSpeedBadge()
                 lastSyncedConfigSeq = curSeq
             }
             applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
@@ -948,11 +953,14 @@ class XSystem4Activity : SDLActivity() {
             GameModifierBridge.syncNativeConfigPath(this)
             val curSeq = GameModifierBridge.getConfigSeq(this)
             if (curSeq != lastSyncedConfigSeq) {
+                val scaleKey = currentUiScaleGameKey()
                 if (!isSystem3xGame()) {
-                    GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+                    GameModifierBridge.syncUiScaleToNative(this, scaleKey)
                 }
+                GameModifierBridge.syncGameSpeedToNative(this, scaleKey)
                 syncAllLocksToNative()
                 syncOverlayPreferences()
+                modifierOverlay?.refreshSpeedBadge()
                 lastSyncedConfigSeq = curSeq
             }
             applyGamepadProfile(GamepadBridge.loadProfile(this, currentGamepadProfileKey()))
@@ -1537,9 +1545,11 @@ class XSystem4Activity : SDLActivity() {
         GameModifierBridge.markAlreadyLoaded()
         try {
             GameModifierBridge.syncNativeConfigPath(this)
+            val scaleKey = currentUiScaleGameKey()
             if (!isSystem3xGame()) {
-                GameModifierBridge.syncUiScaleToNative(this, currentUiScaleGameKey())
+                GameModifierBridge.syncUiScaleToNative(this, scaleKey)
             }
+            GameModifierBridge.syncGameSpeedToNative(this, scaleKey)
             syncAllLocksToNative()
             lastSyncedConfigSeq = GameModifierBridge.getConfigSeq(this)
             activeGamepadProfile = GamepadBridge.loadAndSyncToNative(this, currentGamepadProfileKey())

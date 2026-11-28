@@ -45,6 +45,7 @@ object GameModifierBridge {
     private const val KEY_SCROLLBAR_SCALE_PCT = "scrollbar_scale_pct"
     private const val KEY_GAME_FONT_SCALE_PCT = "game_font_scale_pct"
     private const val KEY_GAME_SCROLLBAR_SCALE_PCT = "game_scrollbar_scale_pct"
+    private const val KEY_GAME_SPEED_PCT = "game_speed_pct"
     private const val KEY_CONFIG_SEQ = "config_seq"
     private const val UNLOCK_BAK_SUFFIX = ".unlock.bak"
     private const val MOD_BAK_SUFFIX = ".mod.bak"
@@ -55,6 +56,9 @@ object GameModifierBridge {
     const val DEFAULT_SCROLLBAR_SCALE_PCT = 100
     const val MIN_SCROLLBAR_SCALE_PCT = 100
     const val MAX_SCROLLBAR_SCALE_PCT = 300
+    const val DEFAULT_GAME_SPEED_PCT = 100
+    const val MIN_GAME_SPEED_PCT = 50
+    const val MAX_GAME_SPEED_PCT = 500
 
     const val LOCK_PARTY_MAX_HP = 1 shl 0
     const val LOCK_INFINITE_AP = 1 shl 1
@@ -139,6 +143,9 @@ object GameModifierBridge {
 
     @Volatile
     private var activeUiScaleGameKey: String? = null
+
+    @Volatile
+    private var activeGameSpeedKey: String? = null
 
     fun markAlreadyLoaded() {
         loaded = true
@@ -1751,10 +1758,16 @@ object GameModifierBridge {
                         DEFAULT_SCROLLBAR_SCALE_PCT,
                         ::clampScrollbarScale
                     )
+                    val speedMap = sanitizeScaleMap(
+                        json.optJSONObject(KEY_GAME_SPEED_PCT),
+                        DEFAULT_GAME_SPEED_PCT,
+                        ::clampGameSpeed
+                    )
                     json.remove(KEY_FONT_SCALE_PCT)
                     json.remove(KEY_SCROLLBAR_SCALE_PCT)
                     json.put(KEY_GAME_FONT_SCALE_PCT, fontScaleMap)
                     json.put(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap)
+                    json.put(KEY_GAME_SPEED_PCT, speedMap)
                     var needsSave = hasLegacyUiScale
                     if (!migratedV1) {
                         json.put(KEY_FLOATING_ENABLED, true)
@@ -1821,6 +1834,11 @@ object GameModifierBridge {
                 DEFAULT_SCROLLBAR_SCALE_PCT,
                 ::clampScrollbarScale
             )
+            val speedMap = parseScaleMapFromPrefs(
+                prefs.getString(KEY_GAME_SPEED_PCT, null),
+                DEFAULT_GAME_SPEED_PCT,
+                ::clampGameSpeed
+            )
             val json = JSONObject().apply {
                 put(KEY_FLOATING_ENABLED, floatingEnabled)
                 put(KEY_FLOATING_DEFAULT_ON_V1, true)
@@ -1842,6 +1860,7 @@ object GameModifierBridge {
                 if (extraLocksMap.length() > 0) put(KEY_EXTRA_LOCKS, extraLocksMap)
                 put(KEY_GAME_FONT_SCALE_PCT, fontScaleMap)
                 put(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap)
+                put(KEY_GAME_SPEED_PCT, speedMap)
                 put(KEY_CONFIG_SEQ, prefs.getInt(KEY_CONFIG_SEQ, 0))
             }
             if (!migratedV1 || !ctrlDefaultOffV2 ||
@@ -1888,6 +1907,11 @@ object GameModifierBridge {
                 DEFAULT_SCROLLBAR_SCALE_PCT,
                 ::clampScrollbarScale
             )
+            val speedMap = sanitizeScaleMap(
+                json.optJSONObject(KEY_GAME_SPEED_PCT),
+                DEFAULT_GAME_SPEED_PCT,
+                ::clampGameSpeed
+            )
             val nextSeq = json.optInt(KEY_CONFIG_SEQ, 0) + 1
             json.put(KEY_FLOATING_ENABLED, floatingEnabled)
             json.put(KEY_FLOATING_DEFAULT_ON_V1, true)
@@ -1910,6 +1934,7 @@ object GameModifierBridge {
             json.remove(KEY_SCROLLBAR_SCALE_PCT)
             json.put(KEY_GAME_FONT_SCALE_PCT, fontScaleMap)
             json.put(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap)
+            json.put(KEY_GAME_SPEED_PCT, speedMap)
             json.put(KEY_CONFIG_SEQ, nextSeq)
             val pid = Process.myPid()
             val tid = Thread.currentThread().id
@@ -1953,6 +1978,7 @@ object GameModifierBridge {
                 .remove(KEY_SCROLLBAR_SCALE_PCT)
                 .putString(KEY_GAME_FONT_SCALE_PCT, fontScaleMap.toString())
                 .putString(KEY_GAME_SCROLLBAR_SCALE_PCT, sbScaleMap.toString())
+                .putString(KEY_GAME_SPEED_PCT, speedMap.toString())
                 .putInt(KEY_CONFIG_SEQ, nextSeq)
                 .commit()
             lastWrittenConfigSeq = nextSeq
@@ -2006,8 +2032,23 @@ object GameModifierBridge {
 
     fun clampScrollbarScale(pct: Int): Int = pct.coerceIn(MIN_SCROLLBAR_SCALE_PCT, MAX_SCROLLBAR_SCALE_PCT)
 
+    fun clampGameSpeed(pct: Int): Int = pct.coerceIn(MIN_GAME_SPEED_PCT, MAX_GAME_SPEED_PCT)
+
+    @JvmOverloads
+    fun formatGameSpeed(pct: Int, compact: Boolean = false): String {
+        val clamped = clampGameSpeed(pct)
+        val whole = clamped / 100
+        val frac = clamped % 100
+        return when {
+            frac == 0 -> if (compact) "${whole}x" else "${whole}.0x"
+            frac % 10 == 0 -> "${whole}.${frac / 10}x"
+            else -> String.format(Locale.US, "%d.%02dx", whole, frac)
+        }
+    }
+
     fun clearActiveUiScaleGameKey() {
         activeUiScaleGameKey = null
+        activeGameSpeedKey = null
     }
 
     fun getFontScalePercent(context: Context, gameKey: String?): Int {
@@ -2083,6 +2124,52 @@ object GameModifierBridge {
             nativeSetConfigPath(getConfigFilePath(context))
             nativeSetUiScaleGameKey(key)
             nativeSetUiScale(fontPct, sbPct)
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun getGameSpeedPercent(context: Context, gameKey: String?): Int {
+        val key = normalizeUiScaleGameKey(gameKey) ?: return DEFAULT_GAME_SPEED_PCT
+        val map = readConfigJson(context).optJSONObject(KEY_GAME_SPEED_PCT) ?: return DEFAULT_GAME_SPEED_PCT
+        val value = map.opt(key) as? Number ?: return DEFAULT_GAME_SPEED_PCT
+        return clampGameSpeed(value.toInt())
+    }
+
+    fun setGameSpeedPercent(context: Context, gameKey: String?, pct: Int) {
+        val key = normalizeUiScaleGameKey(gameKey)
+        val clamped = clampGameSpeed(pct)
+        if (key != null) {
+            synchronized(configLock) {
+                val json = readConfigJson(context)
+                val map = json.optJSONObject(KEY_GAME_SPEED_PCT) ?: JSONObject()
+                if (clamped == DEFAULT_GAME_SPEED_PCT) {
+                    map.remove(key)
+                } else {
+                    map.put(key, clamped)
+                }
+                json.put(KEY_GAME_SPEED_PCT, map)
+                writeConfigJson(context, json)
+            }
+        }
+        if (loaded && (key == null || activeGameSpeedKey == null || activeGameSpeedKey == key)) {
+            applyLiveGameSpeedPreview(clamped)
+        }
+    }
+
+    fun applyLiveGameSpeedPreview(pct: Int) {
+        if (!loaded) return
+        try {
+            nativeSetGameSpeed(clampGameSpeed(pct))
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun syncGameSpeedToNative(context: Context, gameKey: String?) {
+        val key = normalizeUiScaleGameKey(gameKey)
+        activeGameSpeedKey = key
+        if (!loaded) return
+        try {
+            nativeSetGameSpeed(getGameSpeedPercent(context, key))
         } catch (_: Throwable) {
         }
     }
@@ -3032,6 +3119,12 @@ object GameModifierBridge {
 
     @JvmStatic
     external fun nativeGetScrollbarScale(): Int
+
+    @JvmStatic
+    external fun nativeSetGameSpeed(speedPct: Int)
+
+    @JvmStatic
+    external fun nativeGetGameSpeed(): Int
 
     @JvmStatic
     external fun nativeExportPcSaveFile(srcPath: String, dstPath: String): Boolean

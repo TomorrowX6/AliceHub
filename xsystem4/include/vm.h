@@ -113,10 +113,18 @@ int vm_copy_page(int source);
 int vm_capture_environment(int function);
 union vm_value vm_copy(union vm_value v, enum ain_data_type type);
 
+#define VM_GAME_SPEED_MIN_PCT     50
+#define VM_GAME_SPEED_MAX_PCT     500
+#define VM_GAME_SPEED_DEFAULT_PCT 100
+
 int vm_execute_ain(struct ain *program);
 void vm_call(int fno, int struct_page);
+uint64_t vm_time64(void);
 int vm_time(void);
 void vm_sleep(int ms);
+int vm_scale_sleep_ms(int ms);
+int vm_set_game_speed_percent(int pct);
+int vm_get_game_speed_percent(void);
 
 void hll_call(int libno, int fno);
 bool library_exists(int libno);

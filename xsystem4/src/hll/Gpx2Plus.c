@@ -693,10 +693,20 @@ static int fullscreen_effect(int effect, int dst_surf, int src_surf, int ms)
 	Texture *dst = get_texture(0);
 	Texture *old = get_texture(dst_surf);
 	Texture *new = get_texture(src_surf);
-	for (int i = 0; i < ms; i += 16) {
-		effect_update_texture(effect, dst, old, new, (float)i / (float)ms);
-		Gpx2Plus_Update(0, 0, config.view_width, config.view_height);
-		SDL_Delay(16);
+	if (ms > 0) {
+		uint32_t start = (uint32_t)vm_time();
+		uint32_t t = 0;
+		while (t < (uint32_t)ms) {
+			effect_update_texture(effect, dst, old, new, (float)t / (float)ms);
+			Gpx2Plus_Update(0, 0, config.view_width, config.view_height);
+			uint32_t t2 = (uint32_t)vm_time() - start;
+			if (t2 < t + 16) {
+				vm_sleep((int)(t + 16 - t2));
+				t = (uint32_t)vm_time() - start;
+			} else {
+				t = t2;
+			}
+		}
 	}
 	effect_update_texture(effect, dst, old, new, 1.0);
 	Gpx2Plus_Update(0, 0, config.view_width, config.view_height);
@@ -740,10 +750,20 @@ static int Gpx2Plus_EffectCopy(int effect, int wx, int wy,
 	}
 	gpx_effect_callback effect_func = gpx_effects[effect];
 
-	for (int i = 0; i < totalTime; i += 16) {
-		effect_func(&params, (float)i / (float)totalTime);
-		Gpx2Plus_Update(wx, wy, width, height);
-		SDL_Delay(16);
+	if (totalTime > 0) {
+		uint32_t start = (uint32_t)vm_time();
+		uint32_t t = 0;
+		while (t < (uint32_t)totalTime) {
+			effect_func(&params, (float)t / (float)totalTime);
+			Gpx2Plus_Update(wx, wy, width, height);
+			uint32_t t2 = (uint32_t)vm_time() - start;
+			if (t2 < t + 16) {
+				vm_sleep((int)(t + 16 - t2));
+				t = (uint32_t)vm_time() - start;
+			} else {
+				t = t2;
+			}
+		}
 	}
 	effect_func(&params, 1.0);
 	Gpx2Plus_Update(wx, wy, width, height);

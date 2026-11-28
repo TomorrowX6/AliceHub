@@ -9409,6 +9409,16 @@ int modifier_api_get_scrollbar_scale(void)
 	return sp;
 }
 
+void modifier_api_set_game_speed(int speed_pct)
+{
+	vm_set_game_speed_percent(speed_pct);
+}
+
+int modifier_api_get_game_speed(void)
+{
+	return vm_get_game_speed_percent();
+}
+
 bool modifier_api_export_pc_save_file(const char *src_path, const char *dst_path)
 {
 	return (src_path && dst_path) ? savedata_export_pc_file(src_path, dst_path) : false;
@@ -9924,6 +9934,24 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetScrollbarScale(
 	int sp = g_scrollbar_scale_pct;
 	pthread_mutex_unlock(&g_mod_mutex);
 	return (jint)sp;
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetGameSpeed(
+	JNIEnv *env, jclass clazz, jint speed_pct)
+{
+	(void)env;
+	(void)clazz;
+	modifier_api_set_game_speed((int)speed_pct);
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetGameSpeed(
+	JNIEnv *env, jclass clazz)
+{
+	(void)env;
+	(void)clazz;
+	return (jint)modifier_api_get_game_speed();
 }
 
 JNIEXPORT jboolean JNICALL

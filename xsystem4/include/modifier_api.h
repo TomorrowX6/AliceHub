@@ -46,6 +46,8 @@ void modifier_api_set_ui_scale_game_key(const char *game_key);
 void modifier_api_set_ui_scale(int font_pct, int scrollbar_pct);
 int modifier_api_get_font_scale(void);
 int modifier_api_get_scrollbar_scale(void);
+void modifier_api_set_game_speed(int speed_pct);
+int modifier_api_get_game_speed(void);
 bool modifier_api_export_pc_save_file(const char *src_path, const char *dst_path);
 
 #ifdef __cplusplus

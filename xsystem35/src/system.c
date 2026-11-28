@@ -17,9 +17,13 @@
  *
 */
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifndef __EMSCRIPTEN__
+#include <pthread.h>
+#endif
 #ifdef ALICEHUB_IOS
 #include <fcntl.h>
 #include <unistd.h>
@@ -156,8 +160,80 @@ void sys_exit(int code) {
 	exit(code);
 }
 
+#ifndef __EMSCRIPTEN__
+static pthread_mutex_t sys_clock_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define SYS_CLOCK_LOCK() pthread_mutex_lock(&sys_clock_mutex)
+#define SYS_CLOCK_UNLOCK() pthread_mutex_unlock(&sys_clock_mutex)
+#else
+#define SYS_CLOCK_LOCK() ((void)0)
+#define SYS_CLOCK_UNLOCK() ((void)0)
+#endif
+
+static bool sys_clock_initialized = false;
+static uint32_t sys_clock_last_real_ms = 0;
+static uint64_t sys_clock_virtual_100 = 0;
+static int sys_game_speed_pct = SYS_GAME_SPEED_DEFAULT_PCT;
+
+static int clamp_sys_game_speed_pct(int pct) {
+	if (pct < SYS_GAME_SPEED_MIN_PCT)
+		return SYS_GAME_SPEED_MIN_PCT;
+	if (pct > SYS_GAME_SPEED_MAX_PCT)
+		return SYS_GAME_SPEED_MAX_PCT;
+	return pct;
+}
+
+static void sys_clock_advance_locked(uint32_t real_now) {
+	if (!sys_clock_initialized) {
+		sys_clock_initialized = true;
+		sys_clock_last_real_ms = real_now;
+		sys_clock_virtual_100 = (uint64_t)real_now * 100ULL;
+		return;
+	}
+	uint32_t delta = (uint32_t)(real_now - sys_clock_last_real_ms);
+	if (delta > 0) {
+		sys_clock_virtual_100 += (uint64_t)delta * (uint64_t)sys_game_speed_pct;
+		sys_clock_last_real_ms = real_now;
+	}
+}
+
+int sys_set_game_speed_percent(int pct) {
+	int clamped = clamp_sys_game_speed_pct(pct);
+	uint32_t real_now = SDL_GetTicks();
+	SYS_CLOCK_LOCK();
+	sys_clock_advance_locked(real_now);
+	sys_game_speed_pct = clamped;
+	SYS_CLOCK_UNLOCK();
+	return clamped;
+}
+
+int sys_get_game_speed_percent(void) {
+	SYS_CLOCK_LOCK();
+	int speed = sys_game_speed_pct;
+	SYS_CLOCK_UNLOCK();
+	return speed;
+}
+
+int sys_scale_sleep_ms(int msec) {
+	if (msec <= 0)
+		return 0;
+	int speed = sys_get_game_speed_percent();
+	if (speed == SYS_GAME_SPEED_DEFAULT_PCT)
+		return msec;
+	int64_t scaled = ((int64_t)msec * 100LL + (int64_t)(speed / 2)) / (int64_t)speed;
+	if (scaled < 1)
+		scaled = 1;
+	if (scaled > INT_MAX)
+		scaled = INT_MAX;
+	return (int)scaled;
+}
+
 uint32_t sys_get_ticks(void) {
-	return SDL_GetTicks();
+	uint32_t real_now = SDL_GetTicks();
+	SYS_CLOCK_LOCK();
+	sys_clock_advance_locked(real_now);
+	uint32_t out = (uint32_t)(sys_clock_virtual_100 / 100ULL);
+	SYS_CLOCK_UNLOCK();
+	return out;
 }
 
 void sys_sleep(int msec) {
@@ -165,6 +241,7 @@ void sys_sleep(int msec) {
 		nact_quit(false);
 		return;
 	}
+	msec = sys_scale_sleep_ms(msec);
 	gfx_updateScreen();
 	dbg_onsleep();
 #ifdef __EMSCRIPTEN__

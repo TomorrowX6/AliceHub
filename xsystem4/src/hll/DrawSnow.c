@@ -26,6 +26,7 @@
 #include "plugin.h"
 #include "sact.h"
 #include "sprite.h"
+#include "vm.h"
 #include "xsystem4.h"
 
 static const char plugin_name[] = "DrawSnow";
@@ -82,7 +83,7 @@ static void DrawSnow_update(struct sact_sprite *sp)
 	struct draw_snow_plugin *plugin = (struct draw_snow_plugin *)sp->plugin;
 	if (!plugin->particles)
 		return;
-	int elapsed = SDL_GetTicks() - plugin->timestamp;
+	int elapsed = (uint32_t)vm_time() - plugin->timestamp;
 	if (elapsed >= 16)
 		sprite_dirty(sp);
 }
@@ -95,7 +96,7 @@ static void DrawSnow_render(struct sact_sprite *sp)
 
 	struct texture *src = sprite_get_texture(sact_get_sprite(plugin->snow_sprite));
 	struct texture *dst = gfx_main_surface();
-	plugin->timestamp = SDL_GetTicks();
+	plugin->timestamp = (uint32_t)vm_time();
 	uint32_t timestamp = 30000 + plugin->timestamp;
 	for (int i = 0; i < plugin->nr_particles; i++) {
 		struct snowflake *p = &plugin->particles[i];

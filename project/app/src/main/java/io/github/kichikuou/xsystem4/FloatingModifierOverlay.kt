@@ -2,8 +2,10 @@ package io.github.kichikuou.xsystem4
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
+import android.util.TypedValue
 import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.MotionEvent
@@ -24,7 +26,8 @@ import kotlin.math.abs
 class FloatingModifierOverlay(private val activity: Activity) {
 
     private var rootOverlay: FrameLayout? = null
-    private var floatingBtn: ImageView? = null
+    private var floatingBtn: View? = null
+    private var speedBadge: TextView? = null
     private var lastCheatCode: String = ""
 
     private val isZh: Boolean
@@ -107,6 +110,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         val btn = buildFloatingButton()
         floatingBtn = btn
         container.addView(btn)
+        refreshSpeedBadge()
 
         activity.addContentView(
             container,
@@ -120,6 +124,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
     fun detach() {
         dismissTrackedDialogs()
         GamepadConfigDialog.dismissForContext(activity)
+        speedBadge = null
         floatingBtn = null
         rootOverlay = null
     }
@@ -130,16 +135,47 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 attach()
             } else {
                 floatingBtn?.visibility = View.VISIBLE
+                refreshSpeedBadge()
             }
         } else {
             floatingBtn?.visibility = View.GONE
         }
     }
 
-    private fun buildFloatingButton(): ImageView {
+    fun refreshSpeedBadge(previewPct: Int? = null) {
+        val badge = speedBadge ?: return
+        val pct = GameModifierBridge.clampGameSpeed(
+            previewPct ?: GameModifierBridge.getGameSpeedPercent(activity, currentUiScaleGameKey())
+        )
+        if (pct == GameModifierBridge.DEFAULT_GAME_SPEED_PCT) {
+            badge.visibility = View.GONE
+            return
+        }
+        val accent = currentGameAccentColor()
+        badge.text = GameModifierBridge.formatGameSpeed(pct, compact = true)
+        badge.setTextColor(UiKit.contrastOn(accent))
+        badge.background = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(accent)
+            setStroke(dp(1).coerceAtLeast(1), 0xAA000000.toInt())
+        }
+        badge.visibility = View.VISIBLE
+    }
+
+    @JvmName("getSpeedBadgeForTest")
+    internal fun getSpeedBadgeForTest(): TextView? = speedBadge
+
+    private fun buildFloatingButton(): View {
         val sizePx = dp(40)
         val padPx = dp(6)
-        val btn = ImageView(activity).apply {
+        val wrapper = FrameLayout(activity).apply {
+            alpha = 0.8f
+            clipChildren = false
+            clipToPadding = false
+            contentDescription = tr("悬浮窗修改器", "改造", "Modifier")
+        }
+
+        val iconView = ImageView(activity).apply {
             setImageResource(R.drawable.ic_launcher)
             scaleType = ImageView.ScaleType.FIT_CENTER
             setPadding(padPx, padPx, padPx, padPx)
@@ -148,19 +184,41 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 setColor(0x88000000.toInt())
                 setStroke(dp(1), 0x55FFFFFF)
             }
-            alpha = 0.8f
-            contentDescription = tr("悬浮窗修改器", "改造", "Modifier")
+            layoutParams = FrameLayout.LayoutParams(
+                sizePx,
+                sizePx,
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            )
         }
+        wrapper.addView(iconView)
+
+        val badge = TextView(activity).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 9.5f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setPadding(dp(5), dp(1), dp(5), dp(1))
+            visibility = View.GONE
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            ).apply {
+                topMargin = dp(30)
+            }
+        }
+        speedBadge = badge
+        wrapper.addView(badge)
 
         val lp = FrameLayout.LayoutParams(
-            sizePx,
-            sizePx,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.START
         ).apply {
             leftMargin = dp(12)
             topMargin = dp(12)
         }
-        btn.layoutParams = lp
+        wrapper.layoutParams = lp
 
         var downRawX = 0f
         var downRawY = 0f
@@ -168,7 +226,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         var startTop = 0
         var dragging = false
 
-        btn.setOnTouchListener { v, event ->
+        wrapper.setOnTouchListener { v, event ->
             val params = v.layoutParams as FrameLayout.LayoutParams
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -210,7 +268,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 else -> false
             }
         }
-        return btn
+        return wrapper
     }
 
     fun openMainMenu() {
@@ -485,10 +543,15 @@ class FloatingModifierOverlay(private val activity: Activity) {
         }
 
         val uiScaleGameKey = currentUiScaleGameKey()
+        val speedPct = GameModifierBridge.getGameSpeedPercent(activity, uiScaleGameKey)
+        val speedLabel = GameModifierBridge.formatGameSpeed(speedPct)
         val fontPct = GameModifierBridge.getFontScalePercent(activity, uiScaleGameKey)
         val sbPct = GameModifierBridge.getScrollbarScalePercent(activity, uiScaleGameKey)
 
         val menuEntries = mutableListOf<Pair<String, () -> Unit>>()
+        menuEntries.add(
+            tr("游戏倍速 · $speedLabel…", "ゲーム速度 · $speedLabel…", "Game Speed · $speedLabel…") to { showGameSpeedDialog() }
+        )
         if (isRance10) {
             menuEntries.add(
                 tr("实时锁定 · $lockCount 项…", "リアルタイムロック · $lockCount 項目…", "Live Locks · $lockCount…") to { showLocksDialog() }
@@ -3142,6 +3205,51 @@ class FloatingModifierOverlay(private val activity: Activity) {
         )
     }
 
+    @JvmName("showGameSpeedDialog")
+    internal fun showGameSpeedDialog() {
+        val gameKey = currentUiScaleGameKey()
+        showScaleSliderDialog(
+            title = tr("游戏倍速", "ゲーム速度", "Game Speed"),
+            description = tr(
+                "仅对当前游戏生效 · 范围 0.5x~5.0x，默认 1.0x（不影响音频与触控）",
+                "このゲームのみ適用 · 範囲 0.5x~5.0x · 標準 1.0x（音声・操作は等速）",
+                "Current game only · Range 0.5x~5.0x · Default 1.0x (audio & touch unaffected)"
+            ),
+            minPct = GameModifierBridge.MIN_GAME_SPEED_PCT,
+            maxPct = GameModifierBridge.MAX_GAME_SPEED_PCT,
+            defaultPct = GameModifierBridge.DEFAULT_GAME_SPEED_PCT,
+            stepPct = 25,
+            currentPct = GameModifierBridge.getGameSpeedPercent(activity, gameKey),
+            presets = listOf(100, 150, 200, 300, 400, 500),
+            applyPct = { pct ->
+                GameModifierBridge.setGameSpeedPercent(activity, gameKey, pct)
+                refreshSpeedBadge(pct)
+            },
+            onConfirmedToast = { pct, isReset ->
+                val label = GameModifierBridge.formatGameSpeed(pct)
+                val msg = if (isReset) {
+                    tr("已恢复默认 $label", "$label に戻しました", "Reset to $label")
+                } else {
+                    tr("游戏倍速已设为 $label", "ゲーム速度を $label に設定しました", "Game speed set to $label")
+                }
+                Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
+            },
+            sliderQuantum = 5,
+            formatValue = { pct -> GameModifierBridge.formatGameSpeed(pct) },
+            formatStep = { delta ->
+                if (delta >= 0) "+0.25x" else "-0.25x"
+            },
+            formatHeader = { pct ->
+                val label = GameModifierBridge.formatGameSpeed(pct)
+                tr("当前倍速：$label", "現在速度：$label", "Speed: $label")
+            },
+            previewPct = { pct ->
+                GameModifierBridge.applyLiveGameSpeedPreview(pct)
+                refreshSpeedBadge(pct)
+            }
+        )
+    }
+
     private fun showScaleSliderDialog(
         title: String,
         description: String,
@@ -3152,19 +3260,31 @@ class FloatingModifierOverlay(private val activity: Activity) {
         currentPct: Int,
         presets: List<Int>,
         applyPct: (Int) -> Unit,
-        onConfirmedToast: (Int, Boolean) -> Unit
+        onConfirmedToast: (Int, Boolean) -> Unit,
+        sliderQuantum: Int = 1,
+        formatValue: (Int) -> String = { "$it%" },
+        formatStep: (Int) -> String = { delta -> if (delta >= 0) "+$delta%" else "$delta%" },
+        formatHeader: (Int) -> String = { pct ->
+            tr(
+                "当前比例：${formatValue(pct)}",
+                "現在倍率：${formatValue(pct)}",
+                "Current: ${formatValue(pct)}"
+            )
+        },
+        previewPct: (Int) -> Unit = applyPct
     ) {
+        val quantum = sliderQuantum.coerceAtLeast(1)
         val initialPct = currentPct.coerceIn(minPct, maxPct)
         var selectedPct = initialPct
-        var lastAppliedPct = initialPct
+        var lastPreviewedPct = initialPct
         var confirmed = false
         var updatingBar = false
 
         fun applyLivePreview(pct: Int) {
             val clamped = pct.coerceIn(minPct, maxPct)
-            if (clamped != lastAppliedPct) {
-                lastAppliedPct = clamped
-                applyPct(clamped)
+            if (clamped != lastPreviewedPct) {
+                lastPreviewedPct = clamped
+                previewPct(clamped)
             }
         }
 
@@ -3198,8 +3318,8 @@ class FloatingModifierOverlay(private val activity: Activity) {
             setTextAppearance(R.style.TextAppearance_Launcher_CardTitle)
         }
         val seekBar = SeekBar(uiCtx).apply {
-            max = maxPct - minPct
-            progress = selectedPct - minPct
+            max = (maxPct - minPct) / quantum
+            progress = (selectedPct - minPct) / quantum
             UiKit.tintSeekBar(this, accent)
             setPadding(dp(8), dp(14), dp(8), dp(14))
             layoutParams = LinearLayout.LayoutParams(
@@ -3212,14 +3332,10 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
         fun updateSelected(newPct: Int, syncSeek: Boolean, previewNow: Boolean) {
             selectedPct = newPct.coerceIn(minPct, maxPct)
-            valueTv.text = tr(
-                "当前比例：$selectedPct%",
-                "現在倍率：$selectedPct%",
-                "Current: $selectedPct%"
-            )
+            valueTv.text = formatHeader(selectedPct)
             if (syncSeek) {
                 updatingBar = true
-                seekBar.progress = selectedPct - minPct
+                seekBar.progress = (selectedPct - minPct) / quantum
                 updatingBar = false
             }
             if (previewNow) {
@@ -3237,8 +3353,8 @@ class FloatingModifierOverlay(private val activity: Activity) {
                 ).apply { marginStart = dp(8) }
                 setOnClickListener { updateSelected(selectedPct + delta, true, true) }
             }
-        val minusBtn = stepButton("-$stepPct%", -stepPct)
-        val plusBtn = stepButton("+$stepPct%", stepPct)
+        val minusBtn = stepButton(formatStep(-stepPct), -stepPct)
+        val plusBtn = stepButton(formatStep(stepPct), stepPct)
         headerRow.addView(valueTv)
         headerRow.addView(minusBtn)
         headerRow.addView(plusBtn)
@@ -3248,7 +3364,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (updatingBar) return
-                updateSelected(minPct + progress, false, false)
+                updateSelected(minPct + progress * quantum, false, false)
             }
             override fun onStartTrackingTouch(bar: SeekBar?) {}
             override fun onStopTrackingTouch(bar: SeekBar?) {
@@ -3266,7 +3382,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
             }
             for ((index, preset) in chunk.withIndex()) {
                 val btn = Button(uiCtx).apply {
-                    text = "$preset%"
+                    text = formatValue(preset)
                     UiKit.styleTonalAccentButton(this, accent)
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                         marginStart = if (index > 0) dp(8) else 0
@@ -3281,31 +3397,32 @@ class FloatingModifierOverlay(private val activity: Activity) {
         updateSelected(selectedPct, true, false)
         scroll.addView(container)
 
+        val defaultLabel = formatValue(defaultPct)
         dialogBuilder()
             .setTitle(title)
             .setView(scroll)
             .setPositiveButton(R.string.ok) { _, _ ->
                 confirmed = true
-                lastAppliedPct = selectedPct
+                lastPreviewedPct = selectedPct
                 applyPct(selectedPct)
                 onConfirmedToast(selectedPct, false)
             }
-            .setNeutralButton(tr("恢复默认 $defaultPct%", "標準 $defaultPct%", "Reset $defaultPct%")) { _, _ ->
+            .setNeutralButton(tr("恢复默认 $defaultLabel", "標準 $defaultLabel", "Reset $defaultLabel")) { _, _ ->
                 confirmed = true
-                lastAppliedPct = defaultPct
+                lastPreviewedPct = defaultPct
                 applyPct(defaultPct)
                 onConfirmedToast(defaultPct, true)
             }
             .setNegativeButton(R.string.cancel) { _, _ ->
-                if (!confirmed && lastAppliedPct != initialPct) {
-                    lastAppliedPct = initialPct
-                    applyPct(initialPct)
+                if (!confirmed && lastPreviewedPct != initialPct) {
+                    lastPreviewedPct = initialPct
+                    previewPct(initialPct)
                 }
             }
             .setOnCancelListener {
-                if (!confirmed && lastAppliedPct != initialPct) {
-                    lastAppliedPct = initialPct
-                    applyPct(initialPct)
+                if (!confirmed && lastPreviewedPct != initialPct) {
+                    lastPreviewedPct = initialPct
+                    previewPct(initialPct)
                 }
             }
             .show()

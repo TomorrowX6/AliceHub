@@ -23,6 +23,7 @@
 #include "gfx/gfx.h"
 #include "hll.h"
 #include "id_pool.h"
+#include "vm.h"
 
 struct vm_anime {
 	int cg;
@@ -118,7 +119,7 @@ static void vmAnime_Draw(int handle, int return_)
 	gfx_copy_main_surface(&old);
 	Texture *dst = gfx_main_surface();
 
-	uint64_t start_time = SDL_GetTicks64();
+	uint64_t start_time = vm_time64();
 	for (int i = 0; i < anime->length; i++) {
 		struct cg *cg = asset_cg_load(anime->cg + i);
 		Texture src;
@@ -128,9 +129,9 @@ static void vmAnime_Draw(int handle, int return_)
 		gfx_delete_texture(&src);
 		cg_free(cg);
 		gfx_swap();
-		int64_t remaining = (int64_t)(start_time + (i + 1) * anime->interval) - (int64_t)SDL_GetTicks64();
+		int64_t remaining = (int64_t)(start_time + (i + 1) * anime->interval) - (int64_t)vm_time64();
 		if (remaining > 0)
-			gfx_android_delay((Uint32)remaining);
+			vm_sleep((int)remaining);
 	}
 	if (return_) {
 		gfx_copy(dst, 0, 0, &old, 0, 0, old.w, old.h);
