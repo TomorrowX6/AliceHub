@@ -1,988 +1,830 @@
-(() => {
-  'use strict';
+import * as THREE from './vendor/three.module.min.js';
 
-  const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const RELEASE = {
-    tag: 'f0810b6',
-    url: 'https://github.com/TomorrowX6/AliceHub/releases/tag/f0810b6',
-    assets: {
-      android: {
-        name: 'AliceHub-f0810b6-arm64-v8a.apk',
-        size: '44.3 MiB',
-        url: 'https://github.com/TomorrowX6/AliceHub/releases/download/f0810b6/AliceHub-f0810b6-arm64-v8a.apk',
-      },
-      ios: {
-        name: 'AliceHub-f0810b6-ios-unsigned.ipa',
-        size: '48.6 MiB',
-        url: 'https://github.com/TomorrowX6/AliceHub/releases/download/f0810b6/AliceHub-f0810b6-ios-unsigned.ipa',
-      },
-      switch: {
-        name: 'AliceHub-f0810b6-switch.zip',
-        size: '85.9 MiB',
-        url: 'https://github.com/TomorrowX6/AliceHub/releases/download/f0810b6/AliceHub-f0810b6-switch.zip',
-      },
-    },
-  };
-
-  /* 36 Curated AliceSoft Titles across 3 Opposing Filmstrip Rows (12 × 3) */
-  const CATALOG_GAMES = [
-    // Row 1: Flagship System 4.x
-    { slug: 'rance10', eng: 'SYS4', cn: true, zh: '兰斯 10 -决战-', en: 'Rance X', ja: 'ランス10 -決戦-', caps: ['PC 兼容存档', '多实例目录', '离线存档编辑', 'MOD 管理'] },
-    { slug: 'dohnadohna', eng: 'SYS4', cn: true, zh: '多娜多娜 一起干坏事吧', en: 'Dohna Dohna', ja: 'ドーナドーナ', caps: ['AIN v14.1', 'PC 兼容存档', 'Parts 字号缩放', 'MOD 管理'] },
-    { slug: 'evenicle2', eng: 'SYS4', cn: true, zh: '夏娃年代记 2', en: 'Evenicle 2', ja: 'イブニクル2', caps: ['SealEngine 3D', 'PC 兼容存档', '局内修改器', '启动入口'] },
-    { slug: 'evenicle', eng: 'SYS4', cn: true, zh: '夏娃年代记', en: 'Evenicle', ja: 'イブニクル', caps: ['3D 地图渲染', 'PC 兼容存档', '局内修改器', '虚拟手柄'] },
-    { slug: 'sengokurance', eng: 'SYS4', cn: true, zh: '战国兰斯', en: 'Sengoku Rance', ja: '戦国ランス', caps: ['SACT2', '局内修改器', '汉化补丁', 'PC 兼容存档'] },
-    { slug: 'rance09', eng: 'SYS4', cn: true, zh: '兰斯 09 赫尔曼革命', en: 'Rance IX', ja: 'ランス9', caps: ['PartsEngine', '局内修改器', '字号缩放', 'PC 兼容存档'] },
-    { slug: 'rance08', eng: 'SYS4', cn: true, zh: '兰斯 08 Quest Magnum', en: 'Rance Quest', ja: 'ランス・クエスト', caps: ['局内修改器', '多碟合并', 'PC 兼容存档', '虚拟手柄'] },
-    { slug: 'rance06', eng: 'SYS4', cn: true, zh: '兰斯 VI 赛斯崩坏', en: 'Rance VI', ja: 'ランスVI', caps: ['3D 迷宫渲染', '原版迷宫兼容', '虚拟摇杆', 'PC 兼容存档'] },
-    { slug: 'rance03', eng: 'SYS4', cn: true, zh: '兰斯 03 利萨斯陷落', en: 'Rance 03', ja: 'ランス03', caps: ['PartsEngine', '高清重排字体', 'MOD 补丁', 'PC 兼容存档'] },
-    { slug: 'rance01', eng: 'SYS4', cn: true, zh: '兰斯 01 寻找小光', en: 'Rance 01', ja: 'ランス01', caps: ['PartsEngine', '字号缩放', 'PC 兼容存档', '虚拟手柄'] },
-    { slug: 'daiteikoku', eng: 'SYS4', cn: true, zh: '大帝国', en: 'Daiteikoku', ja: '大帝国', caps: ['SACT2', '战略触控/手柄', '汉化补丁', 'PC 兼容存档'] },
-    { slug: 'escalayer_reboot', eng: 'SYS4', cn: true, zh: '超昂天使 R 重制版', en: 'Escalayer Reboot', ja: '超昂天使R', caps: ['<memory> 存档', '多编码弹窗', '字号缩放', 'PC 兼容存档'] },
-    // Row 2: System 4.x Fan Favorites & Localization Classics
-    { slug: 'ixseal', eng: 'SYS4', cn: true, zh: '超昂神骑 Ixseal', en: 'Beat Valkyrie Ixseal', ja: '超昂神騎エクシール', caps: ['局内修改器', 'PartsEngine', '汉化适配', 'PC 兼容存档'] },
-    { slug: 'haruka', eng: 'SYS4', cn: true, zh: '超昂闪忍 遥', en: 'Beat Blades Haruka', ja: '超昂閃忍ハルカ', caps: ['Ogg Opus 语音', '局内修改器', '汉化补丁', 'PC 兼容存档'] },
-    { slug: 'maman', eng: 'SYS4', cn: true, zh: '再婚妈妈', en: 'Heartful Maman', ja: 'は～とふるママン', caps: ['精准字宽排版', '存档导入', '汉化适配', '虚拟手柄'] },
-    { slug: 'oyakorankan', eng: 'SYS4', cn: true, zh: '母娘乱馆', en: 'Oyakorankan', ja: '母娘乱館', caps: ['CHS.TBL 映射', 'CP932 弹窗识别', '启动入口', '虚拟手柄'] },
-    { slug: 'haharanman', eng: 'SYS4', cn: true, zh: '母烂漫', en: 'Haha Ranman', ja: '母爛漫', caps: ['ADV 立绘渲染', '存档导入', '汉化补丁', '虚拟手柄'] },
-    { slug: 'tsumamigui3', eng: 'SYS4', cn: true, zh: '妻中蜜 3', en: 'Tsumamigui 3', ja: '妻みぐい3', caps: ['背景语音音量', '启动入口', '汉化适配', 'PC 兼容存档'] },
-    { slug: 'daibanchou', eng: 'SYS4', cn: true, zh: '大番长', en: 'Daibanchou', ja: '大番長', caps: ['SACT2', '战略 SLG', '汉化补丁', 'PC 兼容存档'] },
-    { slug: 'dorapeko', eng: 'SYS4', cn: true, zh: '多拉佩科', en: 'Dorapeko', ja: 'ドラペコ', caps: ['PartsEngine', '局内修改器', '汉化适配', 'PC 兼容存档'] },
-    { slug: 'bladebriders', eng: 'SYS4', cn: false, zh: 'Blade Briders', en: 'Blade Briders', ja: 'ブレイドブライダーズ', caps: ['xsystem4', '3D 战斗', '虚拟手柄', 'PC 兼容存档'] },
-    { slug: 'toushin3', eng: 'SYS4', cn: true, zh: '斗神都市 III', en: 'Toushin Toshi III', ja: '闘神都市III', caps: ['ReignEngine 3D', '迷宫摇杆映射', '汉化适配', 'PC 兼容存档'] },
-    { slug: 'galzoo', eng: 'SYS4', cn: true, zh: 'GALZOO 岛', en: 'Galzoo Island', ja: 'GALZOOアイランド', caps: ['迷宫 RPG', '虚拟手柄', '汉化适配', 'PC 兼容存档'] },
-    { slug: 'paschacpp', eng: 'SYS4', cn: true, zh: '帕斯茶 C++', en: 'Pascha C++', ja: 'ぱすちゃC++', caps: ['SACT2', '多编码排版', '虚拟手柄', '存档备份'] },
-    // Row 3: System 3.5–3.9 & Classic Era Icons
-    { slug: 'kichikuou', eng: 'SYS35', cn: true, zh: '鬼畜王兰斯', en: 'Kichikuou Rance', ja: '鬼畜王ランス', caps: ['xsystem35', '原生 MIDI', '虚拟 CD 音轨', '局内修改器'] },
-    { slug: 'daiakuji', eng: 'SYS35', cn: true, zh: '大恶司', en: 'Daiakuji', ja: '大悪司', caps: ['xsystem35', '原生 MIDI', 'SLG 触控', '存档管理'] },
-    { slug: 'mamatoto', eng: 'SYS35', cn: true, zh: '魔物娘战记', en: 'Mamatoto', ja: 'ママトト', caps: ['xsystem35', 'ALD/PMS 渲染', '虚拟手柄', '存档管理'] },
-    { slug: 'toushin2', eng: 'SYS35', cn: true, zh: '斗神都市 II', en: 'Toushin Toshi II', ja: '闘神都市II', caps: ['xsystem35', '原生 MIDI', '经典 RPG', '虚拟手柄'] },
-    { slug: 'atlachnacha', eng: 'SYS35', cn: true, zh: '阿托拉克纳克亚', en: 'Atlach-Nacha', ja: 'アトラク＝ナクア', caps: ['xsystem35', '原生 MIDI', '汉化适配', '局内悬浮窗'] },
-    { slug: 'dalk', eng: 'SYS35', cn: false, zh: 'DALK 外传 / 达克', en: 'DALK', ja: 'DALK', caps: ['xsystem35', '经典战棋', 'MIDI 合成', '虚拟手柄'] },
-    { slug: 'escalayer', eng: 'SYS35', cn: true, zh: '超昂天使 原版', en: 'Escalayer', ja: '超昂天使エスカレイヤー', caps: ['xsystem35', 'System 3.9', '虚拟 CD 音轨', '存档备份'] },
-    { slug: 'rance02', eng: 'SYS4', cn: true, zh: '兰斯 02 反叛的少女们', en: 'Rance 02', ja: 'ランス02', caps: ['xsystem4', '局内修改器', '汉化补丁', 'PC 兼容存档'] },
-    { slug: 'rance5d', eng: 'SYS35', cn: true, zh: '兰斯 5D 孤独的少女', en: 'Rance 5D', ja: 'ランス5D', caps: ['xsystem35', 'System 3.9', '汉化适配', '虚拟手柄'] },
-    { slug: 'yorugakuru', eng: 'SYS35', cn: true, zh: '夜来了！', en: 'Yoru ga Kuru!', ja: '夜が来る!', caps: ['xsystem35', '原生 MIDI', '汉化适配', '局内悬浮窗'] },
-    { slug: 'okusamantr', eng: 'SYS4', cn: true, zh: '太太的恢复术', en: 'Okusama no Kaifuku Jutsu', ja: '奥さまの回復術', caps: ['xsystem4', '立绘排版修复', '汉化适配', '虚拟手柄'] },
-    { slug: 'ikusamiko', eng: 'SYS4', cn: false, zh: '战巫女', en: 'Ikusamiko', ja: '戦巫女', caps: ['xsystem4', 'SACT2', '虚拟手柄', '存档管理'] },
-  ];
-
-  const I18N = {
-    zh: {
-      'nav.reel': '作品滚轴',
-      'nav.overview': '引擎与三端',
-      'nav.features': '功能',
-      'nav.download': '下载',
-      'nav.cta': '下载',
-      'hero.tag': 'NATIVE SDL2 · ZERO WINE',
-      'hero.sub': '<strong>Android · iOS · Switch</strong> 原生运行 AliceSoft System 1–4 · 60fps · PC 存档互通',
-      'hero.cta': '下载最新版',
-      'reel.meta': '内置 171+ 目录（含 54+ 汉化）· 支持导入任意 System 1–4 作品 · 点击封面速览',
-      'catalog.fAll': '全部 36',
-      'catalog.fCn': '汉化',
-      'catalog.inspHint': '自动路由至 xsystem4 原生运行 · 三端直跑',
-      'overview.kicker': '01 / ARCHITECTURE',
-      'overview.title': '三核原生 · 三端直跑',
-      'overview.sub': '自动识别目录路由引擎，全平台统一构建。',
-      'eng.s3': '早期 DAT 作品原生触控、独立存档与快进。',
-      'eng.s35': '完整 ALD/PMS 渲染、多编码、虚拟 CD 音轨与原生 MIDI。',
-      'eng.s4': '覆盖 SACT2 至 AIN v14.1、PartsEngine、SealEngine 3D 与 FLAT v15。',
-      'hb.tabControls': '操控映射',
-      'hb.tabWorkflow': '四步上手',
-      'hb.tabStorage': '存储同步',
-      'features.kicker': '02 / CAPABILITIES',
-      'features.title': '核心功能',
-      'features.sub': '从导入、补丁到存档互通与局内工具。',
-      'feat.f1.title': 'PC ⇄ 移动端存档互通',
-      'feat.f1.desc': '目录隔离与自动备份；按 .ain 结构无损转换 X4SS / .gsave / .rsm 与 <memory>。',
-      'feat.f2.title': '全格式直读与合碟',
-      'feat.f2.desc': '直读 .zip/.rar/.7z/.iso/.mdf，自动合并多碟、覆盖补丁与修复乱码。',
-      'feat.f3.title': '60fps 稳帧与后台恢复',
-      'feat.f3.desc': '高优渲染/混音线程、ADPF 提频、16KB 对齐与切后台自动重建纹理/迷宫。',
-      'feat.f4.title': '无损 MOD 与补丁',
-      'feat.f4.desc': '在线/本地 MOD、汉化与去码补丁；覆盖前自动原子备份，一键还原。',
-      'feat.f5.title': '多编码与多轨音频',
-      'feat.f5.desc': '兼容 SJIS/GBK/UTF-8 与 CHS.TBL/UIF/word.mai；内置 Opus、MIDI 与 CD 音轨。',
-      'feat.f6.title': '流式在线安装',
-      'feat.f6.desc': '默认关闭按需开启；HTTP Range 续传、SHA-256 校验与后台保活，免双倍空间。',
-      'feat.f7.title': '多实例与目录同步',
-      'feat.f7.desc': '《兰斯 10》多实例隔离、AliceStart.CHS 入口切换，支持共享目录与 iCloud。',
-      'feat.f8.title': '修改器与崩溃诊断',
-      'feat.f8.desc': '离线存档编辑、局内数值锁定与主播模式；崩溃导出 .txt 诊断日志与三语主题。',
-      'feat.f9.title': '虚拟手柄与实时字号',
-      'feat.f9.desc': '全屏拖拽虚拟手柄与主流外设；PartsEngine 字体 75%–160% 无溢出实时缩放。',
-      'feat.f9.preview': '兰斯 10 · 实时字号',
-      'download.kicker': '03 / RELEASE · GPL-2.0',
-      'download.title': '获取最新版',
-      'download.sub': 'GitHub Actions 公开构建 · 不含任何游戏本体。',
-      'download.androidReq': 'Android 8.0+ · 直接安装',
-      'download.iosReq': 'iOS 15+ · 自签侧载',
-      'download.switchReq': '4× NRO → SD /switch/',
-      'download.qq': 'QQ 群',
-      'download.allReleases': '历史版本',
-      'download.ciBuilds': '持续构建',
-      'download.source': '开源协议',
-      'footer.license': 'GPL-2.0 · 纯开源启动器，不含游戏本体',
-      'toast.qqCopied': '已复制 QQ 群号：383917628',
-      'toast.pokes': [
-        'Alice // 0% Wine · 100% Native SDL2',
-        'Alice // 60fps VSync 已锁定',
-        'Alice // X4SS ⇄ GD\\x01\\x01 跨端存档就绪',
-      ],
-    },
-    en: {
-      'nav.reel': 'Showcase',
-      'nav.overview': 'Engines',
-      'nav.features': 'Features',
-      'nav.download': 'Download',
-      'nav.cta': 'Get App',
-      'hero.tag': 'NATIVE SDL2 · ZERO WINE',
-      'hero.sub': '<strong>Android · iOS · Switch</strong> Native AliceSoft System 1–4 · 60fps · PC Save Interop',
-      'hero.cta': 'Download',
-      'reel.meta': '171+ catalog (54+ CN) · Unrestricted System 1–4 import · Click any cover to inspect',
-      'catalog.fAll': 'All 36',
-      'catalog.fCn': 'CN',
-      'catalog.inspHint': 'Auto-routed to xsystem4 native kernel · 3 platforms',
-      'overview.kicker': '01 / ARCHITECTURE',
-      'overview.title': 'Three Kernels · Three Platforms',
-      'overview.sub': 'Auto-detects root markers; unified builds across Android, iOS & Switch.',
-      'eng.s3': 'Early DAT classics with direct touch, scoped saves & fast skip.',
-      'eng.s35': 'ALD/PMS graphics, multi-encoding CJK, virtual CDDA & native MIDI.',
-      'eng.s4': 'SACT2 through AIN v14.1, PartsEngine, SealEngine 3D & FLAT v15.',
-      'hb.tabControls': 'Controls',
-      'hb.tabWorkflow': 'Quick Start',
-      'hb.tabStorage': 'Storage',
-      'features.kicker': '02 / CAPABILITIES',
-      'features.title': 'Core Capabilities',
-      'features.sub': 'Import, patches, save interop & handheld tools.',
-      'feat.f1.title': 'PC ⇄ Mobile Save Interop',
-      'feat.f1.desc': 'Per-game isolation & backups; .ain-guided X4SS / .gsave / .rsm & <memory> export.',
-      'feat.f2.title': 'All-Format Import',
-      'feat.f2.desc': 'Direct .zip/.rar/.7z/.iso/.mdf extraction, multi-disc merge & CJK filename fix.',
-      'feat.f3.title': '60fps & Context Recovery',
-      'feat.f3.desc': 'Priority render/audio threads, ADPF boost, 16 KB alignment & EGL rebuild.',
-      'feat.f4.title': 'Atomic MODs & Patches',
-      'feat.f4.desc': 'Online/local MODs, translations & uncensored patches with one-tap restore.',
-      'feat.f5.title': 'CJK Remaps & Audio',
-      'feat.f5.desc': 'SJIS/GBK/UTF-8 & CHS.TBL/UIF/word.mai; built-in Opus, MIDI & CDDA.',
-      'feat.f6.title': 'Streaming Install',
-      'feat.f6.desc': 'Opt-in HTTP Range resume, SHA-256 checks & background tasks without 2× staging.',
-      'feat.f7.title': 'Multi-Instance & Sync',
-      'feat.f7.desc': 'Rance X multi-folder isolation, AliceStart.CHS entries, shared storage & iCloud.',
-      'feat.f8.title': 'Modifiers & Crash Logs',
-      'feat.f8.desc': 'Offline save editor, live locks & streamer mode; .txt crash logs & themes.',
-      'feat.f9.title': 'Virtual Pad & Font Scale',
-      'feat.f9.desc': 'Fullscreen drag pad editor & controllers; 75%–160% PartsEngine live scaling.',
-      'feat.f9.preview': 'Rance X · Live Scale',
-      'download.kicker': '03 / RELEASE · GPL-2.0',
-      'download.title': 'Download Latest',
-      'download.sub': 'Built via GitHub Actions · No games bundled.',
-      'download.androidReq': 'Android 8.0+ · Direct install',
-      'download.iosReq': 'iOS 15+ · Sideload IPA',
-      'download.switchReq': '4× NRO → SD /switch/',
-      'download.qq': 'QQ Group',
-      'download.allReleases': 'History',
-      'download.ciBuilds': 'Nightly',
-      'download.source': 'License',
-      'footer.license': 'GPL-2.0 · Open-source launcher, no games included',
-      'toast.qqCopied': 'Copied QQ Group: 383917628',
-      'toast.pokes': [
-        'Alice // 0% Wine · 100% Native SDL2',
-        'Alice // 60fps VSync Locked',
-        'Alice // X4SS ⇄ GD\\x01\\x01 Ready',
-      ],
-    },
-    ja: {
-      'nav.reel': '作品リール',
-      'nav.overview': 'エンジン',
-      'nav.features': '機能',
-      'nav.download': '入手',
-      'nav.cta': '入手',
-      'hero.tag': 'NATIVE SDL2 · ZERO WINE',
-      'hero.sub': '<strong>Android・iOS・Switch</strong> で System 1–4 をネイティブ実行 · 60fps · PC セーブ互換',
-      'hero.cta': '最新版を入手',
-      'reel.meta': '171+ 内蔵目録（54+ 翻訳）· 任意の System 1–4 導入可 · クリックで詳細',
-      'catalog.fAll': 'すべて 36',
-      'catalog.fCn': '翻訳',
-      'catalog.inspHint': 'xsystem4 へ自動ルーティング · 3機種対応',
-      'overview.kicker': '01 / ARCHITECTURE',
-      'overview.title': '3系統コア · 3機種統一',
-      'overview.sub': 'フォルダ構成を自動判別し、全機種へ同時配布。',
-      'eng.s3': '初期 DAT 作品をネイティブタッチ・分離セーブで実行。',
-      'eng.s35': 'ALD/PMS 描画、多文字コード、仮想 CD 音源、MIDI 再生。',
-      'eng.s4': 'SACT2 から AIN v14.1・PartsEngine・SealEngine 3D・FLAT v15 対応。',
-      'hb.tabControls': '操作対応',
-      'hb.tabWorkflow': '導入4手順',
-      'hb.tabStorage': '保存と同期',
-      'features.kicker': '02 / CAPABILITIES',
-      'features.title': '主要機能',
-      'features.sub': '導入・MOD・PC セーブ互換・携帯機向けツールを統合。',
-      'feat.f1.title': 'PC ⇄ モバイルセーブ互換',
-      'feat.f1.desc': '作品別分離＆自動退避。.ain 参照で X4SS / .gsave / .rsm を無劣化変換。',
-      'feat.f2.title': '全形式直展開＆合ディスク',
-      'feat.f2.desc': '.zip/.rar/.7z/.iso/.mdf を直読し複数ディスク統合＆文字化け修復。',
-      'feat.f3.title': '60fps 制御＆復帰再構築',
-      'feat.f3.desc': '高優先度描画/音声、ADPF、16KB 整列、EGL テクスチャ/迷宮自動再構築。',
-      'feat.f4.title': '非破壊 MOD＆パッチ',
-      'feat.f4.desc': 'オンライン/ローカル MOD・翻訳・修正解除に対応。自動退避で即復元。',
-      'feat.f5.title': '多文字コード＆音声',
-      'feat.f5.desc': 'SJIS/GBK/UTF-8・CHS.TBL/UIF/word.mai。Opus・MIDI・CD 音源内蔵。',
-      'feat.f6.title': 'ストリーミング導入',
-      'feat.f6.desc': '規約同意後に有効化。HTTP Range 再開・SHA-256 検証・省容量処理。',
-      'feat.f7.title': '複数インスタンス＆同期',
-      'feat.f7.desc': 'ランス10分離管理、AliceStart.CHS 切替、共有フォルダ＆iCloud 同期。',
-      'feat.f8.title': '改造・編集・診断ログ',
-      'feat.f8.desc': 'オフライン編集・数値ロック・配信モード。異常終了時は .txt 診断出力。',
-      'feat.f9.title': '仮想パッド＆文字拡大',
-      'feat.f9.desc': '全画面パッド編集＆コントローラー対応。PartsEngine 文字 75%–160% 拡大。',
-      'feat.f9.preview': 'ランス10 · 文字サイズ',
-      'download.kicker': '03 / RELEASE · GPL-2.0',
-      'download.title': '最新版を入手',
-      'download.sub': 'GitHub Actions 公開ビルド · ゲーム本体は非同梱。',
-      'download.androidReq': 'Android 8.0+ · 直接導入',
-      'download.iosReq': 'iOS 15+ · 署名して導入',
-      'download.switchReq': '4× NRO → SD /switch/',
-      'download.qq': 'QQ 群',
-      'download.allReleases': '履歴',
-      'download.ciBuilds': '最新 CI',
-      'download.source': 'ライセンス',
-      'footer.license': 'GPL-2.0 · オープンソースランチャー（本体非同梱）',
-      'toast.qqCopied': 'QQ 番号をコピー：383917628',
-      'toast.pokes': [
-        'Alice // Wine 不要・100% Native SDL2',
-        'Alice // 60fps VSync ロック',
-        'Alice // X4SS ⇄ GD\\x01\\x01 準備完了',
-      ],
-    },
-  };
-
-  const PLATFORMS = {
+const RELEASE = {
+  tag: 'f0810b6',
+  assets: {
     android: {
-      zh: {
-        headline: 'Android 原生调度与手柄编辑',
-        bullets: [
-          '直读文件夹、.zip/.rar/.7z 与 .iso/.mdf 多碟合并',
-          '全屏虚拟手柄编辑器 + Xbox / PS / Switch Pro 即插即用',
-          '共享目录迁移、单游戏启动入口与 PC 兼容存档导出',
-          '前台流式下载、ADPF 提频、16KB 页对齐与 .txt 诊断',
-        ],
-        cta: '下载 Android APK',
-      },
-      en: {
-        headline: 'Android Native Scheduling & Pad Editor',
-        bullets: [
-          'Direct folders, .zip/.rar/.7z & .iso/.mdf multi-disc merge',
-          'Fullscreen virtual pad editor + Xbox / PS / Switch Pro',
-          'Shared storage migration, boot entries & PC save export',
-          'Foreground installs, ADPF boost, 16 KB & .txt diagnostics',
-        ],
-        cta: 'Download Android APK',
-      },
-      ja: {
-        headline: 'Android ネイティブ制御＆パッド編集',
-        bullets: [
-          'フォルダ・.zip/.rar/.7z・.iso/.mdf 直読＆ディスク統合',
-          '全画面仮想パッド編集＋Xbox / PS / Switch Pro 対応',
-          '共有領域移行、起動エントリ切替、PC 互換セーブ出力',
-          'フォアグラウンド導入、ADPF、16KB 整列、.txt 診断',
-        ],
-        cta: 'Android APK を入手',
-      },
+      size: '44.3 MiB',
+      url: 'https://github.com/TomorrowX6/AliceHub/releases/download/f0810b6/AliceHub-f0810b6-arm64-v8a.apk',
     },
     ios: {
-      zh: {
-        headline: 'SwiftUI 原生壳体与 iCloud 同步',
-        bullets: [
-          'AltStore / SideStore 自签未签名 IPA，APFS 零冗余解压',
-          '支持「文件」直拷至 AliceHub → Games 及多格式导入',
-          'iCloud 云盘任意目录同步存档与 Windows PC 格式导出',
-          'iOS 26+ 后台任务、启动入口切换、原生 MIDI 与 MOD 管理',
-        ],
-        cta: '下载 iOS 未签名 IPA',
-      },
-      en: {
-        headline: 'SwiftUI Shell & iCloud Sync',
-        bullets: [
-          'Sign IPA via AltStore / SideStore with APFS copy-on-write',
-          'Drop into AliceHub → Games via Files or import archives/ISOs',
-          'Sync saves over iCloud Drive & export PC-compatible saves',
-          'iOS 26+ background tasks, launch entries, MIDI & MODs',
-        ],
-        cta: 'Download iOS IPA',
-      },
-      ja: {
-        headline: 'SwiftUI ネイティブ＆iCloud 同期',
-        bullets: [
-          'AltStore 等で IPA 署名導入、APFS 省容量展開に対応',
-          '「ファイル」で AliceHub → Games へ直接配置＆直展開',
-          'iCloud Drive セーブ同期＆Windows PC 互換セーブ出力',
-          'iOS 26+ バックグラウンド継続、起動切替、MIDI、MOD',
-        ],
-        cta: 'iOS IPA を入手',
-      },
+      size: '48.6 MiB',
+      url: 'https://github.com/TomorrowX6/AliceHub/releases/download/f0810b6/AliceHub-f0810b6-ios-unsigned.ipa',
     },
     switch: {
-      zh: {
-        headline: '四 NRO 原生自制 · 掌机底座通用',
-        bullets: [
-          '4 个 NRO 放入 SD 卡 /switch/，Homebrew 应用模式启动',
-          '三引擎统一大库：X 搜索、Y 设置、断点续传与入口切换',
-          '直读 SD 卡文件夹/.zip/.iso/.mdf，支持本地/在线 MOD',
-          '局内 L+R 呼出截图、快进、修改器、缩放与 PC_SaveData 导出',
-        ],
-        cta: '下载 Switch ZIP',
-      },
-      en: {
-        headline: '4× Native NROs · Handheld & Docked',
-        bullets: [
-          'Copy 4 NROs to SD /switch/, launch in Homebrew App Mode',
-          'Unified library: X search, Y settings, resume & boot entries',
-          'SD folders/.zip/.iso/.mdf plus local & online MOD overlays',
-          'L+R overlay for screenshots, skip, modifiers & PC_SaveData',
-        ],
-        cta: 'Download Switch ZIP',
-      },
-      ja: {
-        headline: '4 NRO 自作アプリ・携帯／ドック対応',
-        bullets: [
-          '4 NRO を SD /switch/ へ配置しアプリモードで起動',
-          '3エンジン統合：X 検索、Y 設定、レジューム、起動切替',
-          'SD のフォルダ/.zip/.iso/.mdf＆ローカル／オンライン MOD',
-          'L+R でスクショ・スキップ・改造・拡大・PC_SaveData 出力',
-        ],
-        cta: 'Switch ZIP を入手',
-      },
+      size: '85.9 MiB',
+      url: 'https://github.com/TomorrowX6/AliceHub/releases/download/f0810b6/AliceHub-f0810b6-switch.zip',
     },
-  };
+  },
+};
 
-  const HANDBOOK = {
-    controls: {
-      zh: `<table class="ctrl-table"><thead><tr><th>操作</th><th>触控</th><th>手柄默认</th></tr></thead><tbody>
-        <tr><td>左键 / 确认</td><td>单指轻触</td><td><code>A</code> / <code>R3</code>（左摇杆光标）</td></tr>
-        <tr><td>右键 / 菜单</td><td>双指轻触 / 轻触黑边</td><td><code>B</code></td></tr>
-        <tr><td>快进 Ctrl</td><td>长按 / <code>» Ctrl</code> 锁定</td><td><code>RT</code> 切换</td></tr>
-        <tr><td>滚轮回看</td><td>双指上下滑动</td><td><code>LB</code> / <code>RB</code> / 右摇杆</td></tr>
-        <tr><td>悬浮菜单</td><td>左上角悬浮图标</td><td><code>Start</code> · Switch <code>L+R</code></td></tr>
-      </tbody></table>`,
-      en: `<table class="ctrl-table"><thead><tr><th>Action</th><th>Touch</th><th>Controller</th></tr></thead><tbody>
-        <tr><td>Left Click</td><td>Single tap</td><td><code>A</code> / <code>R3</code> (L-Stick)</td></tr>
-        <tr><td>Right Click</td><td>2-finger / side bars</td><td><code>B</code></td></tr>
-        <tr><td>Fast-Forward</td><td>Long press / <code>» Ctrl</code></td><td><code>RT</code> toggle</td></tr>
-        <tr><td>Wheel / Log</td><td>2-finger swipe</td><td><code>LB</code> / <code>RB</code> / R-Stick</td></tr>
-        <tr><td>Overlay</td><td>Top-left icon</td><td><code>Start</code> · Switch <code>L+R</code></td></tr>
-      </tbody></table>`,
-      ja: `<table class="ctrl-table"><thead><tr><th>操作</th><th>タッチ</th><th>コントローラー</th></tr></thead><tbody>
-        <tr><td>決定 / 左</td><td>1本指タップ</td><td><code>A</code> / <code>R3</code>（左スティック）</td></tr>
-        <tr><td>戻る / 右</td><td>2本指 / 黒帯</td><td><code>B</code></td></tr>
-        <tr><td>スキップ</td><td>長押し / <code>» Ctrl</code></td><td><code>RT</code> 固定切替</td></tr>
-        <tr><td>ログ / 輪</td><td>2本指スワイプ</td><td><code>LB</code> / <code>RB</code> / 右スティック</td></tr>
-        <tr><td>メニュー</td><td>左上アイコン</td><td><code>Start</code>・Switch <code>L+R</code></td></tr>
-      </tbody></table>`,
-    },
-    workflow: {
-      zh: `<div class="wf-list">
-        <div class="wf-item"><span>01</span><div><strong>安装</strong>Android 装 APK；iOS 自签 IPA；Switch 拷 4 NRO 至 <code>/switch/</code>。</div></div>
-        <div class="wf-item"><span>02</span><div><strong>导入</strong>直读文件夹、<code>.zip/.rar/.7z</code>、<code>.iso/.mdf</code>，或按需开启在线安装。</div></div>
-        <div class="wf-item"><span>03</span><div><strong>配置</strong>按需装无损 MOD / 汉化 / 去码，或切换 <code>AliceStart.CHS</code> 入口。</div></div>
-        <div class="wf-item"><span>04</span><div><strong>互通</strong>局内调字号/手柄/修改器；一键同步 iCloud 或导出 PC 存档。</div></div>
-      </div>`,
-      en: `<div class="wf-list">
-        <div class="wf-item"><span>01</span><div><strong>Install</strong>APK on Android, signed IPA on iOS, or 4 NROs in <code>/switch/</code>.</div></div>
-        <div class="wf-item"><span>02</span><div><strong>Import</strong>Folders, <code>.zip/.rar/.7z</code>, <code>.iso/.mdf</code>, or opt-in online install.</div></div>
-        <div class="wf-item"><span>03</span><div><strong>Customize</strong>Atomic MODs/patches & System 4 <code>Launch entry</code> per game.</div></div>
-        <div class="wf-item"><span>04</span><div><strong>Sync</strong>In-game scaling/pad/modifiers; iCloud sync or PC save export.</div></div>
-      </div>`,
-      ja: `<div class="wf-list">
-        <div class="wf-item"><span>01</span><div><strong>導入</strong>Android は APK、iOS は IPA 署名、Switch は <code>/switch/</code> へ配置。</div></div>
-        <div class="wf-item"><span>02</span><div><strong>読込</strong>フォルダ・<code>.zip/.rar/.7z</code>・<code>.iso/.mdf</code> 統合、またはオンライン導入。</div></div>
-        <div class="wf-item"><span>03</span><div><strong>調整</strong>非破壊 MOD/翻訳や <code>起動エントリ</code> を作品ごとに設定。</div></div>
-        <div class="wf-item"><span>04</span><div><strong>連携</strong>文字拡大・仮想パッド・iCloud 同期・PC 互換セーブ出力。</div></div>
-      </div>`,
-    },
-    storage: {
-      zh: `<div class="store-list">
-        <div class="store-item"><span>ANDROID</span><div>可切换共享目录 <code>内部存储/AliceHub</code>，仅迁移 <code>saves</code>，旧游戏原地直跑。</div></div>
-        <div class="store-item"><span>iOS</span><div>「文件」直拷至 <code>AliceHub → Games</code>，APFS 省空间，支持 iCloud 双向同步。</div></div>
-        <div class="store-item"><span>SWITCH</span><div>隔离于 <code>/switch/alicehub/&lt;engine&gt;/</code>，更新 NRO 零影响，一键导出 <code>PC_SaveData</code>。</div></div>
-      </div>`,
-      en: `<div class="store-list">
-        <div class="store-item"><span>ANDROID</span><div>Switch to <code>Internal Storage/AliceHub</code>; migrates <code>saves</code> only while games stay in place.</div></div>
-        <div class="store-item"><span>iOS</span><div>Drop into <code>AliceHub → Games</code> via Files (APFS); sync saves over iCloud Drive.</div></div>
-        <div class="store-item"><span>SWITCH</span><div>Isolated in <code>/switch/alicehub/&lt;engine&gt;/</code>; NRO updates never touch saves.</div></div>
-      </div>`,
-      ja: `<div class="store-list">
-        <div class="store-item"><span>ANDROID</span><div><code>内部ストレージ/AliceHub</code> 切替可。<code>saves</code> のみ安全移行し既存作はそのまま起動。</div></div>
-        <div class="store-item"><span>iOS</span><div><code>AliceHub → Games</code> 直接配置（APFS）。iCloud Drive セーブ同期対応。</div></div>
-        <div class="store-item"><span>SWITCH</span><div><code>/switch/alicehub/&lt;engine&gt;/</code> で分離管理。NRO 更新で消失せず <code>PC_SaveData</code> 出力可。</div></div>
-      </div>`,
-    },
-  };
+/* 35 Painted AliceSoft Game Covers for the Interactive 3D Curved Gallery Wall */
+const GAMES = [
+  { slug: 'rance10', eng: 'SYS4', cn: true, zh: '兰斯 10 -决战-', en: 'Rance X', ja: 'ランス10 -決戦-' },
+  { slug: 'evenicle2', eng: 'SYS4', cn: true, zh: '夏娃年代记 2', en: 'Evenicle 2', ja: 'イブニクル2' },
+  { slug: 'sengokurance', eng: 'SYS4', cn: true, zh: '战国兰斯', en: 'Sengoku Rance', ja: '戦国ランス' },
+  { slug: 'rance09', eng: 'SYS4', cn: true, zh: '兰斯 09 赫尔曼革命', en: 'Rance IX', ja: 'ランス9' },
+  { slug: 'rance08', eng: 'SYS4', cn: true, zh: '兰斯 08 Quest Magnum', en: 'Rance Quest', ja: 'ランス・クエスト' },
+  { slug: 'rance06', eng: 'SYS4', cn: true, zh: '兰斯 VI 赛斯崩坏', en: 'Rance VI', ja: 'ランスVI' },
+  { slug: 'rance03', eng: 'SYS4', cn: true, zh: '兰斯 03 利萨斯陷落', en: 'Rance 03', ja: 'ランス03' },
+  { slug: 'rance01', eng: 'SYS4', cn: true, zh: '兰斯 01 寻找小光', en: 'Rance 01', ja: 'ランス01' },
+  { slug: 'evenicle', eng: 'SYS4', cn: true, zh: '夏娃年代记', en: 'Evenicle', ja: 'イブニクル' },
+  { slug: 'daiteikoku', eng: 'SYS4', cn: true, zh: '大帝国', en: 'Daiteikoku', ja: '大帝国' },
+  { slug: 'escalayer_reboot', eng: 'SYS4', cn: true, zh: '超昂天使 R 重制版', en: 'Escalayer Reboot', ja: '超昂天使R' },
 
-  let currentLang = 'zh';
-  let currentPlatform = 'android';
-  let currentHandbook = 'controls';
-  let currentFilter = 'all';
-  let selectedSlug = 'rance10';
-  let pokeCount = 0;
+  { slug: 'ixseal', eng: 'SYS4', cn: true, zh: '超昂神骑 Ixseal', en: 'Beat Valkyrie Ixseal', ja: '超昂神騎エクシール' },
+  { slug: 'haruka', eng: 'SYS4', cn: true, zh: '超昂闪忍 遥', en: 'Beat Blades Haruka', ja: '超昂閃忍ハルカ' },
+  { slug: 'maman', eng: 'SYS4', cn: true, zh: '再婚妈妈', en: 'Heartful Maman', ja: 'は～とふるママン' },
+  { slug: 'oyakorankan', eng: 'SYS4', cn: true, zh: '母娘乱馆', en: 'Oyakorankan', ja: '母娘乱館' },
+  { slug: 'haharanman', eng: 'SYS4', cn: true, zh: '母烂漫', en: 'Haha Ranman', ja: '母爛漫' },
+  { slug: 'tsumamigui3', eng: 'SYS4', cn: true, zh: '妻中蜜 3', en: 'Tsumamigui 3', ja: '妻みぐい3' },
+  { slug: 'daibanchou', eng: 'SYS4', cn: true, zh: '大番长', en: 'Daibanchou', ja: '大番長' },
+  { slug: 'dorapeko', eng: 'SYS4', cn: true, zh: '多拉佩科', en: 'Dorapeko', ja: 'ドラペコ' },
+  { slug: 'bladebriders', eng: 'SYS4', cn: false, zh: 'Blade Briders', en: 'Blade Briders', ja: 'ブレイドブライダーズ' },
+  { slug: 'toushin3', eng: 'SYS4', cn: true, zh: '斗神都市 III', en: 'Toushin Toshi III', ja: '闘神都市III' },
+  { slug: 'galzoo', eng: 'SYS4', cn: true, zh: 'GALZOO 岛', en: 'Galzoo Island', ja: 'GALZOOアイランド' },
+  { slug: 'paschacpp', eng: 'SYS4', cn: true, zh: '帕斯茶 C++', en: 'Pascha C++', ja: 'ぱすちゃC++' },
 
-  /* ========================================================================
-     1. FRAMELESS MINI 3D ORBITAL KINETIC ALICE + EYE TRACKING + SPOTLIGHTS
-     ======================================================================== */
-  function initKineticAlice() {
-    const shrine = document.getElementById('alice-shrine');
-    const floatWrap = document.getElementById('shrine-card');
-    const avatarBox = document.getElementById('alice-avatar-box');
-    const eyeM = document.getElementById('alice-eye-m');
-    const eyeC = document.getElementById('alice-eye-c');
-    const backCanvas = document.getElementById('alice-orbit-back');
-    const frontCanvas = document.getElementById('alice-orbit-front');
+  { slug: 'kichikuou', eng: 'SYS35', cn: true, zh: '鬼畜王兰斯', en: 'Kichikuou Rance', ja: '鬼畜王ランス' },
+  { slug: 'daiakuji', eng: 'SYS35', cn: true, zh: '大恶司', en: 'Daiakuji', ja: '大悪司' },
+  { slug: 'mamatoto', eng: 'SYS35', cn: true, zh: '魔物娘战记', en: 'Mamatoto', ja: 'ママトト' },
+  { slug: 'toushin2', eng: 'SYS35', cn: true, zh: '斗神都市 II', en: 'Toushin Toshi II', ja: '闘神都市II' },
+  { slug: 'atlachnacha', eng: 'SYS35', cn: true, zh: '阿托拉克纳克亚', en: 'Atlach-Nacha', ja: 'アトラク＝ナクア' },
+  { slug: 'dalk', eng: 'SYS35', cn: false, zh: 'DALK 外传', en: 'DALK', ja: 'DALK' },
+  { slug: 'escalayer', eng: 'SYS35', cn: true, zh: '超昂天使 原版', en: 'Escalayer', ja: '超昂天使エスカレイヤー' },
+  { slug: 'rance02', eng: 'SYS4', cn: true, zh: '兰斯 02', en: 'Rance 02', ja: 'ランス02' },
+  { slug: 'rance5d', eng: 'SYS35', cn: true, zh: '兰斯 5D', en: 'Rance 5D', ja: 'ランス5D' },
+  { slug: 'yorugakuru', eng: 'SYS35', cn: true, zh: '夜来了！', en: 'Yoru ga Kuru!', ja: '夜が来る!' },
+  { slug: 'okusamantr', eng: 'SYS4', cn: true, zh: '太太的恢复术', en: 'Okusama no Kaifuku Jutsu', ja: '奥さまの回復術' },
+  { slug: 'ikusamiko', eng: 'SYS4', cn: false, zh: '战巫女', en: 'Ikusamiko', ja: '戦巫女' },
+];
 
-    document.querySelectorAll('.spotlight-card').forEach((el) => {
-      el.addEventListener('pointermove', (e) => {
-        const r = el.getBoundingClientRect();
-        el.style.setProperty('--sx', `${(e.clientX - r.left).toFixed(0)}px`);
-        el.style.setProperty('--sy', `${(e.clientY - r.top).toFixed(0)}px`);
-      }, { passive: true });
+const I18N = {
+  zh: {
+    'nav.download': '下载',
+    'filter.all': '全部',
+    'filter.cn': '汉化',
+    'hero.sub': 'AliceSoft System 1–4 多平台原生启动器',
+    'hero.hint': '拖拽拨动 · 点击起波',
+    'hero.cta': '获取版本',
+    'ed.about': '说明',
+    'ed.statement': '在手机与掌机上直接打开 AliceSoft 作品。<span>不依赖 Wine 或转译层，由三套开源原生内核驱动，支持压缩包与镜像导入、汉化与 MOD 补丁及跨平台存档互通。</span>',
+    'spec.k1': '内核',
+    'spec.k2': '目录',
+    'spec.v2': '内置 171+ 作品识别，支持自由导入任意目录与多碟合并',
+    'spec.k3': '输入',
+    'spec.v3': '原生触控手势、自定义虚拟按键与主流蓝牙 / USB 手柄',
+    'spec.k4': '许可',
+    'spec.v4': 'GNU GPL-2.0 开源免费，安装包不含任何游戏本体',
+    'ed.download': '下载',
+    'dl.android': 'Android 8.0+ · 直接安装',
+    'dl.ios': 'iOS 15+ · 自签侧载',
+    'dl.switch': 'Homebrew · 解压至 /switch/',
+    'dl.qq': 'QQ 交流群',
+    'dl.releases': '历史版本 ↗',
+    'dl.ci': '构建记录 ↗',
+    'toast.qq': '已复制 QQ 群号：383917628',
+  },
+  en: {
+    'nav.download': 'Download',
+    'filter.all': 'All',
+    'filter.cn': 'CN',
+    'hero.sub': 'Native multi-platform launcher for AliceSoft System 1–4',
+    'hero.hint': 'Drag to glide · Click to ripple',
+    'hero.cta': 'Download',
+    'ed.about': 'ABOUT',
+    'ed.statement': 'Open AliceSoft games directly on phone and handheld. <span>No Wine or translation layers—driven by three open-source native engines with archive and disc import, translation & MOD patches, and cross-platform saves.</span>',
+    'spec.k1': 'ENGINES',
+    'spec.k2': 'CATALOG',
+    'spec.v2': '171+ recognized titles built in, plus open import for any game folder or multi-disc set',
+    'spec.k3': 'INPUT',
+    'spec.v3': 'Native touch gestures, customizable virtual pad, and standard Bluetooth / USB controllers',
+    'spec.k4': 'LICENSE',
+    'spec.v4': 'GNU GPL-2.0 free & open source — no game files are bundled',
+    'ed.download': 'DOWNLOAD',
+    'dl.android': 'Android 8.0+ · Direct install',
+    'dl.ios': 'iOS 15+ · Sideload IPA',
+    'dl.switch': 'Homebrew · Extract to /switch/',
+    'dl.qq': 'QQ Group',
+    'dl.releases': 'All Releases ↗',
+    'dl.ci': 'CI Builds ↗',
+    'toast.qq': 'Copied QQ Group: 383917628',
+  },
+  ja: {
+    'nav.download': '入手',
+    'filter.all': 'すべて',
+    'filter.cn': '翻訳',
+    'hero.sub': 'AliceSoft System 1–4 マルチプラットフォーム実行環境',
+    'hero.hint': 'ドラッグで移動 · クリックで波紋',
+    'hero.cta': 'ダウンロード',
+    'ed.about': '概要',
+    'ed.statement': 'スマホや携帯機でアリスソフト作品をそのまま起動。<span>Wine や命令変換に頼らず、3つのオープンソース・ネイティブエンジンで動作。アーカイブ読込・MOD／翻訳パッチ・機種間セーブ連携に対応します。</span>',
+    'spec.k1': 'エンジン',
+    'spec.k2': 'カタログ',
+    'spec.v2': '171 作品以上を自動判別。カタログ外のフォルダや複数ディスクも自由に導入可能',
+    'spec.k3': '操作',
+    'spec.v3': 'ネイティブタッチ・カスタマイズ可能な仮想パッド・各種コントローラー対応',
+    'spec.k4': 'ライセンス',
+    'spec.v4': 'GNU GPL-2.0 オープンソース（ゲーム本体は含まれません）',
+    'ed.download': '入手',
+    'dl.android': 'Android 8.0+ · 直接導入',
+    'dl.ios': 'iOS 15+ · 署名して導入',
+    'dl.switch': 'Homebrew · /switch/ へ展開',
+    'dl.qq': 'QQ グループ',
+    'dl.releases': 'リリース一覧 ↗',
+    'dl.ci': 'ビルド履歴 ↗',
+    'toast.qq': 'QQ 番号をコピーしました：383917628',
+  },
+};
+
+let currentLang = 'zh';
+let focusedGame = GAMES[0];
+
+/* ==========================================================================
+   THREE.JS INTERACTIVE 3D CURVED COVER WALL + INERTIA DRAG + SHADER FX
+   ========================================================================== */
+function initThreeWall() {
+  const canvas = document.getElementById('webgl-stage');
+  if (!canvas) return { triggerWave: () => {}, setFilter: () => {} };
+
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
     });
+  } catch {
+    return { triggerWave: () => {}, setFilter: () => {} };
+  }
 
-    if (avatarBox && !REDUCED_MOTION) {
-      const scheduleBlink = () => {
-        setTimeout(() => {
-          if (!avatarBox.classList.contains('is-winking')) {
-            avatarBox.classList.add('is-blinking');
-            setTimeout(() => avatarBox.classList.remove('is-blinking'), 110);
-          }
-          scheduleBlink();
-        }, 2600 + Math.random() * 3400);
-      };
-      scheduleBlink();
-    }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.setClearColor(0x070709, 1);
 
-    if (!shrine || !backCanvas || !frontCanvas) return;
-    const ctxB = backCanvas.getContext('2d');
-    const ctxF = frontCanvas.getContext('2d');
-    if (!ctxB || !ctxF) return;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 80);
+  camera.position.set(0, 0, 12.8);
 
-    let size = 96;
-    function resize() {
-      const rect = shrine.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      size = Math.max(64, Math.round(rect.width));
-      for (const c of [backCanvas, frontCanvas]) {
-        c.width = Math.round(size * dpr);
-        c.height = Math.round(size * dpr);
+  /* --- 1. Deep Obsidian Atmospheric Aurora Backdrop --- */
+  const auroraMat = new THREE.ShaderMaterial({
+    depthWrite: false,
+    uniforms: {
+      uTime: { value: 0 },
+      uMouse: { value: new THREE.Vector2(0, 0) },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
-      ctxB.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctxF.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    resize();
-    window.addEventListener('resize', resize, { passive: true });
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv;
+      uniform float uTime;
+      uniform vec2 uMouse;
+      void main() {
+        vec2 p = vUv - 0.5;
+        vec2 c1 = vec2(-0.26 + sin(uTime * 0.2) * 0.08 + uMouse.x * 0.07, 0.18 + cos(uTime * 0.17) * 0.05);
+        vec2 c2 = vec2(0.28 + cos(uTime * 0.18) * 0.08 - uMouse.x * 0.06, -0.14 + sin(uTime * 0.22) * 0.06);
+        float g1 = exp(-dot(p - c1, p - c1) * 5.0);
+        float g2 = exp(-dot(p - c2, p - c2) * 4.8);
+        vec3 col = vec3(0.024, 0.024, 0.035)
+          + vec3(0.88, 0.29, 0.52) * g1 * 0.14
+          + vec3(0.22, 0.74, 0.97) * g2 * 0.13;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+  const auroraPlane = new THREE.Mesh(new THREE.PlaneGeometry(62, 38), auroraMat);
+  auroraPlane.position.set(0, 0, -14);
+  scene.add(auroraPlane);
 
-    let targetDx = 0, targetDy = 0, curDx = 0, curDy = 0, lastMoveTs = 0;
-    let overdrive = 1, bounceScale = 1, bounceVel = 0, visible = true;
-    const pulseWaves = [];
+  /* --- 2. 3D Cursor Volumetric Light Probe + Click Shockwave Torus Rings --- */
+  const probeMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uIntensity: { value: 0.24 } },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec2 vUv;
+      uniform float uIntensity;
+      void main() {
+        vec2 p = vUv - 0.5;
+        float d = length(p);
+        if (d > 0.5) discard;
+        float glow = exp(-d * d * 18.0);
+        vec3 col = mix(vec3(0.22, 0.74, 0.97), vec3(0.88, 0.29, 0.52), smoothstep(-0.35, 0.35, p.x));
+        gl_FragColor = vec4(col, glow * uIntensity);
+      }
+    `,
+  });
+  const cursorProbe = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 5.6), probeMat);
+  cursorProbe.position.set(0, 0, 1.5);
+  scene.add(cursorProbe);
 
-    if ('IntersectionObserver' in window) {
-      new IntersectionObserver((entries) => {
-        visible = entries[0]?.isIntersecting ?? true;
-      }, { threshold: 0.02 }).observe(shrine);
+  const shockRings = [];
+  const shockGeo = new THREE.TorusGeometry(1.0, 0.018, 8, 96);
+
+  /* --- 3. 5-Row Panoramic Curved 3D Cover Wall (35 Painted Titles) --- */
+  const wallGroup = new THREE.Group();
+  scene.add(wallGroup);
+
+  const texLoader = new THREE.TextureLoader();
+  const tileGeo = new THREE.PlaneGeometry(1.9, 1.9, 1, 1);
+
+  const tileVert = `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
+  `;
+
+  const tileFrag = `
+    precision highp float;
+    uniform sampler2D uMap;
+    uniform float uHover;
+    uniform float uDim;
+    uniform float uFlash;
+    uniform float uProx;
+    uniform vec2 uLightDir;
+    varying vec2 vUv;
+
+    float sdRoundRect(vec2 p, vec2 b, float r) {
+      vec2 q = abs(p) - b + r;
+      return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    }
+
+    void main() {
+      vec2 p = vUv - 0.5;
+      float d = sdRoundRect(p, vec2(0.495), 0.072);
+      float mask = 1.0 - smoothstep(-0.008, 0.008, d);
+      if (mask < 0.01) discard;
+
+      // Subtle chromatic RGB shimmer on click ripple wave crests
+      vec2 shift = vec2(uFlash * 0.012, 0.0);
+      vec3 tex = vec3(
+        texture2D(uMap, clamp(vUv + shift, 0.002, 0.998)).r,
+        texture2D(uMap, vUv).g,
+        texture2D(uMap, clamp(vUv - shift, 0.002, 0.998)).b
+      );
+
+      float luma = dot(tex, vec3(0.299, 0.587, 0.114));
+      vec3 col = mix(tex, vec3(luma * 0.35), uDim * 0.88);
+
+      // Rich unobstructed gallery brightness
+      float bright = mix(0.78, 1.12, clamp(uHover + uProx * 0.22, 0.0, 1.0)) * (1.0 - uDim * 0.68);
+      col *= bright;
+
+      // Specular glass sweep
+      float spec = smoothstep(0.32, 0.95, 1.0 - abs(dot(p, normalize(uLightDir)) - 0.08));
+      col += vec3(0.88, 0.95, 1.0) * spec * (0.04 + uProx * 0.085 + uHover * 0.13 + uFlash * 0.18);
+
+      // Crisp luminous glass edge highlight
+      float rim = smoothstep(-0.022, -0.004, d) * mask;
+      vec3 rimCol = mix(vec3(1.0), vec3(0.22, 0.74, 0.97), clamp(uHover + uFlash + uProx * 0.4, 0.0, 1.0));
+      col += rimCol * rim * (0.14 + uProx * 0.18 + uHover * 0.6 + uFlash * 0.62);
+
+      gl_FragColor = vec4(col, mask * (1.0 - uDim * 0.55));
+    }
+  `;
+
+  const ROWS = 5;
+  const COLS = 14;
+  const SPACING_X = 2.16;
+  const SPACING_Y = 2.14;
+  const LOOP_WIDTH = COLS * SPACING_X;
+  const HALF_WIDTH = LOOP_WIDTH * 0.5;
+  const ROW_SPEEDS = [-0.46, 0.38, -0.42, 0.45, -0.36];
+  const ROW_OFFSETS = [0, 11, 22, 6, 17];
+
+  const textures = new Map();
+  function getTexture(slug) {
+    if (!textures.has(slug)) {
+      const tex = texLoader.load(`assets/games/${slug}.webp`);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.generateMipmaps = true;
+      textures.set(slug, tex);
+    }
+    return textures.get(slug);
+  }
+
+  const tiles = [];
+  const meshes = [];
+
+  for (let r = 0; r < ROWS; r++) {
+    const yBase = (2 - r) * SPACING_Y + 0.55; // Slightly lifted to clear bottom poster bar
+    const rowShift = (r % 2) * (SPACING_X * 0.5);
+    for (let c = 0; c < COLS; c++) {
+      const game = GAMES[(ROW_OFFSETS[r] + c) % GAMES.length];
+      const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: true,
+        uniforms: {
+          uMap: { value: getTexture(game.slug) },
+          uHover: { value: 0 },
+          uDim: { value: 0 },
+          uFlash: { value: 0 },
+          uProx: { value: 0 },
+          uLightDir: { value: new THREE.Vector2(0.7, 0.7) },
+        },
+        vertexShader: tileVert,
+        fragmentShader: tileFrag,
+      });
+
+      const mesh = new THREE.Mesh(tileGeo, mat);
+      const xInit = -HALF_WIDTH + c * SPACING_X + rowShift;
+      mesh.position.set(xInit, yBase, 0);
+      mesh.userData = { game };
+      wallGroup.add(mesh);
+      meshes.push(mesh);
+
+      tiles.push({
+        mesh,
+        mat,
+        game,
+        row: r,
+        x: xInit,
+        yBase,
+        hover: 0,
+        dim: 0,
+        dimTarget: 0,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  /* --- 4. Floating 3D Volumetric Bokeh Dust --- */
+  const PARTICLE_COUNT = 140;
+  const pPos = new Float32Array(PARTICLE_COUNT * 3);
+  const pScale = new Float32Array(PARTICLE_COUNT);
+  const pColor = new Float32Array(PARTICLE_COUNT * 3);
+  const pSpeed = new Float32Array(PARTICLE_COUNT);
+  const palette = [new THREE.Color('#e14b86'), new THREE.Color('#38bdf8'), new THREE.Color('#e4e6f0')];
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    pPos[i * 3] = (Math.random() - 0.5) * 26;
+    pPos[i * 3 + 1] = (Math.random() - 0.5) * 14;
+    pPos[i * 3 + 2] = -3.5 + Math.random() * 9.5;
+    pScale[i] = 9 + Math.random() * 20;
+    pSpeed[i] = 0.12 + Math.random() * 0.26;
+    const c = palette[i % palette.length];
+    pColor[i * 3] = c.r;
+    pColor[i * 3 + 1] = c.g;
+    pColor[i * 3 + 2] = c.b;
+  }
+
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  pGeo.setAttribute('aScale', new THREE.BufferAttribute(pScale, 1));
+  pGeo.setAttribute('aColor', new THREE.BufferAttribute(pColor, 3));
+
+  const pMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uPixelRatio: { value: Math.min(window.devicePixelRatio || 1, 2) } },
+    vertexShader: `
+      attribute float aScale;
+      attribute vec3 aColor;
+      varying vec3 vColor;
+      uniform float uPixelRatio;
+      void main() {
+        vColor = aColor;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = aScale * uPixelRatio * (12.0 / max(2.0, -mv.z));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      varying vec3 vColor;
+      void main() {
+        float d = length(gl_PointCoord - 0.5);
+        if (d > 0.5) discard;
+        gl_FragColor = vec4(vColor, pow(1.0 - d * 2.0, 2.4) * 0.30);
+      }
+    `,
+  });
+  const particles = new THREE.Points(pGeo, pMat);
+  scene.add(particles);
+
+  /* --- 5. Interaction: Raycast Hover, Inertia Drag, Click Ripple & Scroll Pause --- */
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2(99, 99);
+  const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
+  let hoveredMesh = null;
+  let scrollProgress = 0;
+
+  let dragging = false;
+  let dragMoved = 0;
+  let lastDragX = 0;
+  let dragVel = 0;
+  const waves = [];
+
+  function triggerWave(wx, wy) {
+    waves.push({ x: wx, y: wy, t: 0 });
+    if (waves.length > 4) waves.shift();
+
+    const rMat = new THREE.MeshBasicMaterial({
+      color: waves.length % 2 === 0 ? 0x38bdf8 : 0xe14b86,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const rMesh = new THREE.Mesh(shockGeo, rMat);
+    rMesh.position.set(wx, wy, 1.4);
+    rMesh.scale.setScalar(0.35);
+    wallGroup.add(rMesh);
+    shockRings.push({ mesh: rMesh, mat: rMat, t: 0 });
+  }
+
+  function setFilter(filter) {
+    for (const tile of tiles) {
+      const match =
+        filter === 'all' ||
+        (filter === 'cn' && tile.game.cn) ||
+        tile.game.eng === filter;
+      tile.dimTarget = match ? 0 : 1;
+    }
+  }
+
+  window.addEventListener('pointerdown', (e) => {
+    if (scrollProgress > 0.75) return;
+    if (e.target.closest('a, button, .editorial-sheet, .stage-bottom, .site-nav')) return;
+    dragging = true;
+    dragMoved = 0;
+    lastDragX = e.clientX;
+    canvas.classList.add('is-dragging');
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    const nx = (e.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
+    const ny = -(e.clientY / Math.max(1, window.innerHeight)) * 2 + 1;
+    mouse.tx = nx;
+    mouse.ty = ny;
+    pointerNdc.set(nx, ny);
+
+    if (dragging) {
+      const dx = e.clientX - lastDragX;
+      lastDragX = e.clientX;
+      dragMoved += Math.abs(dx);
+      dragVel = Math.max(-14, Math.min(14, dx * 0.048));
+    }
+  }, { passive: true });
+
+  window.addEventListener('pointerup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    canvas.classList.remove('is-dragging');
+
+    // If tap/click rather than drag, emit liquid-glass 3D ripple at clicked tile
+    if (dragMoved < 8) {
+      const nx = (e.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
+      const ny = -(e.clientY / Math.max(1, window.innerHeight)) * 2 + 1;
+      raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        triggerWave(hits[0].point.x, hits[0].point.y);
+        if (hits[0].object.userData.game) updateHudFocus(hits[0].object.userData.game);
+      } else {
+        triggerWave(nx * 6, ny * 3.5);
+      }
+    }
+  });
+
+  window.addEventListener('pointerleave', () => {
+    pointerNdc.set(99, 99);
+    hoveredMesh = null;
+    dragging = false;
+    canvas.classList.remove('is-dragging');
+  });
+
+  window.addEventListener('scroll', () => {
+    const y = window.scrollY;
+    scrollProgress = Math.min(1, y / Math.max(400, window.innerHeight));
+    const nav = document.getElementById('site-nav');
+    if (nav) nav.classList.toggle('is-scrolled', y > 24);
+  }, { passive: true });
+
+  window.addEventListener('resize', () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(w, h, false);
+    pMat.uniforms.uPixelRatio.value = dpr;
+  }, { passive: true });
+
+  /* --- 6. Render Loop (Auto-pauses when editorial sheet covers viewport) --- */
+  let lastTime = performance.now();
+  let elapsed = 0;
+  let rayTick = 0;
+
+  function animate(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+
+    if (scrollProgress < 0.99 || REDUCED_MOTION) {
+      elapsed += REDUCED_MOTION ? 0 : dt;
+      mouse.x += (mouse.tx - mouse.x) * 0.055;
+      mouse.y += (mouse.ty - mouse.y) * 0.055;
+      if (!dragging) dragVel *= 0.93;
+
+      const isNarrow = window.innerWidth < 720;
+      const baseZ = isNarrow ? 15.2 : 12.8;
+      camera.position.x = mouse.x * 1.0;
+      camera.position.y = mouse.y * 0.55 - scrollProgress * 0.6;
+      camera.position.z = baseZ + scrollProgress * 2.2;
+      camera.lookAt(mouse.x * 0.16, mouse.y * 0.1 - scrollProgress * 0.4, 0);
+
+      wallGroup.rotation.y = -mouse.x * 0.055;
+      wallGroup.rotation.x = mouse.y * 0.04 + scrollProgress * 0.12;
+
+      const probeX = mouse.x * 7.2;
+      const probeY = mouse.y * 4.2;
+      cursorProbe.position.x += (probeX - cursorProbe.position.x) * 0.12;
+      cursorProbe.position.y += (probeY - cursorProbe.position.y) * 0.12;
+      cursorProbe.position.z = 1.4 + cursorProbe.position.x * cursorProbe.position.x * 0.028;
+
+      auroraMat.uniforms.uTime.value = elapsed;
+      auroraMat.uniforms.uMouse.value.set(mouse.x, mouse.y);
+
+      for (let i = shockRings.length - 1; i >= 0; i--) {
+        const sr = shockRings[i];
+        sr.t += dt;
+        sr.mesh.scale.setScalar(0.35 + sr.t * 5.8);
+        sr.mat.opacity = Math.max(0, 0.55 * Math.exp(-sr.t * 2.1));
+        if (sr.t > 1.8) {
+          wallGroup.remove(sr.mesh);
+          sr.mat.dispose();
+          shockRings.splice(i, 1);
+        }
+      }
+
+      for (let i = waves.length - 1; i >= 0; i--) {
+        waves[i].t += dt;
+        if (waves[i].t > 2.6) waves.splice(i, 1);
+      }
+
+      rayTick++;
+      if (!dragging && pointerNdc.x < 2 && rayTick % 2 === 0) {
+        raycaster.setFromCamera(pointerNdc, camera);
+        const hits = raycaster.intersectObjects(meshes, false);
+        const nextHover = hits.length > 0 ? hits[0].object : null;
+        if (nextHover !== hoveredMesh) {
+          hoveredMesh = nextHover;
+          if (hoveredMesh && hoveredMesh.userData.game) {
+            updateHudFocus(hoveredMesh.userData.game);
+          }
+        }
+      }
+
+      for (const tile of tiles) {
+        if (!REDUCED_MOTION) {
+          const rowDir = tile.row % 2 === 0 ? 1 : -0.75;
+          tile.x += (ROW_SPEEDS[tile.row] + dragVel * rowDir * 2.2) * dt;
+          if (tile.x > HALF_WIDTH) tile.x -= LOOP_WIDTH;
+          else if (tile.x < -HALF_WIDTH) tile.x += LOOP_WIDTH;
+        }
+
+        const isHovered = tile.mesh === hoveredMesh;
+        tile.hover += ((isHovered ? 1 : 0) - tile.hover) * 0.14;
+        tile.dim += (tile.dimTarget - tile.dim) * 0.1;
+
+        const pDist = Math.hypot(tile.x - cursorProbe.position.x, tile.yBase - cursorProbe.position.y);
+        const prox = Math.exp(-pDist * pDist * 0.085);
+        const curveZ = tile.x * tile.x * 0.032;
+        const idleFloat = REDUCED_MOTION ? 0 : Math.sin(elapsed * 0.9 + tile.phase) * 0.045;
+
+        let waveZ = 0;
+        let waveFlash = 0;
+        for (const w of waves) {
+          const dist = Math.hypot(tile.x - w.x, tile.yBase - w.y);
+          const front = w.t * 7.4 - dist;
+          if (front > 0 && front < 6.283) {
+            const env = Math.sin(front) * Math.exp(-dist * 0.21) * Math.exp(-w.t * 1.15);
+            waveZ += env * 1.25;
+            waveFlash = Math.max(waveFlash, Math.abs(env) * 1.35);
+          }
+        }
+
+        tile.mesh.position.x = tile.x;
+        tile.mesh.position.y = tile.yBase + idleFloat;
+        tile.mesh.position.z = curveZ + tile.hover * 0.72 + prox * 0.15 - tile.dim * 1.05 + waveZ;
+        tile.mesh.rotation.y = -tile.x * 0.056 + waveZ * 0.09 + dragVel * 0.014;
+        tile.mesh.rotation.x = waveZ * 0.055;
+
+        const s = 1 + tile.hover * 0.055 + prox * 0.015;
+        tile.mesh.scale.set(s, s, 1);
+
+        tile.mat.uniforms.uHover.value = tile.hover;
+        tile.mat.uniforms.uDim.value = tile.dim;
+        tile.mat.uniforms.uFlash.value = waveFlash;
+        tile.mat.uniforms.uProx.value = prox;
+        tile.mat.uniforms.uLightDir.value.set(0.65 + mouse.x * 0.4, 0.72 + mouse.y * 0.4);
+      }
+
+      if (!REDUCED_MOTION) {
+        const posAttr = pGeo.attributes.position;
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          let py = posAttr.getY(i) + pSpeed[i] * dt;
+          if (py > 7.2) py = -7.2;
+          posAttr.setY(i, py);
+        }
+        posAttr.needsUpdate = true;
+        particles.rotation.y = mouse.x * 0.05;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    if (!REDUCED_MOTION) requestAnimationFrame(animate);
+  }
+
+  animate(performance.now());
+  return { triggerWave, setFilter };
+}
+
+/* ==========================================================================
+   FLOATING ALICE EMBLEM EYES + BLINK + CLICK PULSE
+   ========================================================================== */
+function initAliceEmblem(triggerWave) {
+  const btn = document.getElementById('alice-emblem');
+  const box = document.getElementById('alice-avatar-box');
+  const eyeM = document.getElementById('alice-eye-m');
+  const eyeC = document.getElementById('alice-eye-c');
+  if (!btn || !box) return;
+
+  if (!REDUCED_MOTION) {
+    const scheduleBlink = () => {
+      setTimeout(() => {
+        if (!box.classList.contains('is-winking')) {
+          box.classList.add('is-blinking');
+          setTimeout(() => box.classList.remove('is-blinking'), 110);
+        }
+        scheduleBlink();
+      }, 2800 + Math.random() * 3400);
+    };
+    scheduleBlink();
 
     window.addEventListener('pointermove', (e) => {
-      lastMoveTs = performance.now();
-      if (!avatarBox) return;
-      const r = avatarBox.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      const cy = r.top + r.height * 0.7;
-      targetDx = Math.max(-1, Math.min(1, (e.clientX - cx) / Math.max(160, window.innerWidth * 0.4)));
-      targetDy = Math.max(-1, Math.min(1, (e.clientY - cy) / Math.max(160, window.innerHeight * 0.4)));
+      if (!eyeM || !eyeC) return;
+      const r = box.getBoundingClientRect();
+      const dx = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / 240));
+      const dy = Math.max(-1, Math.min(1, (e.clientY - (r.top + r.height * 0.7)) / 240));
+      const tr = `translate3d(${(dx * 1.8).toFixed(2)}px, ${(dy * 1.3).toFixed(2)}px, 0)`;
+      eyeM.style.transform = tr;
+      eyeC.style.transform = tr;
     }, { passive: true });
-
-    shrine.addEventListener('click', () => {
-      overdrive = 4.8;
-      bounceVel = -0.16;
-      if (avatarBox) {
-        avatarBox.classList.add('is-winking');
-        setTimeout(() => avatarBox.classList.remove('is-winking'), 300);
-      }
-      pulseWaves.push({ r: 0.25, alpha: 0.9, rgb: '225, 75, 134', tx: 1.08, tz: -0.36 });
-      pulseWaves.push({ r: 0.2, alpha: 0.85, rgb: '56, 189, 248', tx: 1.12, tz: 0.5 });
-      const pokes = I18N[currentLang]['toast.pokes'];
-      showToast(pokes[pokeCount % pokes.length]);
-      pokeCount++;
-    });
-
-    function proj(x0, y0, tx, tz, cx, cy, fov) {
-      const y1 = y0 * Math.cos(tx);
-      const z1 = y0 * Math.sin(tx);
-      const xr = x0 * Math.cos(tz) - y1 * Math.sin(tz);
-      const yr = x0 * Math.sin(tz) + y1 * Math.cos(tz);
-      const p = fov / (fov - z1);
-      return { x: cx + xr * p, y: cy + yr * p, z: z1, p };
-    }
-
-    function drawRing(R, tx, tz, rgb, frontA, backA, lw, cx, cy, fov) {
-      const segs = 64;
-      const step = (Math.PI * 2) / segs;
-      for (let i = 0; i < segs; i++) {
-        const a0 = i * step;
-        const p0 = proj(Math.cos(a0) * R, Math.sin(a0) * R, tx, tz, cx, cy, fov);
-        const p1 = proj(Math.cos(a0 + step) * R, Math.sin(a0 + step) * R, tx, tz, cx, cy, fov);
-        const midZ = (p0.z + p1.z) * 0.5;
-        const ctx = midZ >= 0 ? ctxF : ctxB;
-        ctx.strokeStyle = `rgba(${rgb}, ${midZ >= 0 ? frontA : backA})`;
-        ctx.lineWidth = lw;
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        ctx.stroke();
-      }
-    }
-
-    function drawSatellite(R, ang, dir, tx, tz, rgb, cx, cy, fov) {
-      const steps = 16;
-      for (let i = 0; i < steps; i++) {
-        const t0 = i / steps;
-        const t1 = (i + 1) / steps;
-        const a0 = ang - dir * 1.1 * (1 - t0);
-        const a1 = ang - dir * 1.1 * (1 - t1);
-        const p0 = proj(Math.cos(a0) * R, Math.sin(a0) * R, tx, tz, cx, cy, fov);
-        const p1 = proj(Math.cos(a1) * R, Math.sin(a1) * R, tx, tz, cx, cy, fov);
-        const midZ = (p0.z + p1.z) * 0.5;
-        const ctx = midZ >= 0 ? ctxF : ctxB;
-        ctx.strokeStyle = `rgba(${rgb}, ${(t1 * t1 * (midZ >= 0 ? 0.85 : 0.4)).toFixed(3)})`;
-        ctx.lineWidth = 1.1 + t1 * 1.3;
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        ctx.stroke();
-      }
-      const hd = proj(Math.cos(ang) * R, Math.sin(ang) * R, tx, tz, cx, cy, fov);
-      const ctx = hd.z >= 0 ? ctxF : ctxB;
-      const g = ctx.createRadialGradient(hd.x, hd.y, 0, hd.x, hd.y, 7);
-      g.addColorStop(0, `rgba(${rgb}, 0.95)`);
-      g.addColorStop(1, 'transparent');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(hd.x, hd.y, 7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(hd.x, hd.y, 1.9 * hd.p, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    let phase = 0;
-    let lastTs = performance.now();
-
-    function frame(now) {
-      const dt = Math.min(0.05, (now - lastTs) / 1000);
-      lastTs = now;
-
-      if (visible || REDUCED_MOTION) {
-        overdrive += (1 - overdrive) * 0.05;
-        phase += REDUCED_MOTION ? 0 : dt * overdrive;
-
-        bounceVel = (bounceVel + (1 - bounceScale) * 0.25) * 0.76;
-        bounceScale += bounceVel;
-
-        const idle = now - lastMoveTs > 3000;
-        const ax = idle ? Math.sin(now * 0.0009) * 0.45 : targetDx;
-        const ay = idle ? Math.cos(now * 0.0007) * 0.3 : targetDy;
-        curDx += (ax - curDx) * 0.09;
-        curDy += (ay - curDy) * 0.09;
-
-        if (floatWrap && !REDUCED_MOTION) {
-          const fy = Math.sin(now * 0.002) * 3.2;
-          const rz = Math.sin(now * 0.0013) * 2.2;
-          floatWrap.style.transform = `translate3d(0, ${fy.toFixed(2)}px, 0) rotateX(${(-curDy * 10).toFixed(1)}deg) rotateY(${(curDx * 12).toFixed(1)}deg) rotateZ(${rz.toFixed(2)}deg) scale(${bounceScale.toFixed(4)})`;
-        }
-        if (eyeM && eyeC && !REDUCED_MOTION) {
-          const ex = (curDx * 1.9).toFixed(2);
-          const ey = (curDy * 1.4).toFixed(2);
-          eyeM.style.transform = `translate3d(${ex}px, ${ey}px, 0)`;
-          eyeC.style.transform = `translate3d(${ex}px, ${ey}px, 0)`;
-        }
-
-        ctxB.clearRect(0, 0, size, size);
-        ctxF.clearRect(0, 0, size, size);
-        const cx = size * 0.5, cy = size * 0.5, fov = size * 1.5;
-
-        const tx1 = 1.08 + curDy * 0.14;
-        const tz1 = -0.36 + curDx * 0.12;
-        drawRing(size * 0.44, tx1, tz1, '255, 255, 255', 0.24, 0.09, 1, cx, cy, fov);
-        drawSatellite(size * 0.44, phase * 1.05 + 0.4, 1, tx1, tz1, '56, 189, 248', cx, cy, fov);
-
-        const tx2 = 1.12 - curDy * 0.12;
-        const tz2 = 0.5 + curDx * 0.1;
-        drawRing(size * 0.4, tx2, tz2, '225, 75, 134', 0.3, 0.12, 1, cx, cy, fov);
-        drawSatellite(size * 0.4, -phase * 0.88 + 2.2, -1, tx2, tz2, '225, 75, 134', cx, cy, fov);
-
-        for (let i = pulseWaves.length - 1; i >= 0; i--) {
-          const pw = pulseWaves[i];
-          pw.r += dt * 0.55;
-          pw.alpha *= 0.91;
-          if (pw.alpha < 0.03 || pw.r > 0.52) {
-            pulseWaves.splice(i, 1);
-            continue;
-          }
-          drawRing(size * pw.r, pw.tx, pw.tz, pw.rgb, pw.alpha, pw.alpha * 0.4, 1.3, cx, cy, fov);
-        }
-      }
-
-      if (!REDUCED_MOTION) requestAnimationFrame(frame);
-    }
-    frame(performance.now());
   }
 
-  /* ========================================================================
-     2. SCROLL PROGRESS & REVEALS
-     ======================================================================== */
-  function initScroll() {
-    const nav = document.getElementById('site-nav');
-    const hairline = document.getElementById('scroll-hairline-fill');
-    const navLinks = Array.from(document.querySelectorAll('.nav-links a[data-sec]'));
-    const sections = Array.from(document.querySelectorAll('section[data-section]'));
-    const revealAll = Array.from(document.querySelectorAll('.reveal-up'));
-
-    const revealObs = new IntersectionObserver((entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting) {
-          e.target.classList.add('is-in');
-          revealObs.unobserve(e.target);
-        }
-      });
-    }, { threshold: 0.01, rootMargin: '0px 0px 80px 0px' });
-    revealAll.forEach((el) => revealObs.observe(el));
-
-    const secObs = new IntersectionObserver((entries) => {
-      entries.forEach((e) => {
-        if (e.isIntersecting) {
-          const id = e.target.dataset.section;
-          navLinks.forEach((a) => a.classList.toggle('is-active', a.dataset.sec === id));
-        }
-      });
-    }, { threshold: 0.3 });
-    sections.forEach((s) => secObs.observe(s));
-
-    function onScroll() {
-      const y = window.scrollY;
-      if (nav) nav.classList.toggle('is-scrolled', y > 16);
-      const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-      if (hairline) hairline.style.width = `${(Math.min(1, y / max) * 100).toFixed(2)}%`;
-
-      const vh = window.innerHeight;
-      const nearBottom = y + vh >= document.documentElement.scrollHeight - 140;
-      revealAll.forEach((el) => {
-        if (el.classList.contains('is-in')) return;
-        if (nearBottom || el.getBoundingClientRect().top < vh + 60) {
-          el.classList.add('is-in');
-          revealObs.unobserve(el);
-        }
-      });
-    }
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-  }
-
-  /* ========================================================================
-     3. 3-ROW INTERACTIVE GAME REEL + FILTER + INSPECTOR
-     ======================================================================== */
-  function updateInspector(slug) {
-    const g = CATALOG_GAMES.find((x) => x.slug === slug) || CATALOG_GAMES[0];
-    selectedSlug = g.slug;
-
-    const cover = document.getElementById('insp-cover');
-    const title = document.getElementById('insp-title');
-    const eng = document.getElementById('insp-eng');
-    const cn = document.getElementById('insp-cn');
-    const note = document.getElementById('insp-note');
-    const caps = document.getElementById('insp-caps');
-
-    if (cover) cover.src = `assets/games/${g.slug}.webp`;
-    if (title) title.textContent = g[currentLang] || g.zh;
-    const kernel = g.eng === 'SYS4' ? 'xsystem4' : 'xsystem35';
-    if (eng) eng.textContent = kernel;
-    if (cn) cn.style.display = g.cn ? 'inline-block' : 'none';
-    if (note) {
-      note.textContent = currentLang === 'en'
-        ? `Auto-routed to ${kernel} native kernel · Android / iOS / Switch`
-        : currentLang === 'ja'
-          ? `${kernel} へ自動ルーティング · Android / iOS / Switch 対応`
-          : `自动路由至 ${kernel} 原生运行 · Android / iOS / Switch 三端直跑`;
-    }
-    if (caps) {
-      caps.innerHTML = g.caps.map((c) => `<span>${escapeHtml(c)}</span>`).join('');
-    }
-    document.querySelectorAll('.game-tile').forEach((el) => {
-      el.classList.toggle('is-selected', el.dataset.slug === g.slug);
-    });
-  }
-
-  function applyCatalogFilter(filter) {
-    currentFilter = filter;
-    document.querySelectorAll('.filter-pill').forEach((btn) => {
-      btn.classList.toggle('is-active', btn.dataset.filter === filter);
-    });
-    document.querySelectorAll('.game-tile').forEach((tile) => {
-      const match = filter === 'all'
-        || (filter === 'cn' && tile.dataset.cn === '1')
-        || tile.dataset.eng === filter;
-      tile.classList.toggle('is-dim', !match);
-    });
-  }
-
-  function renderCatalogWall() {
-    const stripA = document.getElementById('art-strip-a');
-    const stripB = document.getElementById('art-strip-b');
-    const stripC = document.getElementById('art-strip-c');
-    if (!stripA || !stripB || !stripC) return;
-
-    const makeTile = (g) => {
-      const title = g[currentLang] || g.zh;
-      return `<div class="game-tile" data-slug="${g.slug}" data-eng="${g.eng}" data-cn="${g.cn ? '1' : '0'}" role="button" tabindex="0">
-        <img src="assets/games/${g.slug}.webp" alt="${escapeHtml(title)}" width="120" height="120" />
-        <div class="tile-meta">
-          <span class="tile-name" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-          <span class="tile-badges">
-            <span class="tb-eng">${g.eng}</span>
-            ${g.cn ? '<span class="tb-cn">CN</span>' : ''}
-          </span>
-        </div>
-      </div>`;
-    };
-
-    const r1 = CATALOG_GAMES.slice(0, 12).map(makeTile).join('');
-    const r2 = CATALOG_GAMES.slice(12, 24).map(makeTile).join('');
-    const r3 = CATALOG_GAMES.slice(24, 36).map(makeTile).join('');
-    stripA.innerHTML = r1 + r1;
-    stripB.innerHTML = r2 + r2;
-    stripC.innerHTML = r3 + r3;
-
-    applyCatalogFilter(currentFilter);
-    updateInspector(selectedSlug);
-  }
-
-  /* ========================================================================
-     4. PLATFORM SWITCHER, HANDBOOK & MICRO-WIDGETS
-     ======================================================================== */
-  function renderPlatform(key) {
-    currentPlatform = key;
-    const copy = PLATFORMS[key][currentLang] || PLATFORMS[key].zh;
-    const asset = RELEASE.assets[key];
-
-    document.querySelectorAll('[data-platform]').forEach((btn) => {
-      const active = btn.dataset.platform === key;
-      btn.classList.toggle('is-active', active);
-      btn.setAttribute('aria-selected', String(active));
-    });
-
-    const set = (id, text) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = text;
-    };
-    set('plat-headline', copy.headline);
-    set('plat-pkg', asset.name);
-    set('plat-dl-label', copy.cta);
-    set('plat-size-chip', asset.size);
-
-    const dlBtn = document.getElementById('plat-dl-btn');
-    if (dlBtn) dlBtn.href = asset.url;
-
-    const ul = document.getElementById('plat-bullets');
-    if (ul) ul.innerHTML = copy.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('');
-  }
-
-  function renderHandbook(tab) {
-    currentHandbook = tab;
-    document.querySelectorAll('[data-hb]').forEach((btn) => {
-      const active = btn.dataset.hb === tab;
-      btn.classList.toggle('is-active', active);
-      btn.setAttribute('aria-selected', String(active));
-    });
-    const host = document.getElementById('handbook-content');
-    if (host && HANDBOOK[tab]) {
-      host.innerHTML = HANDBOOK[tab][currentLang] || HANDBOOK[tab].zh;
-    }
-  }
-
-  function initWidgets() {
-    const hexBadge = document.getElementById('hex-badge');
-    if (hexBadge && !REDUCED_MOTION) {
-      const labels = ['X4SS ⇄ GD\\x01\\x01', 'RSM v6 ⇄ PC RSM', 'GSAVE ⇄ PC v8', '<memory> ISOLATED'];
-      let idx = 0;
-      setInterval(() => {
-        idx = (idx + 1) % labels.length;
-        hexBadge.textContent = labels[idx];
-      }, 2600);
-    }
-
-    const range = document.getElementById('demo-font-range');
-    const valEl = document.getElementById('demo-font-val');
-    const preview = document.getElementById('slider-preview');
-    if (range && valEl && preview) {
-      const sync = () => {
-        const v = Number(range.value);
-        valEl.textContent = `${v}%`;
-        preview.style.fontSize = `${(12.5 * v / 100).toFixed(1)}px`;
-      };
-      range.addEventListener('input', sync);
-      sync();
-    }
-  }
-
-  /* ========================================================================
-     5. LIVE GITHUB LATEST RELEASE SYNC & I18N
-     ======================================================================== */
-  function applyReleaseUI() {
-    const set = (id, text) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = text;
-    };
-    set('nav-release-tag', RELEASE.tag);
-    set('hero-ver-pill', RELEASE.tag);
-    set('dl-release-tag', RELEASE.tag);
-
-    for (const k of ['android', 'ios', 'switch']) {
-      const a = RELEASE.assets[k];
-      set(`dl-file-${k}`, a.name);
-      set(`dl-size-${k}`, a.size);
-      const card = document.getElementById(`dl-card-${k}`);
-      if (card) card.href = a.url;
-    }
-    renderPlatform(currentPlatform);
-  }
-
-  function fetchLatestRelease() {
-    fetch('https://api.github.com/repos/TomorrowX6/AliceHub/releases/latest', {
-      headers: { Accept: 'application/vnd.github+json' },
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data || !data.tag_name || !Array.isArray(data.assets)) return;
-        RELEASE.tag = data.tag_name;
-        const fmtSize = (b) => `${(b / (1024 * 1024)).toFixed(1)} MiB`;
-        for (const asset of data.assets) {
-          const n = (asset.name || '').toLowerCase();
-          if (n.endsWith('.apk')) {
-            RELEASE.assets.android = { name: asset.name, size: fmtSize(asset.size), url: asset.browser_download_url };
-          } else if (n.endsWith('.ipa')) {
-            RELEASE.assets.ios = { name: asset.name, size: fmtSize(asset.size), url: asset.browser_download_url };
-          } else if (n.includes('switch') && n.endsWith('.zip')) {
-            RELEASE.assets.switch = { name: asset.name, size: fmtSize(asset.size), url: asset.browser_download_url };
-          }
-        }
-        applyReleaseUI();
-      })
-      .catch(() => {});
-  }
-
-  function applyLanguage(lang) {
-    if (!I18N[lang]) return;
-    currentLang = lang;
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang === 'ja' ? 'ja' : 'en';
-
-    document.querySelectorAll('.lang-btn').forEach((btn) => {
-      btn.classList.toggle('is-active', btn.dataset.lang === lang);
-    });
-
-    const dict = I18N[lang];
-    document.querySelectorAll('[data-i18n]').forEach((el) => {
-      const key = el.dataset.i18n;
-      if (!(key in dict)) return;
-      if (key === 'hero.sub') el.innerHTML = dict[key];
-      else el.textContent = dict[key];
-    });
-
-    renderPlatform(currentPlatform);
-    renderHandbook(currentHandbook);
-    renderCatalogWall();
-  }
-
-  let toastTimer = null;
-  function showToast(msg) {
-    const el = document.getElementById('toast');
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.add('is-shown');
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('is-shown'), 2200);
-  }
-
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('[data-platform]').forEach((btn) => {
-      btn.addEventListener('click', () => renderPlatform(btn.dataset.platform));
-    });
-    document.querySelectorAll('[data-hb]').forEach((btn) => {
-      btn.addEventListener('click', () => renderHandbook(btn.dataset.hb));
-    });
-    document.querySelectorAll('.filter-pill').forEach((btn) => {
-      btn.addEventListener('click', () => applyCatalogFilter(btn.dataset.filter));
-    });
-    document.querySelectorAll('.lang-btn').forEach((btn) => {
-      btn.addEventListener('click', () => applyLanguage(btn.dataset.lang));
-    });
-
-    const filmMask = document.getElementById('filmstrip-mask');
-    if (filmMask) {
-      filmMask.addEventListener('click', (e) => {
-        const tile = e.target.closest('.game-tile');
-        if (tile && tile.dataset.slug) updateInspector(tile.dataset.slug);
-      });
-      filmMask.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          const tile = e.target.closest('.game-tile');
-          if (tile && tile.dataset.slug) {
-            e.preventDefault();
-            updateInspector(tile.dataset.slug);
-          }
-        }
-      });
-    }
-
-    const menuBtn = document.getElementById('mobile-menu-btn');
-    const drawer = document.getElementById('mobile-drawer');
-    if (menuBtn && drawer) {
-      menuBtn.addEventListener('click', () => {
-        const open = drawer.hasAttribute('hidden');
-        if (open) drawer.removeAttribute('hidden');
-        else drawer.setAttribute('hidden', '');
-        menuBtn.setAttribute('aria-expanded', String(open));
-      });
-      drawer.querySelectorAll('a').forEach((a) => {
-        a.addEventListener('click', () => {
-          drawer.setAttribute('hidden', '');
-          menuBtn.setAttribute('aria-expanded', 'false');
-        });
-      });
-    }
-
-    const qqBtn = document.getElementById('copy-qq-btn');
-    if (qqBtn) {
-      qqBtn.addEventListener('click', () => {
-        const qq = qqBtn.dataset.qq || '383917628';
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(qq).catch(() => {});
-        }
-        showToast(I18N[currentLang]['toast.qqCopied']);
-      });
-    }
-
-    applyLanguage('zh');
-    applyReleaseUI();
-    initKineticAlice();
-    initScroll();
-    initWidgets();
-    fetchLatestRelease();
+  btn.addEventListener('click', () => {
+    box.classList.add('is-winking');
+    setTimeout(() => box.classList.remove('is-winking'), 320);
+    triggerWave(0, 0.5);
   });
-})();
+}
+
+/* ==========================================================================
+   HUD, REVEALS, I18N & LIVE GITHUB RELEASE SYNC
+   ========================================================================== */
+function updateHudFocus(game) {
+  focusedGame = game;
+  const titleEl = document.getElementById('hud-title');
+  const engEl = document.getElementById('hud-eng');
+  if (titleEl) titleEl.textContent = game[currentLang] || game.zh;
+  if (engEl) engEl.textContent = game.eng === 'SYS4' ? 'xsystem4' : 'xsystem35';
+}
+
+function initReveals() {
+  const els = Array.from(document.querySelectorAll('.reveal'));
+  if (!('IntersectionObserver' in window) || REDUCED_MOTION) {
+    els.forEach((el) => el.classList.add('is-in'));
+    return;
+  }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-in');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.05, rootMargin: '0px 0px 40px 0px' });
+  els.forEach((el) => io.observe(el));
+}
+
+function applyLanguage(lang) {
+  if (!I18N[lang]) return;
+  currentLang = lang;
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang === 'ja' ? 'ja' : 'en';
+
+  document.querySelectorAll('.lang-btn').forEach((b) => {
+    b.classList.toggle('is-active', b.dataset.lang === lang);
+  });
+
+  const dict = I18N[lang];
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const k = el.dataset.i18n;
+    if (!(k in dict)) return;
+    if (k === 'ed.statement') el.innerHTML = dict[k];
+    else el.textContent = dict[k];
+  });
+
+  updateHudFocus(focusedGame);
+}
+
+function applyReleaseUI() {
+  const hv = document.getElementById('hero-ver');
+  const dv = document.getElementById('dl-release-tag');
+  if (hv) hv.textContent = RELEASE.tag;
+  if (dv) dv.textContent = RELEASE.tag;
+  for (const k of ['android', 'ios', 'switch']) {
+    const a = RELEASE.assets[k];
+    const row = document.getElementById(`dl-card-${k}`);
+    const size = document.getElementById(`dl-size-${k}`);
+    if (row) row.href = a.url;
+    if (size) size.textContent = a.size;
+  }
+}
+
+function fetchLatestRelease() {
+  fetch('https://api.github.com/repos/TomorrowX6/AliceHub/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json' },
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data || !data.tag_name || !Array.isArray(data.assets)) return;
+      RELEASE.tag = data.tag_name;
+      const fmt = (b) => `${(b / (1024 * 1024)).toFixed(1)} MiB`;
+      for (const a of data.assets) {
+        const n = (a.name || '').toLowerCase();
+        if (n.endsWith('.apk')) RELEASE.assets.android = { size: fmt(a.size), url: a.browser_download_url };
+        else if (n.endsWith('.ipa')) RELEASE.assets.ios = { size: fmt(a.size), url: a.browser_download_url };
+        else if (n.includes('switch') && n.endsWith('.zip')) RELEASE.assets.switch = { size: fmt(a.size), url: a.browser_download_url };
+      }
+      applyReleaseUI();
+    })
+    .catch(() => {});
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('is-shown');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-shown'), 2200);
+}
+
+/* ==========================================================================
+   BOOT
+   ========================================================================== */
+const wall = initThreeWall();
+initAliceEmblem(wall.triggerWave);
+initReveals();
+applyLanguage('zh');
+applyReleaseUI();
+fetchLatestRelease();
+
+document.querySelectorAll('.lang-btn').forEach((b) => {
+  b.addEventListener('click', () => applyLanguage(b.dataset.lang));
+});
+
+document.querySelectorAll('.wf-btn').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.wf-btn').forEach((x) => x.classList.toggle('is-active', x === b));
+    wall.setFilter(b.dataset.filter);
+    wall.triggerWave(0, 0.5);
+  });
+});
+
+const qqBtn = document.getElementById('copy-qq-btn');
+if (qqBtn) {
+  qqBtn.addEventListener('click', () => {
+    const qq = qqBtn.dataset.qq || '383917628';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(qq).catch(() => {});
+    }
+    showToast(I18N[currentLang]['toast.qq']);
+  });
+}
