@@ -912,80 +912,97 @@ object NativeGameImport {
             }
             if (stagedFdis.isEmpty()) return null
 
-            val chosenPair = stagedFdis.firstOrNull { (_, f) ->
-                Pc98FloppyExtractor.containsGameRoot(f, expectedAinName, targetGameId)
-            } ?: if (expectedAinName.isNullOrBlank() &&
-                (targetGameId.isNullOrBlank() || targetGameId.startsWith(GameCatalog.PREFIX_CUSTOM))
-            ) {
-                stagedFdis.firstOrNull { (_, f) -> Pc98FloppyExtractor.containsGameRoot(f, null, null) }
-            } else {
-                null
+            val ctx = currentCoroutineContext()
+            val checkCancel: () -> Unit = { ctx.ensureActive() }
+            val bootCandidates = stagedFdis.filter { (_, f) ->
+                Pc98FloppyExtractor.containsGameRoot(f, null, null, checkCancel)
             }
-            if (chosenPair == null) {
-                if (stagedFdis.any { (_, f) -> Pc98FloppyExtractor.containsGameRoot(f, null, null) }) {
-                    throw GameList.InstallFailureException(R.string.import_wrong_game)
-                }
-                return null
+            if (bootCandidates.isEmpty()) return null
+            val preferredBoots = bootCandidates.filter { (_, f) ->
+                Pc98FloppyExtractor.containsGameRoot(f, expectedAinName, targetGameId, checkCancel)
+            }
+            val orderedBoots = preferredBoots + bootCandidates.filter { cand ->
+                preferredBoots.none { it.second.canonicalPath == cand.second.canonicalPath }
             }
 
-            val (chosenDirKey, chosenFile) = chosenPair
-            val extractDir = File(workDir, "extracted").apply { mkdirs() }
-            Pc98FloppyExtractor.extractFileToDirectory(
-                fdiFile = chosenFile,
-                outDir = extractDir,
-                shouldSkip = { rel -> skip(rel) },
-                throwInstallFailureOnNoSpace = true
-            )
-            progress(context.getString(R.string.import_copy_progress, 0L, chosenFile.name))
-
-            val extractedGameDir = extractDir.walkTopDown()
-                .filter { it.isDirectory }
-                .firstOrNull { dir ->
-                    val names = dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
-                    GameCatalog.isLegacySystem3GameFiles(names) || names.any { GameCatalog.isSystem35Scenario(it) }
-                } ?: throw GameList.InstallFailureException(R.string.directory_no_game)
-
+            var assembledGameDir: File? = null
+            var assembledExtractDir: File? = null
             val allowedExts = setOf("dat", "bmp", "ini")
-            val existingLower = extractedGameDir.listFiles()?.map { it.name.lowercase() }?.toMutableSet() ?: mutableSetOf()
-            for ((idx, pair) in stagedFdis.withIndex()) {
-                val (dirKey, sib) = pair
-                if (dirKey != chosenDirKey || sib.canonicalPath == chosenFile.canonicalPath) continue
-                if (Pc98FloppyExtractor.containsGameRoot(sib, null, null)) continue
-                val sibDir = File(workDir, "sib_$idx").apply { mkdirs() }
-                try {
-                    Pc98FloppyExtractor.extractFileToDirectory(
-                        fdiFile = sib,
-                        outDir = sibDir,
-                        shouldSkip = { rel -> skip(rel) },
-                        throwInstallFailureOnNoSpace = true
-                    )
-                    sibDir.walkTopDown()
-                        .filter { it.isDirectory }
-                        .forEach { d ->
-                            val files = d.listFiles()?.filter { it.isFile }.orEmpty()
-                            if (files.any { it.name.equals("ADISK.DAT", true) }) return@forEach
-                            for (f in files) {
-                                if (f.extension.lowercase() !in allowedExts) continue
-                                val key = f.name.lowercase()
-                                if (key in existingLower) continue
-                                f.copyTo(File(extractedGameDir, f.name), overwrite = false)
-                                existingLower.add(key)
+            for ((candIdx, candPair) in orderedBoots.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                val (chosenDirKey, chosenFile) = candPair
+                val extractDir = File(workDir, "extracted_$candIdx").apply { mkdirs() }
+                Pc98FloppyExtractor.extractFileToDirectory(
+                    fdiFile = chosenFile,
+                    outDir = extractDir,
+                    shouldSkip = { rel -> skip(rel) },
+                    throwInstallFailureOnNoSpace = true,
+                    checkCancelled = checkCancel
+                )
+                progress(context.getString(R.string.import_copy_progress, 0L, chosenFile.name))
+
+                val candidateGameDir = extractDir.walkTopDown()
+                    .filter { it.isDirectory }
+                    .firstOrNull { dir ->
+                        val names = dir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
+                        GameCatalog.isLegacySystem3GameFiles(names) || names.any { GameCatalog.isSystem35Scenario(it) }
+                    } ?: continue
+
+                val existingLower = candidateGameDir.listFiles()?.map { it.name.lowercase() }?.toMutableSet() ?: mutableSetOf()
+                for ((idx, pair) in stagedFdis.withIndex()) {
+                    currentCoroutineContext().ensureActive()
+                    val (dirKey, sib) = pair
+                    if (dirKey != chosenDirKey || sib.canonicalPath == chosenFile.canonicalPath) continue
+                    if (Pc98FloppyExtractor.containsGameRoot(sib, null, null, checkCancel)) continue
+                    val sibDir = File(workDir, "sib_${candIdx}_$idx").apply { mkdirs() }
+                    try {
+                        Pc98FloppyExtractor.extractFileToDirectory(
+                            fdiFile = sib,
+                            outDir = sibDir,
+                            shouldSkip = { rel -> skip(rel) },
+                            throwInstallFailureOnNoSpace = true,
+                            checkCancelled = checkCancel
+                        )
+                        sibDir.walkTopDown()
+                            .filter { it.isDirectory }
+                            .forEach { d ->
+                                checkCancel()
+                                val files = d.listFiles()?.filter { it.isFile }.orEmpty()
+                                if (files.any { it.name.equals("ADISK.DAT", true) }) return@forEach
+                                for (f in files) {
+                                    checkCancel()
+                                    if (f.extension.lowercase() !in allowedExts) continue
+                                    val key = f.name.lowercase()
+                                    if (key in existingLower) continue
+                                    f.copyTo(File(candidateGameDir, f.name), overwrite = false)
+                                    existingLower.add(key)
+                                }
                             }
-                        }
-                } catch (e: GameList.InstallFailureException) {
-                    throw e
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Throwable) {
+                    } catch (e: GameList.InstallFailureException) {
+                        throw e
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Throwable) {
+                    }
+                }
+
+                if (GameCatalog.validateImportedGameDir(candidateGameDir, expectedAinName, targetGameId)) {
+                    assembledGameDir = candidateGameDir
+                    assembledExtractDir = extractDir
+                    break
                 }
             }
 
+            val extractedGameDir = assembledGameDir
+                ?: throw GameList.InstallFailureException(R.string.import_wrong_game)
+            val extractDir = assembledExtractDir!!
+
+            currentCoroutineContext().ensureActive()
+            Pc98FloppyExtractor.copyCompanionFontIfNeeded(listOf(extractDir), extractedGameDir)
             if (extractedGameDir.listFiles()?.none { it.isFile && it.name.equals("FONT.bmp", true) } == true) {
                 copyCompanionFontFromTree(context, tree, rootFiles, extractedGameDir)
             }
-            if (!GameCatalog.validateImportedGameDir(extractedGameDir, expectedAinName, targetGameId)) {
-                throw GameList.InstallFailureException(R.string.import_wrong_game)
-            }
+            currentCoroutineContext().ensureActive()
 
             val gameFiles = extractedGameDir.listFiles()?.filter { it.isFile }?.map { it.name }.orEmpty()
             val detectedId = GameCatalog.classifyDirectory(extractedGameDir, extractedGameDir.name)
@@ -1008,6 +1025,7 @@ object NativeGameImport {
             if (destination.parentFile != storageCanonical) {
                 throw IOException("Invalid destination directory")
             }
+            currentCoroutineContext().ensureActive()
             if (!OnlineInstaller.moveFileOrDir(extractedGameDir, destination)) {
                 throw IOException("Cannot finish FDI game import")
             }
