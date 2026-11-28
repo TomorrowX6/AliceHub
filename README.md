@@ -1,7 +1,7 @@
 <div align="center">
   <img src="project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="120" height="120" alt="AliceHub Icon" />
   <h1>AliceHub</h1>
-  <p><strong>AliceSoft System 1–4 多平台原生游戏启动器</strong></p>
+  <p><strong>AliceSoft System 1–4 多平台原生启动器</strong></p>
   <p>
     <a href="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml"><img src="https://github.com/TomorrowX6/AliceHub/actions/workflows/build.yml/badge.svg" alt="Build Android APK, iOS IPA, and Switch NROs" /></a>
     <a href="xsystem4/COPYING"><img src="https://img.shields.io/badge/License-GPL%20v2-blue.svg" alt="License: GPL v2" /></a>
