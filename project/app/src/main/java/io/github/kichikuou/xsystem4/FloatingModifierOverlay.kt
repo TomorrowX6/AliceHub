@@ -61,9 +61,16 @@ class FloatingModifierOverlay(private val activity: Activity) {
         }
     }
 
+    private fun currentGameAccentColor(): Int =
+        (activity as? XSystem4Activity)?.currentGameAccentColor()
+            ?: UiKit.primaryColor(activity)
+
     private fun dialogBuilder(): AlertDialog.Builder =
         object : AlertDialog.Builder(
-            ContextThemeWrapper(activity, AppSettings.resolveThemeRes(activity))
+            ContextThemeWrapper(
+                AppSettings.wrapThemeContext(activity),
+                AppSettings.resolveThemeRes(activity)
+            )
         ) {
             override fun create(): AlertDialog {
                 val dlg = super.create()
@@ -73,6 +80,7 @@ class FloatingModifierOverlay(private val activity: Activity) {
 
             override fun show(): AlertDialog {
                 val dlg = super.show()
+                UiKit.tintAlertDialog(dlg, currentGameAccentColor())
                 trackDialog(dlg)
                 return dlg
             }
@@ -3160,31 +3168,46 @@ class FloatingModifierOverlay(private val activity: Activity) {
             }
         }
 
-        val scroll = ScrollView(activity)
-        val container = LinearLayout(activity).apply {
+        val uiCtx = ContextThemeWrapper(
+            AppSettings.wrapThemeContext(activity),
+            AppSettings.resolveThemeRes(activity)
+        )
+        val accent = currentGameAccentColor()
+        val scroll = ScrollView(uiCtx)
+        val container = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(8))
+            setPadding(dp(24), dp(4), dp(24), dp(8))
+            clipToPadding = false
         }
 
-        val descTv = TextView(activity).apply {
+        val descTv = TextView(uiCtx).apply {
             text = description
-            setPadding(0, 0, 0, dp(10))
+            setTextAppearance(R.style.TextAppearance_Launcher_Caption)
+            textSize = 13f
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(0, 0, 0, dp(14))
         }
         container.addView(descTv)
 
-        val headerRow = LinearLayout(activity).apply {
+        val headerRow = LinearLayout(uiCtx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(6))
         }
-        val valueTv = TextView(activity).apply {
+        val valueTv = TextView(uiCtx).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            textSize = 16f
+            setTextAppearance(R.style.TextAppearance_Launcher_CardTitle)
         }
-        val seekBar = SeekBar(activity).apply {
+        val seekBar = SeekBar(uiCtx).apply {
             max = maxPct - minPct
             progress = selectedPct - minPct
-            setPadding(dp(4), dp(8), dp(4), dp(12))
+            UiKit.tintSeekBar(this, accent)
+            setPadding(dp(8), dp(14), dp(8), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = -dp(8)
+                marginEnd = -dp(8)
+            }
         }
 
         fun updateSelected(newPct: Int, syncSeek: Boolean, previewNow: Boolean) {
@@ -3204,14 +3227,18 @@ class FloatingModifierOverlay(private val activity: Activity) {
             }
         }
 
-        val minusBtn = Button(activity).apply {
-            text = "-$stepPct%"
-            setOnClickListener { updateSelected(selectedPct - stepPct, true, true) }
-        }
-        val plusBtn = Button(activity).apply {
-            text = "+$stepPct%"
-            setOnClickListener { updateSelected(selectedPct + stepPct, true, true) }
-        }
+        fun stepButton(label: String, delta: Int) =
+            Button(uiCtx, null, 0, R.style.Widget_Launcher_Button_Small).apply {
+                text = label
+                minWidth = dp(60)
+                UiKit.styleTonalAccentButton(this, accent)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(8) }
+                setOnClickListener { updateSelected(selectedPct + delta, true, true) }
+            }
+        val minusBtn = stepButton("-$stepPct%", -stepPct)
+        val plusBtn = stepButton("+$stepPct%", stepPct)
         headerRow.addView(valueTv)
         headerRow.addView(minusBtn)
         headerRow.addView(plusBtn)
@@ -3229,15 +3256,21 @@ class FloatingModifierOverlay(private val activity: Activity) {
             }
         })
 
-        for (chunk in presets.chunked(3)) {
-            val row = LinearLayout(activity).apply {
+        for ((rowIndex, chunk) in presets.chunked(3).withIndex()) {
+            val row = LinearLayout(uiCtx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = if (rowIndex > 0) dp(8) else 0 }
             }
-            for (preset in chunk) {
-                val btn = Button(activity).apply {
+            for ((index, preset) in chunk.withIndex()) {
+                val btn = Button(uiCtx).apply {
                     text = "$preset%"
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    UiKit.styleTonalAccentButton(this, accent)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = if (index > 0) dp(8) else 0
+                    }
                     setOnClickListener { updateSelected(preset, true, true) }
                 }
                 row.addView(btn)

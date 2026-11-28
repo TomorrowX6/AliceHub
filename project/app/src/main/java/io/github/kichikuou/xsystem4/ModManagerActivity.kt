@@ -32,7 +32,7 @@ private const val REQ_MOD_LOCAL_DIR = 205
 // Status-card views live in mod_manager_header, added with addHeaderView. Lint only
 // sees the activity layout, so those ids look missing.
 @SuppressLint("MissingInflatedId")
-class ModManagerActivity : ThemedActivity(), GameListObserver {
+class ModManagerActivity : ThemedActivity(), GameListObserver, GameAccentHost {
     companion object {
         const val EXTRA_GAME_PATH = "EXTRA_GAME_PATH"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
@@ -68,7 +68,13 @@ class ModManagerActivity : ThemedActivity(), GameListObserver {
 
     private var pendingPostResumeAction: (() -> Unit)? = null
 
+    override fun activeGameAccentColor(): Int? =
+        if (::descriptor.isInitialized) descriptor.accentColor else null
+
     private fun <T : Dialog> trackDialog(dlg: T): T {
+        if (dlg is AlertDialog && ::descriptor.isInitialized) {
+            UiKit.tintAlertDialog(dlg, descriptor.accentColor)
+        }
         trackedDialogs.removeAll { !it.isShowing }
         trackedDialogs.add(dlg)
         return dlg

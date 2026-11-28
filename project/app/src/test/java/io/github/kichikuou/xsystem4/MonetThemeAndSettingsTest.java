@@ -1,11 +1,18 @@
 package io.github.kichikuou.xsystem4;
 
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.CheckedTextView;
+import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 
@@ -144,5 +151,130 @@ public class MonetThemeAndSettingsTest {
             TextView step = onboardingView.findViewById(R.id.onboarding_step);
             assertEquals(activity.getColor(R.color.ocean_primary), step.getCurrentTextColor());
         }
+    }
+
+    @Test
+    public void gameModifierDialogsFollowPerGameAccentColor() {
+        Intent intent = new Intent();
+        intent.putExtra(GameModifierActivity.EXTRA_GAME_ID, GameCatalog.ID_RANCE02);
+        try (ActivityController<GameModifierActivity> controller =
+                     Robolectric.buildActivity(GameModifierActivity.class, intent).setup()) {
+            GameModifierActivity activity = controller.get();
+            SaveScreenLoadingTest.await(() -> activity.findViewById(R.id.btn_mod_font_size).isEnabled());
+            int gameAccent = GameCatalog.INSTANCE.descriptorFor(activity, GameCatalog.ID_RANCE02, null).getAccentColor();
+            int expectedAccent = UiKit.INSTANCE.accentOnSurface(activity, gameAccent);
+
+            // Header action buttons follow Rance02 accent
+            assertEquals(expectedAccent, ((Button) activity.findViewById(R.id.btn_mod_floating_cfg)).getCurrentTextColor());
+            assertEquals(expectedAccent, ((Button) activity.findViewById(R.id.btn_mod_switch_dir)).getCurrentTextColor());
+
+            // 1. Font size dialog: SeekBar, preset/step buttons, and dialog action buttons follow Rance02 accent
+            activity.findViewById(R.id.btn_mod_font_size).performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog fontDialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(fontDialog.isShowing());
+            assertEquals(expectedAccent, fontDialog.getButton(AlertDialog.BUTTON_POSITIVE).getCurrentTextColor());
+            assertEquals(expectedAccent, fontDialog.getButton(AlertDialog.BUTTON_NEGATIVE).getCurrentTextColor());
+            assertEquals(expectedAccent, fontDialog.getButton(AlertDialog.BUTTON_NEUTRAL).getCurrentTextColor());
+            SeekBar fontSeek = findFirstView(fontDialog.getWindow().getDecorView(), SeekBar.class);
+            assertNotNull(fontSeek);
+            assertEquals(expectedAccent, fontSeek.getThumbTintList().getDefaultColor());
+            Button stepMinus = findButtonWithText(fontDialog.getWindow().getDecorView(), "-5%");
+            assertNotNull(stepMinus);
+            assertEquals(expectedAccent, stepMinus.getCurrentTextColor());
+            Button preset100 = findButtonWithText(fontDialog.getWindow().getDecorView(), "100%");
+            assertNotNull(preset100);
+            assertEquals(expectedAccent, preset100.getCurrentTextColor());
+            fontDialog.dismiss();
+
+            // 2. Scrollbar dialog follows Rance02 accent
+            activity.findViewById(R.id.btn_mod_scrollbar).performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog sbDialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(sbDialog.isShowing());
+            assertEquals(expectedAccent, sbDialog.getButton(AlertDialog.BUTTON_POSITIVE).getCurrentTextColor());
+            SeekBar sbSeek = findFirstView(sbDialog.getWindow().getDecorView(), SeekBar.class);
+            assertNotNull(sbSeek);
+            assertEquals(expectedAccent, sbSeek.getProgressTintList().getDefaultColor());
+            Button preset200 = findButtonWithText(sbDialog.getWindow().getDecorView(), "200%");
+            assertNotNull(preset200);
+            assertEquals(expectedAccent, preset200.getCurrentTextColor());
+            sbDialog.dismiss();
+
+            // 3. Live locks dialog: action buttons and multi-choice checkmarks follow Rance02 accent
+            activity.findViewById(R.id.btn_mod_floating_cfg).performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog locksDialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(locksDialog.isShowing());
+            assertEquals(expectedAccent, locksDialog.getButton(AlertDialog.BUTTON_POSITIVE).getCurrentTextColor());
+            assertEquals(expectedAccent, locksDialog.getButton(AlertDialog.BUTTON_NEGATIVE).getCurrentTextColor());
+            assertEquals(expectedAccent, locksDialog.getButton(AlertDialog.BUTTON_NEUTRAL).getCurrentTextColor());
+            ListView lv = locksDialog.getListView();
+            assertNotNull(lv);
+            lv.measure(View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.AT_MOST));
+            lv.layout(0, 0, 800, 800);
+            CheckedTextView firstRow = findFirstView(lv, CheckedTextView.class);
+            assertNotNull(firstRow);
+            assertNotNull(firstRow.getCompoundDrawableTintList());
+            assertEquals(expectedAccent,
+                    firstRow.getCompoundDrawableTintList().getColorForState(
+                            new int[]{android.R.attr.state_checked}, 0));
+            locksDialog.dismiss();
+
+            // 4. Switch directory & create directory dialogs follow Rance02 accent
+            activity.findViewById(R.id.btn_mod_switch_dir).performClick();
+            SaveScreenLoadingTest.await(() -> {
+                AlertDialog latest = ShadowAlertDialog.getLatestAlertDialog();
+                return latest != null && latest != locksDialog && latest.isShowing();
+            });
+            AlertDialog switchDialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(switchDialog.isShowing());
+            assertEquals(expectedAccent, switchDialog.getButton(AlertDialog.BUTTON_NEGATIVE).getCurrentTextColor());
+            ListView switchList = switchDialog.getListView();
+            assertNotNull(switchList);
+            int createIdx = switchList.getAdapter().getCount() - 1;
+            switchList.performItemClick(switchList.getChildAt(createIdx), createIdx, createIdx);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+
+            AlertDialog createDialog = ShadowAlertDialog.getLatestAlertDialog();
+            assertTrue(createDialog.isShowing());
+            assertNotEquals(switchDialog, createDialog);
+            assertEquals(expectedAccent, createDialog.getButton(AlertDialog.BUTTON_POSITIVE).getCurrentTextColor());
+            assertEquals(expectedAccent, createDialog.getButton(AlertDialog.BUTTON_NEGATIVE).getCurrentTextColor());
+            EditText dirInput = findFirstView(createDialog.getWindow().getDecorView(), EditText.class);
+            assertNotNull(dirInput);
+            assertNotNull(dirInput.getBackgroundTintList());
+            assertEquals(expectedAccent,
+                    dirInput.getBackgroundTintList().getColorForState(
+                            new int[]{android.R.attr.state_focused}, 0));
+            createDialog.dismiss();
+        }
+    }
+
+    private static <T extends View> T findFirstView(View root, Class<T> clazz) {
+        if (clazz.isInstance(root)) return clazz.cast(root);
+        if (root instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) root;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                T found = findFirstView(vg.getChildAt(i), clazz);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private static Button findButtonWithText(View root, String text) {
+        if (root instanceof Button && text.equals(((Button) root).getText().toString())) {
+            return (Button) root;
+        }
+        if (root instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) root;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                Button found = findButtonWithText(vg.getChildAt(i), text);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 }

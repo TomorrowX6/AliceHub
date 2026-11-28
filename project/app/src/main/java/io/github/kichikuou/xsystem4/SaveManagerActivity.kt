@@ -200,7 +200,7 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
         lang.startsWith("ja") -> "終了して続行"
         else -> "Close & Continue"
     }
-    AlertDialog.Builder(activity)
+    val dlg = AlertDialog.Builder(activity)
         .setTitle(title)
         .setMessage(message)
         .setPositiveButton(confirmLabel) { _, _ ->
@@ -213,12 +213,13 @@ internal fun ensureGameNotRunning(activity: Activity, onProceed: () -> Unit) {
         }
         .setNegativeButton(R.string.cancel, null)
         .show()
+    (activity as? GameAccentHost)?.activeGameAccentColor()?.let { UiKit.tintAlertDialog(dlg, it) }
 }
 
 // Status-card views live in save_manager_header, added with addHeaderView. Lint only
 // sees the activity layout, so those ids look missing.
 @SuppressLint("MissingInflatedId")
-class SaveManagerActivity : ThemedActivity() {
+class SaveManagerActivity : ThemedActivity(), GameAccentHost {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
@@ -1117,6 +1118,7 @@ class SaveManagerActivity : ThemedActivity() {
     private val trackedDialogs = mutableListOf<Dialog>()
 
     private var scopedGameId: String? = null
+    private var currentAccentColor: Int? = null
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: SaveFileAdapter
     private var currentEntries: List<SaveFileEntry> = emptyList()
@@ -1124,7 +1126,13 @@ class SaveManagerActivity : ThemedActivity() {
     private var pendingSingleExportAsPc: Boolean = false
     private var pendingExportAsPc: Boolean = false
 
+    override fun activeGameAccentColor(): Int? =
+        currentAccentColor ?: scopedGameId?.let { GameCatalog.descriptorFor(this, it).accentColor }
+
     private fun <T : Dialog> trackDialog(dlg: T): T {
+        if (dlg is AlertDialog) {
+            activeGameAccentColor()?.let { UiKit.tintAlertDialog(dlg, it) }
+        }
         trackedDialogs.removeAll { !it.isShowing }
         trackedDialogs.add(dlg)
         return dlg
@@ -1161,6 +1169,7 @@ class SaveManagerActivity : ThemedActivity() {
             layoutInflater.inflate(R.layout.save_manager_header, listView, false), null, false
         )
         listView.adapter = adapter
+        scopedGameId?.let { applyThemeAccent(GameCatalog.descriptorFor(this, it).accentColor) }
 
         liveHostRef = java.lang.ref.WeakReference(this)
         if (savedInstanceState != null) {
@@ -1337,6 +1346,7 @@ class SaveManagerActivity : ThemedActivity() {
     }
 
     private fun applyThemeAccent(accent: Int) {
+        currentAccentColor = accent
         adapter.accentColor = accent
         findViewById<View>(R.id.save_header_card)?.background =
             UiKit.accentCard(this, accent, R.dimen.ui_radius_card, clickable = false)

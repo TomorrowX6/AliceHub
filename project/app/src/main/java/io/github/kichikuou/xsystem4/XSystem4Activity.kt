@@ -428,6 +428,18 @@ class XSystem4Activity : SDLActivity() {
             effectiveGameRootFile()?.name ?: effectiveSaveDirFile()?.name
         )
 
+    fun currentGameAccentColor(): Int {
+        val gameDir = effectiveGameRootFile()
+        val saveDir = effectiveSaveDirFile()
+        return UiKit.resolveGameAccentColor(
+            context = this,
+            gameId = null,
+            gameDir = gameDir,
+            dirName = gameDir?.name ?: saveDir?.name,
+            saveDir = saveDir
+        )
+    }
+
     fun getActiveGamepadProfile(): GamepadProfile = activeGamepadProfile
 
     fun applyGamepadProfile(profile: GamepadProfile) {

@@ -93,7 +93,7 @@ private class ModSaveSlotAdapter(
 // Status-card views live in game_modifier_header, added with addHeaderView. Lint only
 // sees the activity layout, so those ids look missing.
 @SuppressLint("MissingInflatedId")
-class GameModifierActivity : ThemedActivity() {
+class GameModifierActivity : ThemedActivity(), GameAccentHost {
     companion object {
         const val EXTRA_DIR_NAME = "EXTRA_DIR_NAME"
         const val EXTRA_GAME_ID = "EXTRA_GAME_ID"
@@ -103,6 +103,7 @@ class GameModifierActivity : ThemedActivity() {
     private val loader = SaveScreenLoader(scope)
     private var firstResume = true
     private var scopedGameId: String? = null
+    private var currentAccentColor: Int? = null
     private lateinit var currentTarget: SaveTarget
     private lateinit var adapter: ModSaveSlotAdapter
     private var updatingSwitches = false
@@ -126,6 +127,13 @@ class GameModifierActivity : ThemedActivity() {
         }
     }
 
+    override fun activeGameAccentColor(): Int = resolveActiveAccent()
+
+    private fun resolveActiveAccent(): Int =
+        currentAccentColor
+            ?: scopedGameId?.let { GameCatalog.descriptorFor(this, it).accentColor }
+            ?: UiKit.primaryColor(this)
+
     private fun dialogBuilder(): AlertDialog.Builder =
         object : AlertDialog.Builder(this) {
             override fun create(): AlertDialog {
@@ -136,6 +144,7 @@ class GameModifierActivity : ThemedActivity() {
 
             override fun show(): AlertDialog {
                 val dlg = super.show()
+                UiKit.tintAlertDialog(dlg, resolveActiveAccent())
                 trackDialog(dlg)
                 return dlg
             }
@@ -198,6 +207,7 @@ class GameModifierActivity : ThemedActivity() {
 
         adapter = ModSaveSlotAdapter(this, emptyList(), tr("已备份", "バックアップ済", "Backed up"))
         listView.adapter = adapter
+        scopedGameId?.let { applyThemeAccent(GameCatalog.descriptorFor(this, it).accentColor) }
 
         findViewById<View>(R.id.btn_mod_switch_dir).setOnClickListener { showSwitchTargetDialog() }
         findViewById<View>(R.id.btn_mod_full_unlock).setOnClickListener {
@@ -698,6 +708,7 @@ class GameModifierActivity : ThemedActivity() {
         )
 
     private fun applyThemeAccent(accent: Int) {
+        currentAccentColor = accent
         adapter.accentColor = accent
         findViewById<View>(R.id.mod_header_card)?.background =
             UiKit.accentCard(this, accent, R.dimen.ui_radius_card, clickable = false)
@@ -1736,11 +1747,13 @@ class GameModifierActivity : ThemedActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             setTextAppearance(R.style.TextAppearance_Launcher_CardTitle)
         }
+        val accent = resolveActiveAccent()
         // Negative margins cancel the padding that makes room for the thumb, so the track
         // spans the full content width.
         val seekBar = SeekBar(this).apply {
             max = maxPct - minPct
             progress = selectedPct - minPct
+            UiKit.tintSeekBar(this, accent)
             setPadding(dp(8), dp(14), dp(8), dp(14))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1768,6 +1781,7 @@ class GameModifierActivity : ThemedActivity() {
             Button(this, null, 0, R.style.Widget_Launcher_Button_Small).apply {
                 text = label
                 minWidth = dp(60)
+                UiKit.styleTonalAccentButton(this, accent)
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply { marginStart = dp(8) }
@@ -1801,6 +1815,7 @@ class GameModifierActivity : ThemedActivity() {
             for ((index, preset) in chunk.withIndex()) {
                 val btn = Button(this).apply {
                     text = "$preset%"
+                    UiKit.styleTonalAccentButton(this, accent)
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                         marginStart = if (index > 0) dp(8) else 0
                     }

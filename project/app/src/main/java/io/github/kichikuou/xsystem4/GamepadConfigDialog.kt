@@ -358,6 +358,7 @@ class GamepadConfigController(
             .setPositiveButton(android.R.string.ok) { _, _ -> applyPreset(presetId) }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+            .also { dlg -> accentColor?.let { UiKit.tintAlertDialog(dlg, it) } }
     }
 
     private fun applyPreset(presetId: String) {
@@ -797,5 +798,6 @@ object GamepadConfigDialog {
             controller.stopPolling()
         }
         built.show()
+        accentColor?.let { UiKit.tintAlertDialog(built, it) }
     }
 }

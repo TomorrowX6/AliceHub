@@ -1,5 +1,6 @@
 package io.github.kichikuou.xsystem4
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
@@ -16,6 +17,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ReplacementSpan
@@ -25,8 +27,12 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckedTextView
+import android.widget.CompoundButton
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
@@ -40,6 +46,10 @@ import java.io.File
  * chips, icon badges) are built here. Static colors always come from resources so that
  * they follow day/night automatically.
  */
+interface GameAccentHost {
+    fun activeGameAccentColor(): Int?
+}
+
 internal object UiKit {
 
     /** Semantic color pair (container + content) used by chips. */
@@ -154,6 +164,85 @@ internal object UiKit {
         sb.progressBackgroundTintList = ColorStateList.valueOf(
             withAlpha(onColor, if (isNight(ctx)) 0x3A else 0x26)
         )
+    }
+
+    /**
+     * Tints an already-shown [AlertDialog]'s action buttons, single/multi-choice list checkmarks,
+     * and standard interactive widgets inside its custom view to follow a per-game [accent] color.
+     */
+    fun tintAlertDialog(dialog: AlertDialog, accent: Int): AlertDialog {
+        val ctx = dialog.context
+        val onColor = accentOnSurface(ctx, accent)
+        val disabledColor = ctx.getColor(R.color.ui_text_disabled)
+        val uncheckedColor = ctx.getColor(R.color.ui_text_secondary)
+        val dangerColor = ctx.getColor(R.color.tone_danger_fg)
+
+        val btnColors = ColorStateList(
+            arrayOf(intArrayOf(-android.R.attr.state_enabled), IntArray(0)),
+            intArrayOf(disabledColor, onColor)
+        )
+        for (which in intArrayOf(
+            AlertDialog.BUTTON_POSITIVE,
+            AlertDialog.BUTTON_NEGATIVE,
+            AlertDialog.BUTTON_NEUTRAL
+        )) {
+            val btn = dialog.getButton(which) ?: continue
+            if (btn.currentTextColor != dangerColor) {
+                btn.setTextColor(btnColors)
+            }
+        }
+
+        val checkTint = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_checked), IntArray(0)),
+            intArrayOf(onColor, uncheckedColor)
+        )
+        val editTint = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_focused), IntArray(0)),
+            intArrayOf(onColor, ctx.getColor(R.color.ui_text_tertiary))
+        )
+
+        fun tintViewTree(view: View) {
+            when (view) {
+                is CheckedTextView -> {
+                    view.checkMarkTintList = checkTint
+                    view.compoundDrawableTintList = checkTint
+                }
+                is Switch -> tintSwitch(view, accent)
+                is CompoundButton -> view.buttonTintList = checkTint
+                is SeekBar -> tintSeekBar(view, accent)
+                is ProgressBar -> {
+                    val tint = ColorStateList.valueOf(onColor)
+                    view.progressTintList = tint
+                    view.indeterminateTintList = tint
+                }
+                is EditText -> {
+                    view.backgroundTintList = editTint
+                    view.highlightColor = withAlpha(onColor, 0x4D)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        view.textCursorDrawable?.mutate()?.setTint(onColor)
+                    }
+                }
+            }
+            if (view is ViewGroup) {
+                for (i in 0 until view.childCount) {
+                    tintViewTree(view.getChildAt(i))
+                }
+            }
+        }
+
+        dialog.listView?.let { lv ->
+            tintViewTree(lv)
+            lv.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+                override fun onChildViewAdded(parent: View?, child: View?) {
+                    if (child != null) tintViewTree(child)
+                }
+
+                override fun onChildViewRemoved(parent: View?, child: View?) {}
+            })
+        }
+
+        dialog.findViewById<ViewGroup>(android.R.id.custom)?.let(::tintViewTree)
+        return dialog
     }
 
     fun styleTonalAccentButton(button: Button, accent: Int) {
