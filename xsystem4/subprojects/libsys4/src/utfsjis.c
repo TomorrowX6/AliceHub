@@ -1672,49 +1672,116 @@ static bool cjk_dialog_is_sjis_jp_particle(uint8_t b1, uint8_t b2)
 	}
 }
 
+struct cjk_dialog_mai_stats {
+	unsigned phrase_flags;
+	size_t unremapped_hira;
+	size_t unremapped_kata;
+	size_t han_count;
+	bool has_jp_particle;
+};
+
+static bool cjk_dialog_mai_stats_is_cp932(const struct cjk_dialog_mai_stats *st)
+{
+	size_t total_kana = st->unremapped_hira + st->unremapped_kata;
+	if ((st->phrase_flags & CJK_DIALOG_PHRASE_GRAMMAR) && st->unremapped_hira > 0
+			&& (total_kana * 2 >= st->han_count || st->han_count <= 4))
+		return true;
+	if ((st->phrase_flags & CJK_DIALOG_PHRASE_NOUN) && st->unremapped_hira > 0
+			&& st->has_jp_particle && total_kana >= st->han_count)
+		return true;
+	return false;
+}
+
+static const uint8_t *cjk_dialog_find_sjis_quote_close(const uint8_t *s, const uint8_t *end,
+		uint8_t close_b2)
+{
+	const uint8_t *q = s;
+	while (q < end && *q != '\n' && *q != '\r') {
+		if (*q <= 0x7f) {
+			q++;
+			continue;
+		}
+		if (q + 1 < end) {
+			if (q[0] == 0x81 && q[1] == close_b2)
+				return q;
+			if (SJIS_2BYTE(q[0]) || gbk_display_pair_bounded(q, end)) {
+				q += 2;
+				continue;
+			}
+		}
+		q++;
+	}
+	return NULL;
+}
+
 static bool cjk_dialog_mai_is_cp932(const uint8_t *src, size_t len)
 {
 	const uint8_t *s = src;
 	const uint8_t *end = src + len;
-	unsigned phrase_flags = 0;
-	size_t unremapped_hira = 0;
-	size_t unremapped_kata = 0;
-	size_t han_count = 0;
-	bool has_jp_particle = false;
+	const uint8_t *quote_close = NULL;
+	struct cjk_dialog_mai_stats all = { 0 };
+	struct cjk_dialog_mai_stats outer = { 0 };
 
 	while (s < end) {
+		if (quote_close && s >= quote_close) {
+			quote_close = NULL;
+			if (s + 1 < end && s[0] == 0x81 && (s[1] == 0x78 || s[1] == 0x7a)) {
+				s += 2;
+				continue;
+			}
+		}
+		if (!quote_close && s + 1 < end && s[0] == 0x81 && (s[1] == 0x77 || s[1] == 0x79)) {
+			const uint8_t *close = cjk_dialog_find_sjis_quote_close(s + 2, end, s[1] + 1);
+			if (close) {
+				quote_close = close;
+				s += 2;
+				continue;
+			}
+		}
 		if (!SJIS_2BYTE(*s) || s + 1 >= end || sjis_display_pair(s) <= 0) {
 			s++;
 			continue;
 		}
+		bool in_quote = (quote_close != NULL);
 		const uint8_t *run = s;
-		while (s + 1 < end && SJIS_2BYTE(*s) && sjis_display_pair(s) > 0)
+		while (s + 1 < end && SJIS_2BYTE(*s) && sjis_display_pair(s) > 0) {
+			if (quote_close && s == quote_close)
+				break;
+			if (!quote_close && s[0] == 0x81 && (s[1] == 0x77 || s[1] == 0x79)
+					&& cjk_dialog_find_sjis_quote_close(s + 2, end, s[1] + 1))
+				break;
 			s += 2;
-		phrase_flags |= cjk_dialog_run_sjis_phrase_flags(run, s, true);
+		}
+		unsigned rflags = cjk_dialog_run_sjis_phrase_flags(run, s, true);
+		all.phrase_flags |= rflags;
+		if (!in_quote)
+			outer.phrase_flags |= rflags;
 		for (const uint8_t *p = run; p < s; p += 2) {
 			uint8_t b1 = p[0];
 			uint8_t b2 = p[1];
 			bool remapped = mai_s2u[b1 - 0x80][b2 - 0x40] != (uint16_t)s2u[b1 - 0x80][b2 - 0x40];
 			if (!remapped && b1 == 0x82 && b2 >= 0x9f && b2 <= 0xf1) {
-				unremapped_hira++;
-				if (cjk_dialog_is_sjis_jp_particle(b1, b2))
-					has_jp_particle = true;
+				all.unremapped_hira++;
+				if (!in_quote)
+					outer.unremapped_hira++;
+				if (cjk_dialog_is_sjis_jp_particle(b1, b2)) {
+					all.has_jp_particle = true;
+					if (!in_quote)
+						outer.has_jp_particle = true;
+				}
 			} else if (!remapped && b1 == 0x83 && b2 >= 0x40 && b2 <= 0x96) {
-				unremapped_kata++;
+				all.unremapped_kata++;
+				if (!in_quote)
+					outer.unremapped_kata++;
 			} else if (remapped || b1 >= 0x88) {
-				han_count++;
+				all.han_count++;
+				if (!in_quote)
+					outer.han_count++;
 			}
 		}
 	}
 
-	size_t total_kana = unremapped_hira + unremapped_kata;
-	if ((phrase_flags & CJK_DIALOG_PHRASE_GRAMMAR) && unremapped_hira > 0
-			&& (total_kana * 2 >= han_count || han_count <= 4))
-		return true;
-	if ((phrase_flags & CJK_DIALOG_PHRASE_NOUN) && unremapped_hira > 0
-			&& has_jp_particle && total_kana >= han_count)
-		return true;
-	return false;
+	return cjk_dialog_mai_stats_is_cp932(&outer) || cjk_dialog_mai_stats_is_cp932(&all);
 }
 
 static bool cjk_dialog_is_sjis_kana_pair(const uint8_t *p)
@@ -1746,15 +1813,27 @@ static char *cjk_dialog_mai_text_to_utf8(const uint8_t *src, size_t len)
 		}
 		// Consume maximal half-width katakana runs (0xa1..0xdf) before trying
 		// embedded-GBK pairing so odd-length or known half-width words like
-		// ｴﾗｰ / ﾌｧｲﾙ are never partially re-paired into GBK glyphs (e.g. ｴ装).
+		// ｴﾗｰ / ﾌｧｲﾙ are never partially re-paired into GBK glyphs (e.g. ｴ装),
+		// unless the trailing byte continues a GBK character with an ASCII-range
+		// trail byte (e.g. 遊 = 0xDF 0x5B in 中文遊戲 / 遊戲).
 		if (*s >= 0xa1 && *s <= 0xdf) {
 			const uint8_t *hw_end = s;
 			while (hw_end < end && *hw_end >= 0xa1 && *hw_end <= 0xdf)
 				hw_end++;
+			bool crosses_gbk_pair = ((size_t)(hw_end - s) & 1u) != 0
+				&& hw_end < end && *hw_end <= 0x7f
+				&& gbk_display_pair_bounded(hw_end - 1, end)
+				&& gbk_lookup(hw_end[-1], hw_end[0]) > 0
+				&& ((hw_end - s >= 3)
+					|| (gbk_display_pair_bounded(hw_end + 1, end)
+						&& gbk_lookup(hw_end[1], hw_end[2]) > 0
+						&& !cjk_dialog_is_sjis_punct_pair(hw_end + 1)
+						&& !cjk_dialog_is_sjis_kana_pair(hw_end + 1)));
 			bool clean_hw_end = (hw_end == end) || (*hw_end <= 0x7f)
 				|| (hw_end + 1 < end && *hw_end <= 0x9f
 					&& SJIS_2BYTE(*hw_end) && sjis_display_pair(hw_end) > 0);
-			if (clean_hw_end && cjk_dialog_is_sjis_hw_kana_run(s, hw_end)) {
+			if (clean_hw_end && !crosses_gbk_pair
+					&& cjk_dialog_is_sjis_hw_kana_run(s, hw_end)) {
 				for (const uint8_t *p = s; p < hw_end; p++)
 					encode_utf8_bmp(0xff60 + (*p - 0xa0), &dstp);
 				s = hw_end;
@@ -1765,9 +1844,15 @@ static char *cjk_dialog_mai_text_to_utf8(const uint8_t *src, size_t len)
 		// that start with a non-CP932-2byte or unmapped CP932 pair.
 		bool non_cp932_start = (*s >= 0xa1 && *s <= 0xdf)
 			|| (SJIS_2BYTE(*s) && s + 1 < end && sjis_display_pair(s) <= 0);
+		bool ascii_trail_continues_gbk = (*s >= 0xa1 && *s <= 0xdf)
+			&& s + 1 < end && s[1] < 0xa1
+			&& gbk_display_pair_bounded(s + 2, end)
+			&& gbk_lookup(s[2], s[3]) > 0
+			&& !cjk_dialog_is_sjis_punct_pair(s + 2)
+			&& !cjk_dialog_is_sjis_kana_pair(s + 2);
 		if (non_cp932_start && gbk_display_pair_bounded(s, end)
 				&& gbk_lookup(s[0], s[1]) > 0
-				&& !(*s >= 0xa1 && *s <= 0xdf && s[1] < 0xa1)) {
+				&& (!(*s >= 0xa1 && *s <= 0xdf && s[1] < 0xa1) || ascii_trail_continues_gbk)) {
 			const uint8_t *q = s;
 			bool all_hw = true;
 			bool has_gbk_evidence = false;

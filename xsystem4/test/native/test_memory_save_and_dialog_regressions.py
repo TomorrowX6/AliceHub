@@ -981,6 +981,50 @@ int main(void)
         "\xef\xbe\x8c\xef\xbd\xa7\xef\xbd\xb2\xef\xbe\x99"
         "\xe3\x81\xae\xe4\xbf\x9d\xe5\xad\x98\xe3\x81\xab\xe5\xa4\xb1\xe6\x95\x97\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f");
 
+    // 8l. Embedded GBK path containing an ASCII-range GBK trail byte (遊 = DF 5B) inside a
+    //     multiline CP932 error dialog must stay GBK ("中文遊戲" / "遊戲"), not half-width kana.
+    const uint8_t oyako_gbk_path_ascii_trail[] = {
+        // エラーが発生しました。\nC:\Users\中文遊戲\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 'U', 's', 'e', 'r', 's', '\\',
+        0xd6, 0xd0, 0xce, 0xc4, 0xdf, 0x5b, 0x91, 0xf2, '\\',
+        's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_gbk_path_ascii_trail", oyako_gbk_path_ascii_trail,
+        sizeof(oyako_gbk_path_ascii_trail) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\Users\\\xe4\xb8\xad\xe6\x96\x87\xe9\x81\x8a\xe6\x88\xb2\\save.asd");
+
+    const uint8_t oyako_gbk_path_youxi_only[] = {
+        // エラーが発生しました。\nC:\Users\遊戲\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 'U', 's', 'e', 'r', 's', '\\',
+        0xdf, 0x5b, 0x91, 0xf2, '\\',
+        's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_gbk_path_youxi_only", oyako_gbk_path_youxi_only,
+        sizeof(oyako_gbk_path_youxi_only) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\Users\\\xe9\x81\x8a\xe6\x88\xb2\\save.asd");
+
+    // 8m. Quit prompt with a long kanji-heavy CP932 GameName inside 『...』 must still classify
+    //     the outer Japanese suffix as CP932 so "終了" is never corrupted by CHS.TBL.
+    const uint8_t oyako_long_cp932_title_quit[] = {
+        // 『母娘乱館特別完全収録版』を終了しますか？
+        0x81, 0x77,
+        0x95, 0xea, 0x96, 0xba, 0x97, 0x90, 0x8a, 0xd9, 0x93, 0xc1, 0x95, 0xca,
+        0x8a, 0xae, 0x91, 0x53, 0x8e, 0xfb, 0x98, 0x5e, 0x94, 0xc5,
+        0x81, 0x78,
+        0x82, 0xf0, 0x8f, 0x49, 0x97, 0xb9, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x00
+    };
+    check_decode("oyako_chs_long_cp932_title_quit", oyako_long_cp932_title_quit,
+        sizeof(oyako_long_cp932_title_quit) - 1,
+        "\xe3\x80\x8e\xe6\xaf\x8d\xe5\xa8\x98\xe4\xb9\xb1\xe9\xa4\xa8\xe7\x89\xb9\xe5\x88\xa5"
+        "\xe5\xae\x8c\xe5\x85\xa8\xe5\x8f\x8e\xe9\x8c\xb2\xe7\x89\x88\xe3\x80\x8f"
+        "\xe3\x82\x92\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
+
     sys4_reset_mai_word_table();
     return 0;
 }
