@@ -1824,11 +1824,10 @@ static char *cjk_dialog_mai_text_to_utf8(const uint8_t *src, size_t len)
 				&& hw_end < end && *hw_end <= 0x7f
 				&& gbk_display_pair_bounded(hw_end - 1, end)
 				&& gbk_lookup(hw_end[-1], hw_end[0]) > 0
-				&& ((hw_end - s >= 3)
-					|| (gbk_display_pair_bounded(hw_end + 1, end)
-						&& gbk_lookup(hw_end[1], hw_end[2]) > 0
-						&& !cjk_dialog_is_sjis_punct_pair(hw_end + 1)
-						&& !cjk_dialog_is_sjis_kana_pair(hw_end + 1)));
+				&& gbk_display_pair_bounded(hw_end + 1, end)
+				&& gbk_lookup(hw_end[1], hw_end[2]) > 0
+				&& !cjk_dialog_is_sjis_punct_pair(hw_end + 1)
+				&& !cjk_dialog_is_sjis_kana_pair(hw_end + 1);
 			bool clean_hw_end = (hw_end == end) || (*hw_end <= 0x7f)
 				|| (hw_end + 1 < end && *hw_end <= 0x9f
 					&& SJIS_2BYTE(*hw_end) && sjis_display_pair(hw_end) > 0);

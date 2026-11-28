@@ -1025,6 +1025,29 @@ int main(void)
         "\xe5\xae\x8c\xe5\x85\xa8\xe5\x8f\x8e\xe9\x8c\xb2\xe7\x89\x88\xe3\x80\x8f"
         "\xe3\x82\x92\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
 
+    // 8n. Odd-length half-width katakana followed by ASCII letter or backslash (e.g. ﾗﾝｽX / \ﾗﾝｽ\)
+    //     must NOT swallow the ASCII byte into a GBK pair.
+    const uint8_t oyako_hw_title_quit[] = {
+        // 『ﾗﾝｽX』を終了しますか？
+        0x81, 0x77, 0xd7, 0xdd, 0xbd, 'X', 0x81, 0x78,
+        0x82, 0xf0, 0x8f, 0x49, 0x97, 0xb9, 0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb7, 0x82, 0xa9, 0x81, 0x48, 0x00
+    };
+    check_decode("oyako_chs_hw_title_ascii_suffix", oyako_hw_title_quit,
+        sizeof(oyako_hw_title_quit) - 1,
+        "\xe3\x80\x8e\xef\xbe\x97\xef\xbe\x9d\xef\xbd\xbd" "X\xe3\x80\x8f"
+        "\xe3\x82\x92\xe7\xb5\x82\xe4\xba\x86\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x99\xe3\x81\x8b\xef\xbc\x9f");
+
+    const uint8_t oyako_hw_dir_path[] = {
+        // エラーが発生しました。\nC:\ﾗﾝｽ\save.asd
+        0x83, 0x47, 0x83, 0x89, 0x81, 0x5b, 0x82, 0xaa, 0x94, 0xad, 0x90, 0xb6,
+        0x82, 0xb5, 0x82, 0xdc, 0x82, 0xb5, 0x82, 0xbd, 0x81, 0x42, 0x0a,
+        'C', ':', '\\', 0xd7, 0xdd, 0xbd, '\\', 's', 'a', 'v', 'e', '.', 'a', 's', 'd', 0x00
+    };
+    check_decode("oyako_chs_hw_dir_backslash", oyako_hw_dir_path,
+        sizeof(oyako_hw_dir_path) - 1,
+        "\xe3\x82\xa8\xe3\x83\xa9\xe3\x83\xbc\xe3\x81\x8c\xe7\x99\xba\xe7\x94\x9f\xe3\x81\x97\xe3\x81\xbe\xe3\x81\x97\xe3\x81\x9f\xe3\x80\x82\n"
+        "C:\\\xef\xbe\x97\xef\xbe\x9d\xef\xbd\xbd\\save.asd");
+
     sys4_reset_mai_word_table();
     return 0;
 }
