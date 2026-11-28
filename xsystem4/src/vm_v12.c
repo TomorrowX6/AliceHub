@@ -500,6 +500,36 @@ static bool array_arg_is_owned_value_temp(struct ain_hll_function *f, int arg_id
 	return parameter == AIN_STRUCT || parameter == AIN_ARRAY || parameter == AIN_DELEGATE;
 }
 
+static bool type_may_run_destructor(enum ain_data_type data, int struc,
+		const struct ain_type *sub, int depth)
+{
+	if (depth > 16)
+		return true;
+	switch (data) {
+	case AIN_STRUCT:
+	case AIN_ARRAY_STRUCT: {
+		if (!ain || struc < 0 || struc >= ain->nr_structures)
+			return true;
+		struct ain_struct *s = &ain->structures[struc];
+		if (s->destructor > 0)
+			return true;
+		for (int i = 0; i < s->nr_members; i++) {
+			const struct ain_type *mt = &s->members[i].type;
+			if (type_may_run_destructor(mt->data, mt->struc, mt->array_type, depth + 1))
+				return true;
+		}
+		return false;
+	}
+	case AIN_ARRAY:
+	case AIN_OPTION:
+		if (!sub)
+			return true;
+		return type_may_run_destructor(sub->data, sub->struc, sub->array_type, depth + 1);
+	default:
+		return false;
+	}
+}
+
 static bool can_move_array_value_temp(struct ain_hll_function *f, int arg_idx, int parameter,
 		int array_slot, const struct ain_type *type, int val_slot)
 {
@@ -512,10 +542,16 @@ static bool can_move_array_value_temp(struct ain_hll_function *f, int arg_idx, i
 	struct page *vp = heap[val_slot].page;
 	switch (type->data) {
 	case AIN_STRUCT:
-		return vp->type == STRUCT_PAGE && (type->struc < 0 || vp->index == type->struc);
+		return vp->type == STRUCT_PAGE
+			&& (type->struc < 0 || vp->index == type->struc)
+			&& !type_may_run_destructor(AIN_STRUCT, vp->index, NULL, 0);
 	case AIN_ARRAY:
-	case AIN_ARRAY_TYPE:
-		return vp->type == ARRAY_PAGE;
+	case AIN_ARRAY_TYPE: {
+		if (vp->type != ARRAY_PAGE)
+			return false;
+		struct ain_type elem = element_type(vp);
+		return !type_may_run_destructor(elem.data, elem.struc, elem.array_type, 0);
+	}
 	case AIN_DELEGATE:
 		return vp->type == DELEGATE_PAGE;
 	default:

@@ -155,8 +155,8 @@ class ArrayHllRegressionTests(unittest.TestCase):
                               "v12_array_new", "resize_array_mode", "resize_array",
                               "set_element", "elem_ref_is_two_slot", "return_element",
                               "array_hll_param_width", "array_hll_ref_ret_is_two_slot",
-                              "array_arg_is_owned_value_temp", "can_move_array_value_temp",
-                              "move_insert_element",
+                              "array_arg_is_owned_value_temp", "type_may_run_destructor",
+                              "can_move_array_value_temp", "move_insert_element",
                               "cleanup_array_value_args", "array_call_invalid_slot",
                               "is_hll_func_type", "array_call"]),
         ]:
@@ -282,6 +282,7 @@ static void resize_array_mode(int slot, int count, bool prealloc) {
             extract_function("src/vm_v12.c", name)
             for name in (
                 "array_arg_is_owned_value_temp",
+                "type_may_run_destructor",
                 "can_move_array_value_temp",
                 "move_insert_element",
                 "cleanup_array_value_args",
@@ -303,9 +304,9 @@ static int make_frame_with_self_delegate(int env_slot) {
 
 int main(void) {
     ain = ain_new(14, 1);
-    // Struct 0: { delegate m_dg }
-    ain->nr_structures = 2;
-    ain->structures = xcalloc(2, sizeof(struct ain_struct));
+    // Struct 0: { delegate m_dg } (no destructor)
+    ain->nr_structures = 3;
+    ain->structures = xcalloc(3, sizeof(struct ain_struct));
     ain->structures[0].name = strdup("FrameInfo");
     ain->structures[0].nr_members = 1;
     ain->structures[0].members = xcalloc(1, sizeof(struct ain_variable));
@@ -316,6 +317,14 @@ int main(void) {
     ain->structures[1].nr_members = 0;
     ain->structures[1].constructor = -1;
     ain->structures[1].destructor = 1;
+    // Struct 2: wrapper struct with no own destructor, but owns value EnvOwner member
+    ain->structures[2].name = strdup("WrapperWithDtorMember");
+    ain->structures[2].nr_members = 1;
+    ain->structures[2].members = xcalloc(1, sizeof(struct ain_variable));
+    ain->structures[2].members[0].name = strdup("m_owned");
+    ain->structures[2].members[0].type = (struct ain_type){ .data = AIN_STRUCT, .struc = 1 };
+    ain->structures[2].constructor = -1;
+    ain->structures[2].destructor = -1;
     ain->structures[0].constructor = -1;
     ain->structures[0].destructor = -1;
     ain->nr_functions = 2;
@@ -466,6 +475,35 @@ int main(void) {
     // Self-move into same array must NOT move!
     struct ain_type arr_elem_t = { .data = AIN_ARRAY, .struc = -1 };
     assert(!can_move_array_value_temp(&add_fn, 1, 2, arr_slot, &arr_elem_t, arr_slot));
+    // Struct with own destructor must NOT move (preserves temp destructor side effects)!
+    struct ain_type dtor_st_type = { .data = AIN_STRUCT, .struc = 1 };
+    int dtor_temp = heap_alloc_slot(VM_PAGE);
+    heap_set_page(dtor_temp, alloc_page(STRUCT_PAGE, 1, 0));
+    assert(!can_move_array_value_temp(&add_fn, 1, 2, arr_slot, &dtor_st_type, dtor_temp));
+    heap_unref(dtor_temp);
+    // Struct transitively owning a destructible value struct member must NOT move!
+    struct ain_type wrap_st_type = { .data = AIN_STRUCT, .struc = 2 };
+    int wrap_temp = heap_alloc_slot(VM_PAGE);
+    struct page *wp = alloc_page(STRUCT_PAGE, 2, 1);
+    wp->values[0].i = -1;
+    heap_set_page(wrap_temp, wp);
+    assert(!can_move_array_value_temp(&add_fn, 1, 2, arr_slot, &wrap_st_type, wrap_temp));
+    heap_unref(wrap_temp);
+    // Array whose element type is destructible must NOT move, while array of non-destructible structs CAN move!
+    struct page *dtor_arr_p = alloc_page(ARRAY_PAGE, AIN_ARRAY, 0);
+    dtor_arr_p->array.rank = 1;
+    dtor_arr_p->array.struct_type = 1;
+    dtor_arr_p->array.element_type = dtor_st_type;
+    int dtor_arr_slot = heap_alloc_page(dtor_arr_p);
+    assert(!can_move_array_value_temp(&add_fn, 1, 2, arr_slot, &arr_elem_t, dtor_arr_slot));
+    heap_unref(dtor_arr_slot);
+    struct page *plain_arr_p = alloc_page(ARRAY_PAGE, AIN_ARRAY, 0);
+    plain_arr_p->array.rank = 1;
+    plain_arr_p->array.struct_type = 0;
+    plain_arr_p->array.element_type = st_type;
+    int plain_arr_slot = heap_alloc_page(plain_arr_p);
+    assert(can_move_array_value_temp(&add_fn, 1, 2, arr_slot, &arr_elem_t, plain_arr_slot));
+    heap_unref(plain_arr_slot);
 
     // Move temp_v1 into index 0 via move_insert_element -> zero extra vm_copy_page calls!
     int copies_before = vm_copy_page_calls;
