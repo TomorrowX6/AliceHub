@@ -2019,9 +2019,14 @@ extern void Java_io_github_kichikuou_xsystem4_GamepadBridge_nativeSetGamepadConf
 extern void Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeApplyLiveAction(JNIEnv *, jclass, jstring);
 extern void Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetCtrlSkip(JNIEnv *, jclass, jboolean);
 extern jboolean Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetCtrlSkip(JNIEnv *, jclass);
+extern void Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetGameSpeed(JNIEnv *, jclass, jint);
+extern jint Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetGameSpeed(JNIEnv *, jclass);
 extern jboolean Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(JNIEnv *, jclass, jstring, jstring);
 
 // Stubs for xsystem35 runtime hooks used by alicehub_bridge.c
+static int stub_game_speed = 100;
+int sys_set_game_speed_percent(int pct) { stub_game_speed = pct; return pct; }
+int sys_get_game_speed_percent(void) { return stub_game_speed; }
 void event_inject_mouse_motion(int x, int y) { (void)x; (void)y; }
 void event_inject_mouse_button(int b, bool p, int x, int y) { (void)b; (void)p; (void)x; (void)y; }
 void event_inject_mouse_wheel(int d) { (void)d; }
@@ -2128,6 +2133,10 @@ int main(void) {
     Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetCtrlSkip(&g_env, NULL, JNI_FALSE);
     alicehub_pump_events();
     assert(Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetCtrlSkip(&g_env, NULL) == JNI_FALSE);
+
+    // 5. Game speed JNI bridge round-trip
+    Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetGameSpeed(&g_env, NULL, 250);
+    assert(Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetGameSpeed(&g_env, NULL) == 250);
     return 0;
 }
 """

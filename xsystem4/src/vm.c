@@ -16,6 +16,8 @@
 
 #define VM_PRIVATE
 
+#include <limits.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -3766,14 +3768,90 @@ _Noreturn void _vm_error(const char *fmt, ...)
 	sys_error("%s", msg);
 }
 
+static pthread_mutex_t vm_clock_mutex = PTHREAD_MUTEX_INITIALIZER;
+static bool vm_clock_initialized = false;
+static uint64_t vm_clock_last_real_ms = 0;
+static uint64_t vm_clock_virtual_100 = 0;
+static int vm_game_speed_pct = VM_GAME_SPEED_DEFAULT_PCT;
+
+static int clamp_game_speed_pct(int pct)
+{
+	if (pct < VM_GAME_SPEED_MIN_PCT)
+		return VM_GAME_SPEED_MIN_PCT;
+	if (pct > VM_GAME_SPEED_MAX_PCT)
+		return VM_GAME_SPEED_MAX_PCT;
+	return pct;
+}
+
+static void vm_clock_advance_locked(uint64_t real_now)
+{
+	if (!vm_clock_initialized) {
+		vm_clock_initialized = true;
+		vm_clock_last_real_ms = real_now;
+		vm_clock_virtual_100 = real_now * 100ULL;
+		return;
+	}
+	if (real_now > vm_clock_last_real_ms) {
+		uint64_t delta = real_now - vm_clock_last_real_ms;
+		vm_clock_virtual_100 += delta * (uint64_t)vm_game_speed_pct;
+		vm_clock_last_real_ms = real_now;
+	}
+}
+
+int vm_set_game_speed_percent(int pct)
+{
+	int clamped = clamp_game_speed_pct(pct);
+	uint64_t real_now = SDL_GetTicks64();
+	pthread_mutex_lock(&vm_clock_mutex);
+	vm_clock_advance_locked(real_now);
+	vm_game_speed_pct = clamped;
+	pthread_mutex_unlock(&vm_clock_mutex);
+	return clamped;
+}
+
+int vm_get_game_speed_percent(void)
+{
+	pthread_mutex_lock(&vm_clock_mutex);
+	int speed = vm_game_speed_pct;
+	pthread_mutex_unlock(&vm_clock_mutex);
+	return speed;
+}
+
+uint64_t vm_time64(void)
+{
+	uint64_t real_now = SDL_GetTicks64();
+	pthread_mutex_lock(&vm_clock_mutex);
+	vm_clock_advance_locked(real_now);
+	uint64_t out = vm_clock_virtual_100 / 100ULL;
+	pthread_mutex_unlock(&vm_clock_mutex);
+	return out;
+}
+
 int vm_time(void)
 {
-	return SDL_GetTicks();
+	return (int)(uint32_t)vm_time64();
+}
+
+int vm_scale_sleep_ms(int ms)
+{
+	if (ms <= 0)
+		return 0;
+	int speed = vm_get_game_speed_percent();
+	if (speed == VM_GAME_SPEED_DEFAULT_PCT)
+		return ms;
+	int64_t scaled = ((int64_t)ms * 100LL + (int64_t)(speed / 2)) / (int64_t)speed;
+	if (scaled < 1)
+		scaled = 1;
+	if (scaled > INT_MAX)
+		scaled = INT_MAX;
+	return (int)scaled;
 }
 
 void vm_sleep(int ms)
 {
-	gfx_android_delay(ms);
+	if (ms <= 0)
+		return;
+	gfx_android_delay((Uint32)vm_scale_sleep_ms(ms));
 }
 
 _Noreturn void vm_exit(int code)

@@ -68,10 +68,10 @@ static struct dalkdemo *dd;
 
 static bool dalkdemo_run_effect(int (*update)(float), int time)
 {
-	uint32_t start = SDL_GetTicks();
+	uint32_t start = (uint32_t)vm_time();
 	bool prev_keydown = false;
-	uint32_t t = SDL_GetTicks() - start;
-	while (t < time) {
+	uint32_t t = (uint32_t)vm_time() - start;
+	while (t < (uint32_t)time) {
 		update((float)t / (float)time);
 		handle_events();
 		bool keydown = key_is_down(VK_LBUTTON) || key_is_down(VK_RBUTTON) || key_is_down(VK_RETURN) || key_is_down(VK_SPACE);
@@ -79,10 +79,10 @@ static bool dalkdemo_run_effect(int (*update)(float), int time)
 			return true;
 		prev_keydown = keydown;
 
-		uint32_t t2 = SDL_GetTicks() - start;
+		uint32_t t2 = (uint32_t)vm_time() - start;
 		if (t2 < t + 16) {
-			SDL_Delay(t + 16 - t2);
-			t += 16;
+			vm_sleep((int)(t + 16 - t2));
+			t = (uint32_t)vm_time() - start;
 		} else {
 			t = t2;
 		}

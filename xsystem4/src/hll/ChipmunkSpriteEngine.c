@@ -30,6 +30,7 @@
 #include "xsystem4.h"
 #include "hll.h"
 #include "plugin.h"
+#include "vm.h"
 
 static void ChipmunkSpriteEngine_PreLink(void);
 
@@ -124,7 +125,7 @@ static void ChipmunkSpriteEngine_Sleep(void)
 
 	if (delta >= 12)
 		return;
-	SDL_Delay(12 - delta);
+	vm_sleep(12 - delta);
 }
 
 //static bool ChipmunkSpriteEngine_SP_SetCutCG(int sp_no, int cg_no, int cut_x, int cut_y, int cut_w, int cut_h);

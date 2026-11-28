@@ -1181,6 +1181,20 @@ Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetScrollbarScale(
 	return 100;
 }
 
+JNIEXPORT void JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeSetGameSpeed(
+	JNIEnv *env, jclass clazz, jint speedPct) {
+	(void)env; (void)clazz;
+	sys_set_game_speed_percent((int)speedPct);
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeGetGameSpeed(
+	JNIEnv *env, jclass clazz) {
+	(void)env; (void)clazz;
+	return (jint)sys_get_game_speed_percent();
+}
+
 JNIEXPORT jboolean JNICALL
 Java_io_github_kichikuou_xsystem4_GameModifierBridge_nativeExportPcSaveFile(
 	JNIEnv *env, jclass clazz, jstring jsrcPath, jstring jdstPath) {

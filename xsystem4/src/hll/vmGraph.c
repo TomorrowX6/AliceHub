@@ -18,6 +18,7 @@
 #include "gfx/gfx.h"
 #include "vmSurface.h"
 #include "hll.h"
+#include "vm.h"
 
 HLL_QUIET_UNIMPLEMENTED( , void, vmGraph, Init, void *imainsystem);
 //void vmGraph_SetUseCPUEx(int nUse);
@@ -191,18 +192,18 @@ HLL_WARN_UNIMPLEMENTED( , void, vmGraph, SetClickCancel, int click);
 
 static int vmGraph_EffectCopy(int dx, int dy, int src_surface, int sx, int sy, int width, int height, int effect, int total_time)
 {
-	uint32_t start = SDL_GetTicks();
+	uint32_t start = (uint32_t)vm_time();
 	if (!effect_init(effect))
 		return 0;
 	vmGraph_Copy(vm_surface_get_main_surface(), dx, dy, src_surface, sx, sy, width, height);
 
-	uint32_t t = SDL_GetTicks() - start;
-	while (t < total_time) {
+	uint32_t t = (uint32_t)vm_time() - start;
+	while (t < (uint32_t)total_time) {
 		effect_update((float)t / (float)total_time);
-		uint32_t t2 = SDL_GetTicks() - start;
+		uint32_t t2 = (uint32_t)vm_time() - start;
 		if (t2 < t + 16) {
-			gfx_android_delay(t + 16 - t2);
-			t += 16;
+			vm_sleep((int)(t + 16 - t2));
+			t = (uint32_t)vm_time() - start;
 		} else {
 			t = t2;
 		}

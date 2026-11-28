@@ -38,6 +38,7 @@
 #include "dungeon/dungeon.h"
 #include "xsystem4.h"
 #include "modifier.h"
+#include "vm.h"
 
 static enum sprite_engine_type engine_type = UNINITIALIZED_SPRITE_ENGINE;
 static struct sact_sprite **sprites = NULL;
@@ -254,7 +255,7 @@ int sact_Update(void)
 
 int sact_Effect(int type, int time, possibly_unused int key)
 {
-	uint32_t start = SDL_GetTicks();
+	uint32_t start = (uint32_t)vm_time();
 	if (!effect_init(type))
 		return 0;
 	scene_render();
@@ -263,13 +264,13 @@ int sact_Effect(int type, int time, possibly_unused int key)
 		return 1;
 	}
 
-	uint32_t t = SDL_GetTicks() - start;
+	uint32_t t = (uint32_t)vm_time() - start;
 	while (t < (uint32_t)time) {
 		effect_update((float)t / (float)time);
-		uint32_t t2 = SDL_GetTicks() - start;
+		uint32_t t2 = (uint32_t)vm_time() - start;
 		if (t2 < t + 16) {
-			SDL_Delay(t + 16 - t2);
-			t += 16;
+			vm_sleep((int)(t + 16 - t2));
+			t = (uint32_t)vm_time() - start;
 		} else {
 			t = t2;
 		}
@@ -296,14 +297,22 @@ void sact_QuakeScreen(int amp_x, int amp_y, int time, int key)
 	int ax = abs(amp_x);
 	int ay = abs(amp_y);
 
-	for (int i = 0; i < time; i+= 16) {
-		float rate = 1.0f - ((float)i / (float)time);
+	uint32_t start = (uint32_t)vm_time();
+	uint32_t t = 0;
+	while (t < (uint32_t)time) {
+		float rate = 1.0f - ((float)t / (float)time);
 		int delta_x = ax ? (int)((rand() % ax - ax/2) * rate) : 0;
 		int delta_y = ay ? (int)((rand() % ay - ay/2) * rate) : 0;
 		gfx_clear();
 		gfx_copy(dst, delta_x, delta_y, &tex, 0, 0, dst->w, dst->h);
 		gfx_swap();
-		SDL_Delay(16);
+		uint32_t t2 = (uint32_t)vm_time() - start;
+		if (t2 < t + 16) {
+			vm_sleep((int)(t + 16 - t2));
+			t = (uint32_t)vm_time() - start;
+		} else {
+			t = t2;
+		}
 	}
 	gfx_delete_texture(&tex);
 }

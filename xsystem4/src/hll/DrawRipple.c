@@ -21,6 +21,7 @@
 #include "plugin.h"
 #include "sact.h"
 #include "sprite.h"
+#include "vm.h"
 #include "xsystem4.h"
 
 static const char plugin_name[] = "DrawRipple";
@@ -122,7 +123,7 @@ static void DrawRipple_update(struct sact_sprite *sp)
 	struct draw_ripple_plugin *plugin = (struct draw_ripple_plugin *)sp->plugin;
 	if (!plugin->ripples)
 		return;
-	uint32_t timestamp = SDL_GetTicks();
+	uint32_t timestamp = (uint32_t)vm_time();
 	if (timestamp - plugin->timestamp < 16)
 		return;
 	plugin->timestamp = timestamp;
@@ -232,7 +233,7 @@ static void DrawRipple_Start(int surface)
 		return;  // already started
 	plugin->ripples = xmalloc(plugin->nr_ripples * sizeof(struct ripple));
 	struct sact_sprite *sp = sact_get_sprite(surface);
-	uint32_t now = SDL_GetTicks();
+	uint32_t now = (uint32_t)vm_time();
 	for (int i = 0; i < plugin->nr_ripples; i++) {
 		plugin->ripples[i].x = rand() % sp->rect.w;
 		plugin->ripples[i].y = rand() % sp->rect.h;

@@ -32,9 +32,16 @@ void sys_error(char *format, ...);    /* show message and exit system */
 void sys_exit(int code);              /* exit system with code */
 void sys_message(int lv, char *format, ...);  /* show various message */
 
+#define SYS_GAME_SPEED_MIN_PCT     50
+#define SYS_GAME_SPEED_MAX_PCT     500
+#define SYS_GAME_SPEED_DEFAULT_PCT 100
+
 uint32_t sys_get_ticks(void);
 void sys_sleep(int msec);
 void sys_wait_vsync(void);
+int sys_scale_sleep_ms(int msec);
+int sys_set_game_speed_percent(int pct);
+int sys_get_game_speed_percent(void);
 
 enum messagebox_type {
 	MESSAGEBOX_ERROR,
