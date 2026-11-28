@@ -1716,6 +1716,7 @@ struct glyph_draw_record {
     float x;
     int y;
     int w;
+    float scale_x;
     float edge_width;
 };
 static struct glyph_draw_record draw_log[128];
@@ -1731,12 +1732,13 @@ void gfx_fill(struct texture *dst, int x, int y, int w, int h, int r, int g, int
 }
 void gfx_draw_glyph_mode(Texture *dst, float x, int y, Texture *glyph, SDL_Color color,
         float scale_x, float edge_width, enum glyph_blend_mode mode) {
-    (void)dst; (void)color; (void)scale_x; (void)mode;
+    (void)dst; (void)color; (void)mode;
     assert(draw_log_len < 128);
     draw_log[draw_log_len++] = (struct glyph_draw_record){
         .x = roundf(x),
         .y = y,
         .w = glyph->w,
+        .scale_x = scale_x,
         .edge_width = edge_width,
     };
 }
@@ -1878,6 +1880,34 @@ int main(void) {
     verify_no_clipping(track03, 5, 258, 24, 2.0f, 0.0f, 0, 2);
     verify_no_clipping(track03, 5, 258, 24, 0.25f, 0.0f, 0, 1);
     verify_no_clipping(track03, 5, 258, 24, 0.0f, 0.0f, 0, 0);
+
+    // Horizontally scaled text (scale_x > 1 and scale_x < 1) must scale edge padding
+    // consistently with the stretched dilation quad and gfx_size_char()/gfx_size_text().
+    struct text_style stretched = {
+        .face = 0, .size = 20.0f, .bold_width = 1.0f,
+        .edge_left = 1.0f, .edge_up = 1.0f, .edge_right = 1.0f, .edge_down = 1.0f,
+        .scale_x = 2.0f, .space_scale_x = 2.0f, .font_spacing = 0.0f,
+    };
+    assert(fabsf(gfx_size_char(&stretched, "A") - 24.0f) < 0.01f);
+    assert(fabsf(gfx_size_text(&stretched, "AB") - 48.0f) < 0.01f);
+    Texture stretched_dst = { .handle = 1, .w = 48, .h = 22 };
+    reset_draw_log();
+    float stretched_adv = gfx_render_text_mode(&stretched_dst, 0.0f, 0, "AB", &stretched, RENDER_BLEND_ALPHA);
+    assert(fabsf(stretched_adv - 48.0f) < 0.01f);
+    assert(draw_log_len == 4);
+    for (int i = 0; i < draw_log_len; i++) {
+        float dilate_px = ceilf(draw_log[i].edge_width) * draw_log[i].scale_x;
+        assert(draw_log[i].x - dilate_px >= 0.0f);
+        assert(draw_log[i].x + (float)draw_log[i].w * draw_log[i].scale_x + dilate_px <= 48.01f);
+    }
+
+    struct text_style shrunk = stretched;
+    shrunk.scale_x = 0.75f;
+    shrunk.space_scale_x = 0.75f;
+    assert(fabsf(gfx_size_char(&shrunk, "A") - 9.0f) < 0.01f);
+    reset_draw_log();
+    float shrunk_adv = gfx_render_text_mode(&stretched_dst, 0.0f, 0, "AB", &shrunk, RENDER_BLEND_ALPHA);
+    assert(fabsf(shrunk_adv - 18.0f) < 0.01f);
 
     // Asymmetric SACT2 drop-shadow & negative/NaN safety.
     struct text_style asym = {

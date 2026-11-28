@@ -522,10 +522,11 @@ float _gfx_render_text(Texture *dst, char *msg, struct text_render_metrics *tm)
 	int pos_y = tm->y + tm->font_size->y_offset;
 
 	while (*msg) {
-		pos_x += tm->edge_spacing;
 		// get glyph for character
 		float scale_x = *msg == ' ' ? tm->space_scale_x : tm->scale_x;
 		float draw_scale_x = scale_x * config.text_x_scale;
+		float edge_spacing = tm->edge_spacing * draw_scale_x;
+		pos_x += edge_spacing;
 		uint32_t code = char_to_code(msg, tm->font_size->font->charmap);
 		msg += (SJIS_2BYTE(*msg) && msg[1] != '\0') ? 2 : 1;
 		struct glyph *glyph = font_get_glyph(tm->font_size, code, tm->weight);
@@ -553,8 +554,8 @@ float _gfx_render_text(Texture *dst, char *msg, struct text_render_metrics *tm)
 		}
 
 		// advance
-		pos_x += glyph->advance * scale_x * config.text_x_scale + tm->font_spacing;
-		pos_x += tm->edge_spacing;
+		pos_x += glyph->advance * draw_scale_x + tm->font_spacing;
+		pos_x += edge_spacing;
 	}
 	return pos_x - tm->x;
 }
