@@ -36,6 +36,7 @@ import java.nio.file.Files;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -128,6 +129,7 @@ public class OnboardingActivityTest {
             assertPageIcon(activity, R.drawable.ic_folder_open);
             ViewGroup storageCard = activity.findViewById(R.id.storage_options);
             assertEquals(1, ((ViewGroup) storageCard.getParent()).getChildCount());
+            assertNotNull(storageCard.getBackground());
             assertStorageDetails(activity, true);
             activity.findViewById(R.id.storage_option_private).performClick();
             assertStorageDetails(activity, false);
@@ -151,6 +153,12 @@ public class OnboardingActivityTest {
             controller.get().findViewById(R.id.row_settings_storage).performClick();
             AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
             assertTrue(dialog.isShowing());
+            View storageGroup = dialog.findViewById(R.id.storage_options);
+            assertNull(storageGroup.getBackground());
+            assertEquals(0, storageGroup.getPaddingLeft());
+            assertEquals(0, storageGroup.getPaddingTop());
+            assertEquals(0, storageGroup.getPaddingRight());
+            assertEquals(0, storageGroup.getPaddingBottom());
             TextView shared = dialog.findViewById(R.id.storage_option_public);
             TextView appSpecific = dialog.findViewById(R.id.storage_option_private);
             assertEquals("Shared storage directory", shared.getText().toString());
