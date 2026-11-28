@@ -158,7 +158,7 @@ let modalOpen = false;
    ========================================================================== */
 function initThreeWall() {
   const canvas = document.getElementById('webgl-stage');
-  if (!canvas) return;
+  if (!canvas) return { triggerPop: () => {} };
 
   let renderer;
   try {
@@ -169,7 +169,7 @@ function initThreeWall() {
       powerPreference: 'high-performance',
     });
   } catch {
-    return;
+    return { triggerPop: () => {} };
   }
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -363,6 +363,12 @@ function initThreeWall() {
   let lastDragX = 0;
   let dragVel = 0;
   const probePos = { x: 0, y: 0 };
+  const pops = [];
+
+  function triggerPop(wx, wy) {
+    pops.push({ x: wx, y: wy, t: 0 });
+    if (pops.length > 4) pops.shift();
+  }
 
   window.addEventListener('pointerdown', (e) => {
     if (modalOpen) return;
@@ -398,8 +404,11 @@ function initThreeWall() {
       const ny = -(e.clientY / Math.max(1, window.innerHeight)) * 2 + 1;
       raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
       const hits = raycaster.intersectObjects(meshes, false);
-      if (hits.length > 0 && hits[0].object.userData.game) {
-        updateHudFocus(hits[0].object.userData.game);
+      if (hits.length > 0) {
+        triggerPop(hits[0].point.x, hits[0].point.y);
+        if (hits[0].object.userData.game) updateHudFocus(hits[0].object.userData.game);
+      } else {
+        triggerPop(nx * 6, ny * 3.5);
       }
     }
   });
@@ -450,6 +459,11 @@ function initThreeWall() {
     auroraMat.uniforms.uTime.value = elapsed;
     auroraMat.uniforms.uMouse.value.set(mouse.x, mouse.y);
 
+    for (let i = pops.length - 1; i >= 0; i--) {
+      pops[i].t += dt;
+      if (pops[i].t > 1.8) pops.splice(i, 1);
+    }
+
     rayTick++;
     if (!modalOpen && !dragging && pointerNdc.x < 2 && rayTick % 2 === 0) {
       raycaster.setFromCamera(pointerNdc, camera);
@@ -477,13 +491,22 @@ function initThreeWall() {
       const curveZ = tile.x * tile.x * 0.032;
       const idleFloat = REDUCED_MOTION ? 0 : Math.sin(elapsed * 0.9 + tile.phase) * 0.045;
 
+      let popZ = 0;
+      for (const p of pops) {
+        const dist = Math.hypot(tile.x - p.x, tile.yBase - p.y);
+        const front = p.t * 8.2 - dist;
+        if (front > 0 && front < Math.PI) {
+          popZ += Math.sin(front) * Math.exp(-dist * 0.36) * Math.exp(-p.t * 1.4) * 1.55;
+        }
+      }
+
       tile.mesh.position.x = tile.x;
       tile.mesh.position.y = tile.yBase + idleFloat;
-      tile.mesh.position.z = curveZ + tile.hover * 0.65 + prox * 0.08;
-      tile.mesh.rotation.y = -tile.x * 0.056 + dragVel * 0.014;
-      tile.mesh.rotation.x = 0;
+      tile.mesh.position.z = curveZ + tile.hover * 0.65 + prox * 0.08 + popZ;
+      tile.mesh.rotation.y = -tile.x * 0.056 + popZ * 0.075 + dragVel * 0.014;
+      tile.mesh.rotation.x = popZ * 0.045;
 
-      const s = 1 + tile.hover * 0.048 + prox * 0.008;
+      const s = 1 + tile.hover * 0.048 + prox * 0.008 + popZ * 0.05;
       tile.mesh.scale.set(s, s, 1);
 
       tile.mat.uniforms.uHover.value = tile.hover;
@@ -507,12 +530,13 @@ function initThreeWall() {
   }
 
   animate(performance.now());
+  return { triggerPop };
 }
 
 /* ==========================================================================
    2. ALICE EMBLEM EYES + BLINK + WINK
    ========================================================================== */
-function initAliceEmblem() {
+function initAliceEmblem(triggerPop) {
   const btn = document.getElementById('alice-emblem');
   const box = document.getElementById('alice-avatar-box');
   const eyeM = document.getElementById('alice-eye-m');
@@ -545,6 +569,7 @@ function initAliceEmblem() {
   btn.addEventListener('click', () => {
     box.classList.add('is-winking');
     setTimeout(() => box.classList.remove('is-winking'), 320);
+    triggerPop(0, 0.5);
   });
 }
 
@@ -651,8 +676,8 @@ function applyLanguage(lang) {
 /* ==========================================================================
    BOOT
    ========================================================================== */
-initThreeWall();
-initAliceEmblem();
+const wall = initThreeWall();
+initAliceEmblem(wall.triggerPop);
 initModal();
 applyReleaseUI();
 applyLanguage('zh');
