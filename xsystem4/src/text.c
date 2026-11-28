@@ -473,7 +473,8 @@ float gfx_size_char(struct text_style *ts, const char *ch)
 {
 	float w = gfx_size_char_unstyled(ts, ch);
 	if (gfx_text_advance_edges)
-		w += ts->edge_left + ts->edge_right + ceilf(ts->bold_width)*2;
+		w += text_style_side_pad(ts->edge_left, ts->bold_width)
+			+ text_style_side_pad(ts->edge_right, ts->bold_width);
 	return w * ts->scale_x;
 }
 
@@ -483,7 +484,8 @@ float gfx_size_text(struct text_style *ts, const char *text)
 	if (!size)
 		return 0.0f;
 	float edge_advance = gfx_text_advance_edges
-		? ts->edge_left + ts->edge_right + ceilf(ts->bold_width)*2
+		? text_style_side_pad(ts->edge_left, ts->bold_width)
+			+ text_style_side_pad(ts->edge_right, ts->bold_width)
 		: 0.0f;
 	float x = 0.0f;
 	while (*text) {
@@ -582,10 +584,10 @@ float gfx_render_text_mode(Texture *dst, float x, int y, char *msg, struct text_
 	int fnl_y_pad = gfx_get_fnl_substitute_y_pad(ts->face, ts->size);
 
 	float edge_advance = gfx_text_advance_edges
-		? edge_width + ceilf(ts->bold_width)
+		? text_style_edge_pad(ts)
 		: 0.f;
 	int edge_y = (gfx_text_advance_edges
-		? lroundf(ts->edge_up + ceilf(ts->bold_width))
+		? lroundf(text_style_side_pad(ts->edge_up, ts->bold_width))
 		: 0) + fnl_y_pad;
 
 	if (edge_width > 0.01f) {
@@ -631,10 +633,10 @@ float gfx_render_text_edge_only(Texture *dst, float x, int y, char *msg, struct 
 	struct font_size *font_size = text_style_font_size(ts);
 	int fnl_y_pad = gfx_get_fnl_substitute_y_pad(ts->face, ts->size);
 	float edge_advance = gfx_text_advance_edges
-		? edge_width + ceilf(ts->bold_width)
+		? text_style_edge_pad(ts)
 		: 0.f;
 	int edge_y = (gfx_text_advance_edges
-		? lroundf(ts->edge_up + ceilf(ts->bold_width))
+		? lroundf(text_style_side_pad(ts->edge_up, ts->bold_width))
 		: 0) + fnl_y_pad;
 	struct text_render_metrics metrics = {
 		.x = x,
@@ -656,13 +658,12 @@ float gfx_render_text_core_only(Texture *dst, float x, int y, char *msg, struct 
 {
 	enum font_weight weight = gfx_int_to_font_weight(ts->weight);
 	struct font_size *font_size = text_style_font_size(ts);
-	float edge_width = text_style_edge_width(ts);
 	int fnl_y_pad = gfx_get_fnl_substitute_y_pad(ts->face, ts->size);
 	float edge_advance = gfx_text_advance_edges
-		? edge_width + ceilf(ts->bold_width)
+		? text_style_edge_pad(ts)
 		: 0.f;
 	int edge_y = (gfx_text_advance_edges
-		? lroundf(ts->edge_up + ceilf(ts->bold_width))
+		? lroundf(text_style_side_pad(ts->edge_up, ts->bold_width))
 		: 0) + fnl_y_pad;
 	struct text_render_metrics metrics = {
 		.x = x,

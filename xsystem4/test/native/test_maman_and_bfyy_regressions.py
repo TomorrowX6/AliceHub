@@ -1630,6 +1630,278 @@ int main(void)
         )
         self.assertEqual(out.strip(), "OK")
 
+    def test_bold_and_edge_layout_matches_text_surface_manager(self):
+        harness = r"""
+#include <assert.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "system4.h"
+#include "system4/ain.h"
+#include "system4/fnl.h"
+#include "system4/hashtable.h"
+#include "system4/string.h"
+#include "system4/utfsjis.h"
+#include "gfx/gfx.h"
+#include "gfx/font.h"
+#include "hll.h"
+#include "xsystem4.h"
+
+struct ain *ain = NULL;
+struct config config;
+bool game_rance02_mg = false;
+bool game_rance6_mg = false;
+bool game_rance7_mg = false;
+bool game_night_remaster, game_evenicle2, game_evenicle2_rance;
+bool game_evenicle, game_evenicle_rance, game_evenicle_gaiden;
+bool game_ixseal, game_oyakorankan, game_tsumamigui3, game_tsumamigui3_jun, game_tsumamigui3_ntr;
+bool game_haharanman, game_rance01, game_rance03, game_rance8, game_rance9;
+struct text_style text_sprite_ts;
+
+struct fnl *fnl_open(const char *path) { (void)path; return NULL; }
+struct font *fnl_font_load(struct fnl *lib, unsigned index) { (void)lib; (void)index; return NULL; }
+void fnl_font_free(struct font *font) { (void)font; }
+void fnl_free(struct fnl *lib) { (void)lib; }
+unsigned fnl_char_to_index(uint16_t code) { (void)code; return 0; }
+void ft_font_init(void) {}
+const char *display_sjis0(const char *sjis) { return sjis ? sjis : ""; }
+void static_library_replace(struct static_library *lib, const char *name, void *fun) {
+    (void)lib; (void)name; (void)fun;
+}
+
+static struct font_size stub_sizes[64];
+static unsigned stub_nr_sizes = 0;
+
+static struct font_size *stub_get_size(struct font *font, float size) {
+    float rounded = roundf(size);
+    for (unsigned i = 0; i < stub_nr_sizes; i++) {
+        if (fabsf(stub_sizes[i].size - rounded) < 0.01f)
+            return &stub_sizes[i];
+    }
+    struct font_size *fs = &stub_sizes[stub_nr_sizes++];
+    memset(fs, 0, sizeof(*fs));
+    fs->size = rounded;
+    fs->y_offset = 0;
+    fs->font = font;
+    fs->glyph_table = ht_create(64);
+    return fs;
+}
+static float stub_actual_size(struct font *font, float size) { (void)font; return roundf(size); }
+static float stub_size_char(struct font_size *size, uint32_t code) {
+    return code < 128 ? size->size * 0.5f : size->size;
+}
+static bool stub_get_glyph(struct font_size *size, struct glyph *dst, uint32_t code, enum font_weight weight) {
+    float adv = stub_size_char(size, code);
+    dst->rect = (Rectangle){ .x = 0, .y = 0, .w = (int)adv, .h = (int)size->size };
+    dst->advance = adv;
+    dst->t[weight] = (Texture){ .handle = 1, .w = (int)adv, .h = (int)size->size };
+    return true;
+}
+static struct font stub_font = {
+    .charmap = CHARMAP_UNICODE,
+    .get_size = stub_get_size,
+    .get_actual_size = stub_actual_size,
+    .get_actual_size_round_down = stub_actual_size,
+    .get_glyph = stub_get_glyph,
+    .size_char = stub_size_char,
+    .size_char_kerning = NULL,
+};
+struct font *ft_font_load(const char *path) { (void)path; return &stub_font; }
+
+struct glyph_draw_record {
+    float x;
+    int y;
+    int w;
+    float edge_width;
+};
+static struct glyph_draw_record draw_log[128];
+static int draw_log_len = 0;
+
+static void reset_draw_log(void) { draw_log_len = 0; }
+
+void gfx_init_texture_rgba(Texture *t, int w, int h, SDL_Color color) { (void)color; t->w = w; t->h = h; t->handle = 1; }
+void gfx_delete_texture(Texture *t) { if (t) t->handle = 0; }
+bool gfx_remap_texture(Texture *t) { return t && t->handle != 0; }
+void gfx_fill(struct texture *dst, int x, int y, int w, int h, int r, int g, int b) {
+    (void)dst; (void)x; (void)y; (void)w; (void)h; (void)r; (void)g; (void)b;
+}
+void gfx_draw_glyph_mode(Texture *dst, float x, int y, Texture *glyph, SDL_Color color,
+        float scale_x, float edge_width, enum glyph_blend_mode mode) {
+    (void)dst; (void)color; (void)scale_x; (void)mode;
+    assert(draw_log_len < 128);
+    draw_log[draw_log_len++] = (struct glyph_draw_record){
+        .x = roundf(x),
+        .y = y,
+        .w = glyph->w,
+        .edge_width = edge_width,
+    };
+}
+void gfx_draw_glyph(Texture *dst, float x, int y, Texture *glyph, SDL_Color color,
+        float scale_x, float edge_width, bool blend) {
+    gfx_draw_glyph_mode(dst, x, y, glyph, color, scale_x, edge_width,
+            blend ? GLYPH_BLEND : GLYPH_COPY);
+}
+void gfx_draw_glyph_to_amap(Texture *dst, float x, int y, Texture *glyph, Rectangle r, float scale_x) {
+    (void)dst; (void)x; (void)y; (void)glyph; (void)r; (void)scale_x;
+}
+void gfx_draw_glyph_to_pmap(Texture *dst, float x, int y, Texture *glyph, Rectangle r, SDL_Color color, float scale_x) {
+    (void)dst; (void)x; (void)y; (void)glyph; (void)r; (void)color; (void)scale_x;
+}
+
+#include "text.c"
+#include "hll/TextSurfaceManager.c"
+
+static int calc_text_parts_width(const char *sjis, int face, int size, float bold, float edge, int char_space) {
+    int total = 0;
+    int nchars = 0;
+    const char *p = sjis;
+    while (*p) {
+        int len = (SJIS_2BYTE(*p) && p[1] != '\0') ? 2 : 1;
+        struct string *ch = make_string(p, len);
+        int cw = 0;
+        assert(measure_font_width(ch, &cw, face, size, bold, edge));
+        free_string(ch);
+        total += cw + char_space;
+        nchars++;
+        p += len;
+    }
+    return nchars > 0 ? total - char_space : 0;
+}
+
+static void verify_no_clipping(const char *sjis, int nchars, int face, int size,
+        float bold, float edge, int char_space, int expected_pad) {
+    int canvas_w = calc_text_parts_width(sjis, face, size, bold, edge, char_space);
+    struct text_style ts = {
+        .face = face,
+        .size = (float)size,
+        .bold_width = bold,
+        .edge_left = edge,
+        .edge_up = edge,
+        .edge_right = edge,
+        .edge_down = edge,
+        .scale_x = 1.0f,
+        .space_scale_x = 1.0f,
+        .font_spacing = (float)char_space,
+    };
+
+    // gfx_size_char / gfx_size_text must agree with TextSurfaceManager.GetFontWidth.
+    int cw0 = 0;
+    struct string *s0 = make_string(sjis, (SJIS_2BYTE(sjis[0]) && sjis[1]) ? 2 : 1);
+    assert(measure_font_width(s0, &cw0, face, size, bold, edge));
+    free_string(s0);
+    assert(fabsf(gfx_size_char(&ts, sjis) - (float)cw0) < 0.01f);
+    assert(fabsf(gfx_size_text(&ts, sjis) + (nchars - 1) * (float)char_space - (float)canvas_w) < 0.01f);
+
+    // text_style_height must match CASCharSpriteProperty@GetPixelHeight (size + 2 * max(ceil(bold), ceil(edge))).
+    assert(fabsf(text_style_height(&ts) - (float)(size + 2 * expected_pad)) < 0.01f);
+
+    // Render into an exact TextParts_CalcSize-width texture and check dilated bounds.
+    Texture dst = { .handle = 1, .w = canvas_w, .h = size + 2 * expected_pad };
+    reset_draw_log();
+    gfx_render_text_mode(&dst, 0.0f, 0, (char *)sjis, &ts, RENDER_BLEND_ALPHA);
+    int expected_draws = edge > 0.01f ? nchars * 2 : nchars;
+    assert(draw_log_len == expected_draws);
+
+    float min_left = 1e9f;
+    float max_right = -1e9f;
+    int expected_y = expected_pad + gfx_get_fnl_substitute_y_pad(face, (float)size);
+    for (int i = 0; i < draw_log_len; i++) {
+        float dilate = draw_log[i].edge_width > 0.0f ? ceilf(draw_log[i].edge_width) : 0.0f;
+        float left = draw_log[i].x - dilate;
+        float right = draw_log[i].x + (float)draw_log[i].w + dilate;
+        if (left < min_left) min_left = left;
+        if (right > max_right) max_right = right;
+        assert(draw_log[i].y == expected_y);
+    }
+    assert(min_left >= 0.0f);
+    assert(max_right <= (float)canvas_w + 0.01f);
+    // Exact fit on the rightmost character when outline or bold reaches expected_pad.
+    assert(fabsf(max_right - (float)canvas_w) < 0.01f);
+
+    // Single-pass edge/core renders (used by PARTS_TEXT) must advance identically.
+    reset_draw_log();
+    float core_adv = gfx_render_text_core_only(&dst, 0.0f, 0, (char *)sjis, &ts);
+    assert(draw_log_len == nchars);
+    assert(fabsf(core_adv - (float)(canvas_w + char_space)) < 0.01f);
+    for (int i = 0; i < draw_log_len; i++)
+        assert(draw_log[i].y == expected_y);
+
+    if (edge > 0.01f) {
+        reset_draw_log();
+        float edge_adv = gfx_render_text_edge_only(&dst, 0.0f, 0, (char *)sjis, &ts);
+        assert(draw_log_len == nchars);
+        assert(fabsf(edge_adv - core_adv) < 0.01f);
+        for (int i = 0; i < draw_log_len; i++)
+            assert(draw_log[i].y == expected_y);
+    }
+}
+
+int main(void) {
+    memset(&config, 0, sizeof(config));
+    config.text_x_scale = 1.0f;
+    sys4_text_is_gbk = true;
+
+    struct ain dummy_ain = { .version = 11 };
+    ain = &dummy_ain;
+
+    // Mimic Heartful Maman MamanFont.fnl face 258 scale (131/160 = 0.81875 -> round(24 * 0.81875) = 20).
+    float scales[3] = { 123.f / 160.f, 152.f / 200.f, 131.f / 160.f };
+    gfx_font_init();
+    set_fnl_substitute_scales(scales, 3);
+    gfx_text_advance_edges = true;
+
+    // 8 full-width chars ("ウェルカムママン" in CP932) and 5 full-width chars ("独りぼっち").
+    const char track02[] = "\x83\x45\x83\x46\x83\x8b\x83\x4a\x83\x80\x83\x7d\x83\x7d\x83\x93";
+    const char track03[] = "\x93\xc6\x82\xe8\x82\xdb\x82\xc1\x82\xbf";
+
+    // Heartful Maman Music Room list items (bold=0.25, edge=2, space=-4):
+    // canvas_w = 8 * (20 + 4) + 7 * (-4) = 164; track03 = 5 * 24 + 4 * (-4) = 104.
+    assert(calc_text_parts_width(track02, 258, 24, 0.25f, 2.0f, -4) == 164);
+    assert(calc_text_parts_width(track03, 258, 24, 0.25f, 2.0f, -4) == 104);
+    verify_no_clipping(track02, 8, 258, 24, 0.25f, 2.0f, -4, 2);
+    verify_no_clipping(track03, 5, 258, 24, 0.25f, 2.0f, -4, 2);
+
+    // Heartful Maman Music Room top TITLE (bold=0, edge=2, space=-4).
+    verify_no_clipping(track02, 8, 258, 30, 0.0f, 2.0f, -4, 2);
+
+    // Other real MamanPact.afa styles: fractional edge + bold, save/load, confirm, backlog.
+    verify_no_clipping(track03, 5, 258, 20, 0.0f, 1.25f, -4, 2);
+    verify_no_clipping(track03, 5, 258, 25, 0.5f, 1.5f, 0, 2);
+    verify_no_clipping(track03, 5, 258, 22, 1.0f, 2.0f, -2, 2);
+    verify_no_clipping(track03, 5, 258, 30, 0.5f, 2.0f, -1, 2);
+
+    // Bold-only and plain styles.
+    verify_no_clipping(track03, 5, 258, 24, 2.0f, 0.0f, 0, 2);
+    verify_no_clipping(track03, 5, 258, 24, 0.25f, 0.0f, 0, 1);
+    verify_no_clipping(track03, 5, 258, 24, 0.0f, 0.0f, 0, 0);
+
+    // Asymmetric SACT2 drop-shadow & negative/NaN safety.
+    struct text_style asym = {
+        .face = 0, .size = 20.0f, .bold_width = 0.0f,
+        .edge_left = 0.0f, .edge_right = 1.0f, .edge_up = 0.0f, .edge_down = 1.0f,
+        .scale_x = 1.0f, .space_scale_x = 1.0f,
+    };
+    assert(fabsf(text_style_height(&asym) - 21.0f) < 0.01f);
+    assert(fabsf(gfx_size_char(&asym, "A") - 11.0f) < 0.01f);
+    gfx_text_advance_edges = false;
+    assert(fabsf(gfx_size_char(&asym, "A") - 10.0f) < 0.01f);
+
+    assert(text_style_side_pad(-1.5f, -0.5f) == 0.0f);
+    assert(text_style_side_pad(NAN, NAN) == 0.0f);
+    assert(text_style_side_pad(2.0f, 0.25f) == 2.0f);
+    assert(text_style_side_pad(0.25f, 1.5f) == 2.0f);
+
+    puts("OK");
+    return 0;
+}
+"""
+        out = compile_and_run(harness, LIBSYS4_CORE, ["-lz", "-lm"])
+        self.assertEqual(out.strip(), "OK")
+
 
 if __name__ == "__main__":
     unittest.main()
